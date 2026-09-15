@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <module name="TreeWalker">
+
+        <!-- wildcard import 금지 -->
+        <module name="AvoidStarImport"/>
+
+        <!-- 클래스 이름 검사 -->
+        <module name="TypeName"/>
+
+        <!-- 메서드 이름 검사 -->
+        <module name="MethodName"/>
+
+        <!-- 변수 이름 검사 -->
+        <module name="LocalVariableName"/>
+
+        <!-- if/for/while 등에 중괄호 강제 -->
+        <module name="NeedBraces"/>
+
+        <!-- 비어있는 catch 금지 -->
+        <module name="EmptyCatchBlock"/>
+
+    </module>
+</module>
