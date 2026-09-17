@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix="kakao.oauth")
+@ConfigurationProperties(prefix = "kakao.oauth")
 @Getter
 @Setter
 public class KakaoOAuthProperties {
@@ -14,4 +14,6 @@ public class KakaoOAuthProperties {
     private String clientSecret;
     private String redirectUri;
     private String authorizationUri;
+    private String tokenUri;
+    private String userInfoUri;
 }
