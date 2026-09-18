@@ -36,3 +36,6 @@ jobs:
 
       - name: Dependency Vulnerability Check
         run: ./gradlew dependencyCheckAnalyze
+
+      - name: Build
+        run: ./gradlew clean bootJar -x test
