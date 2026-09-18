@@ -2,6 +2,7 @@ package com.team.dating_backend.auth.controller;
 
 import com.team.dating_backend.auth.dto.KakaoTokenResponse;
 import com.team.dating_backend.auth.dto.KakaoUserInfoResponse;
+import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.auth.service.KakaoOAuthService;
 import jakarta.servlet.http.HttpSession;

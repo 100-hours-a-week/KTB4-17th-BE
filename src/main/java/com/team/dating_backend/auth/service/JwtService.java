@@ -1,6 +1,10 @@
 package com.team.dating_backend.auth.service;
 
 import com.team.dating_backend.auth.config.JwtProperties;
+import com.team.dating_backend.auth.dto.PendingOnboardingTokenPayload;
+import com.team.dating_backend.auth.enums.AuthProvider;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
