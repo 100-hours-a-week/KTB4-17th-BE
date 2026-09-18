@@ -2,23 +2,32 @@ package com.team.dating_backend.auth.entity;
 
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.user.entity.User;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
 
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
         name = "user_auth_accounts",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_user_auth_accounts_provider_provider_user_id",
-                columnNames = {"provider", "provider_user_id"}
-        )
-)
+        uniqueConstraints =
+                @UniqueConstraint(
+                        name = "uk_user_auth_accounts_provider_provider_user_id",
+                        columnNames = {"provider", "provider_user_id"}))
 public class UserAuthAccount {
 
     @Id
@@ -40,10 +49,7 @@ public class UserAuthAccount {
     private LocalDateTime linkedAt;
 
     public static UserAuthAccount create(
-            User user,
-            AuthProvider provider,
-            String providerUserId,
-            LocalDateTime now) {
+            User user, AuthProvider provider, String providerUserId, LocalDateTime now) {
 
         UserAuthAccount userAuthAccount = new UserAuthAccount();
         userAuthAccount.user = user;
