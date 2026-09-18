@@ -8,8 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @SpringBootApplication
 public class DatingBackendApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(DatingBackendApplication.class, args);
-	}
-
+  public static void main(String[] args) {
+    SpringApplication.run(DatingBackendApplication.class, args);
+  }
 }
