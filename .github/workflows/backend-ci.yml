@@ -1,0 +1,38 @@
+name: CI backend
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - " chore/**"
+
+jobs:
+  feature_ci:
+    name: Feature validation
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check source
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Lint
+        run: ./gradlew check -x test -x spotlessCheck
+
+      - name: Formatter Check
+        run: ./gradlew spotlessCheck
+
+      - name: Dependency Vulnerability Check
+        run: ./gradlew dependencyCheckAnalyze
