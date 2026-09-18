@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - "feature/**"
-      - " chore/**"
+      - "chore/**"
 
 jobs:
   feature_ci:
@@ -38,4 +38,4 @@ jobs:
         run: ./gradlew dependencyCheckAnalyze
 
       - name: Build
-        run: ./gradlew clean bootJar -x test
+        run: ./gradlew  bootJar -x test #clean삭제 앞단에서 컴파일된 파일 사용.
