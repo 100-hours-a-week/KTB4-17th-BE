@@ -3,7 +3,7 @@ name: CI backend
 on:
   push:
     branches:
-      - "feature/**"
+      - "feat/**"
       - "chore/**"
 
 jobs:
