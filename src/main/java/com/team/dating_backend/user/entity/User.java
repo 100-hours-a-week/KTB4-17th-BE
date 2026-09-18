@@ -11,12 +11,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Entity
 @Getter
@@ -29,13 +28,13 @@ public class User {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status",  nullable = false)
+    @Column(name = "status", nullable = false)
     private UserStatus status;
 
     @Column(name = "name", nullable = false)
     private String name;
 
-    @Column(name="birth_date", nullable = false)
+    @Column(name = "birth_date", nullable = false)
     private LocalDate birthDate;
 
     @Enumerated(EnumType.STRING)
@@ -58,12 +57,7 @@ public class User {
     @Column(name = "withdrawn_at")
     private LocalDateTime withdrawnAt;
 
-    public static User create(
-            String name,
-            LocalDate birthDate,
-            Gender gender,
-            LocalDateTime now
-    ) {
+    public static User create(String name, LocalDate birthDate, Gender gender, LocalDateTime now) {
         User user = new User();
         user.status = UserStatus.ONBOARDING;
         user.name = name;
