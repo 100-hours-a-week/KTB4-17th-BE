@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 public class JwtProperties {
 
-    private String secret;
-    private long pendingExpirationMinutes;
-    private long serviceExpirationMinutes;
+  private String secret;
+  private long pendingExpirationMinutes;
+  private long serviceExpirationMinutes;
 }

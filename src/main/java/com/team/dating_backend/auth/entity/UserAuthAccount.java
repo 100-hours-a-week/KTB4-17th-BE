@@ -23,40 +23,40 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
-        name = "user_auth_accounts",
-        uniqueConstraints =
-                @UniqueConstraint(
-                        name = "uk_user_auth_accounts_provider_provider_user_id",
-                        columnNames = {"provider", "provider_user_id"}))
+    name = "user_auth_accounts",
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uk_user_auth_accounts_provider_provider_user_id",
+            columnNames = {"provider", "provider_user_id"}))
 public class UserAuthAccount {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "user_id", nullable = false)
+  private User user;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "provider", nullable = false)
-    private AuthProvider provider;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "provider", nullable = false)
+  private AuthProvider provider;
 
-    @Column(name = "provider_user_id", nullable = false)
-    private String providerUserId;
+  @Column(name = "provider_user_id", nullable = false)
+  private String providerUserId;
 
-    @Column(name = "linked_at", nullable = false)
-    private LocalDateTime linkedAt;
+  @Column(name = "linked_at", nullable = false)
+  private LocalDateTime linkedAt;
 
-    public static UserAuthAccount create(
-            User user, AuthProvider provider, String providerUserId, LocalDateTime now) {
+  public static UserAuthAccount create(
+      User user, AuthProvider provider, String providerUserId, LocalDateTime now) {
 
-        UserAuthAccount userAuthAccount = new UserAuthAccount();
-        userAuthAccount.user = user;
-        userAuthAccount.provider = provider;
-        userAuthAccount.providerUserId = providerUserId;
-        userAuthAccount.linkedAt = now;
+    UserAuthAccount userAuthAccount = new UserAuthAccount();
+    userAuthAccount.user = user;
+    userAuthAccount.provider = provider;
+    userAuthAccount.providerUserId = providerUserId;
+    userAuthAccount.linkedAt = now;
 
-        return userAuthAccount;
-    }
+    return userAuthAccount;
+  }
 }
