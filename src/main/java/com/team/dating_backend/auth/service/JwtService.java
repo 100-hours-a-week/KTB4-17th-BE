@@ -19,22 +19,82 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class JwtService {
 
-  private final JwtProperties jwtProperties;
+    private static final String PROVIDER_CLAIM = "provider";
+    private static final String PROVIDER_USER_ID_CLAIM = "provider_user_id";
+    private static final String PURPOSE_CLAIM = "purpose";
+    private static final String PENDING_ONBOARDING_PURPOSE = "PENDING_ONBOARDING";
+    private static final String SERVICE_AUTH_PURPOSE = "SERVICE_AUTH";
 
-  public String createPendingToken(String provider, String providerUserId) {
-    Instant issuedAt = Instant.now();
-    Instant expiresAt =
-        issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
+    private final JwtProperties jwtProperties;
 
-    SecretKey signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecret()));
+    public String createPendingToken(AuthProvider provider, String providerUserId) {
+        Instant issuedAt = Instant.now();
+        Instant expiresAt =
+                issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
 
-    return Jwts.builder()
-        .claim("provider", provider)
-        .claim("provider_user_id", providerUserId)
-        .claim("purpose", "PENDING_ONBOARDING")
-        .issuedAt(Date.from(issuedAt))
-        .expiration(Date.from(expiresAt))
-        .signWith(signingKey)
-        .compact();
-  }
+        return Jwts.builder()
+                .claim(PROVIDER_CLAIM, provider.name())
+                .claim(PROVIDER_USER_ID_CLAIM, providerUserId)
+                .claim(PURPOSE_CLAIM, PENDING_ONBOARDING_PURPOSE)
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .signWith(signingKey())
+                .compact();
+    }
+
+    private SecretKey signingKey() {
+        return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecret()));
+    }
+
+    public PendingOnboardingTokenPayload parsePendingToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new JwtException("Pending onboarding token is missing");
+        }
+
+        Claims claims =
+                Jwts.parser()
+                        .verifyWith(signingKey())
+                        .build()
+                        .parseSignedClaims(token)
+                        .getPayload();
+
+        String purpose = claims.get(PURPOSE_CLAIM, String.class);
+
+        if (!PENDING_ONBOARDING_PURPOSE.equals(purpose)) {
+            throw new JwtException("Invalid pending onboarding token purpose");
+        }
+
+        String providerValue = claims.get(PROVIDER_CLAIM, String.class);
+        String providerUserId = claims.get(PROVIDER_USER_ID_CLAIM, String.class);
+
+        if (providerValue == null
+                || providerValue.isBlank()
+                || providerUserId == null
+                || providerUserId.isBlank()) {
+            throw new JwtException("Required pending onboarding token claim is missing");
+        }
+
+        try {
+            AuthProvider provider = AuthProvider.valueOf(providerValue);
+
+            return new PendingOnboardingTokenPayload(provider, providerUserId);
+        } catch (IllegalArgumentException exception) {
+            throw new JwtException("Invalid authentication provider", exception);
+        }
+    }
+
+    public String createServiceAuthToken(Long userId) {
+        Instant issuedAt = Instant.now();
+
+        Instant expiresAt =
+                issuedAt.plus(jwtProperties.getServiceExpirationMinutes(), ChronoUnit.MINUTES);
+
+        return Jwts.builder()
+                .subject(userId.toString())
+                .claim(PURPOSE_CLAIM, SERVICE_AUTH_PURPOSE)
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .signWith(signingKey())
+                .compact();
+    }
 }
