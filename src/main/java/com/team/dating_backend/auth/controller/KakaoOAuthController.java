@@ -22,43 +22,47 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class KakaoOAuthController {
 
-  private final KakaoOAuthService kakaoOAuthService;
-  private final JwtService jwtService;
+    private final KakaoOAuthService kakaoOAuthService;
+    private final JwtService jwtService;
 
-  @GetMapping("/kakao")
-  public ResponseEntity<Void> startKakaoLogin(HttpSession session) {
-    String authorizationUrl = kakaoOAuthService.createAuthorizationUrl(session);
-    return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(authorizationUrl)).build();
-  }
-
-  @GetMapping("/kakao/callback")
-  public ResponseEntity<Void> handleCallback(
-      @RequestParam("code") String code, @RequestParam("state") String state, HttpSession session) {
-
-    boolean validState = kakaoOAuthService.validateState(state, session);
-
-    if (!validState) {
-      return ResponseEntity.badRequest().build();
+    @GetMapping("/kakao")
+    public ResponseEntity<Void> startKakaoLogin(HttpSession session) {
+        String authorizationUrl = kakaoOAuthService.createAuthorizationUrl(session);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(authorizationUrl))
+                .build();
     }
 
-    KakaoTokenResponse tokenResponse = kakaoOAuthService.requestAccessToken(code);
+    @GetMapping("/kakao/callback")
+    public ResponseEntity<Void> handleCallback(
+            @RequestParam("code") String code,
+            @RequestParam("state") String state,
+            HttpSession session) {
 
-    String accessToken = tokenResponse.accessToken();
+        boolean validState = kakaoOAuthService.validateState(state, session);
 
-    KakaoUserInfoResponse userInfo = kakaoOAuthService.requestUserInfo(accessToken);
+        if (!validState) {
+            return ResponseEntity.badRequest().build();
+        }
 
-    Long kakaoUserId = userInfo.id();
+        KakaoTokenResponse tokenResponse = kakaoOAuthService.requestAccessToken(code);
 
-    String providerUserId = String.valueOf(kakaoUserId);
-    String pendingToken = jwtService.createPendingToken("KAKAO", providerUserId);
+        String accessToken = tokenResponse.accessToken();
 
-    ResponseCookie pendingCookie =
-        ResponseCookie.from("PENDING_ONBOARDING_TOKEN", pendingToken)
-            .httpOnly(true)
-            .secure(false)
-            .sameSite("Lax")
-            .path("/")
-            .build();
-    return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, pendingCookie.toString()).build();
-  }
+        KakaoUserInfoResponse userInfo = kakaoOAuthService.requestUserInfo(accessToken);
+
+        Long kakaoUserId = userInfo.id();
+
+        String providerUserId = String.valueOf(kakaoUserId);
+        String pendingToken = jwtService.createPendingToken(AuthProvider.KAKAO, providerUserId);
+
+        ResponseCookie pendingCookie =
+                ResponseCookie.from("PENDING_ONBOARDING_TOKEN", pendingToken)
+                        .httpOnly(true)
+                        .secure(false)
+                        .sameSite("Lax")
+                        .path("/")
+                        .build();
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, pendingCookie.toString()).build();
+    }
 }
