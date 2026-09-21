@@ -1,6 +1,9 @@
 name: CI backend
 
 on:
+  push:
+    branches:
+      - chore/backend-CD
   pull_request:
     branches:
       - dev
