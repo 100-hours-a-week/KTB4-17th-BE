@@ -97,4 +97,35 @@ public class JwtService {
                 .signWith(signingKey())
                 .compact();
     }
+
+    public Long parseServiceAuthToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new JwtException("Service auth token is missing");
+        }
+
+        Claims claims =
+                Jwts.parser()
+                        .verifyWith(signingKey())
+                        .build()
+                        .parseSignedClaims(token)
+                        .getPayload();
+
+        String purpose = claims.get(PURPOSE_CLAIM, String.class);
+
+        if (!SERVICE_AUTH_PURPOSE.equals(purpose)) {
+            throw new JwtException("Invalid service auth token purpose");
+        }
+
+        String subject = claims.getSubject();
+
+        if (subject == null || subject.isBlank()) {
+            throw new JwtException("Service auth token subject is missing");
+        }
+
+        try {
+            return Long.valueOf(subject);
+        } catch (NumberFormatException exception) {
+            throw new JwtException("Invalid service auth token subject", exception);
+        }
+    }
 }
