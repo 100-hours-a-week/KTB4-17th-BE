@@ -1,8 +1,8 @@
 package com.team.dating_backend.user.controller;
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
-import com.team.dating_backend.user.dto.request.OnboardingIdentityRequest;
-import com.team.dating_backend.user.service.OnboardingService;
+import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
+import com.team.dating_backend.user.service.UserRegistrationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -15,22 +15,23 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/onboarding")
-public class OnboardingController {
+@RequestMapping("/api/v1/registration")
+public class UserRegistrationController {
 
-    private static final String PENDING_ONBOARDING_TOKEN_COOKIE =
-            AuthCookieFactory.PENDING_ONBOARDING_TOKEN_COOKIE;
+    private static final String PENDING_REGISTRATION_TOKEN_COOKIE =
+            AuthCookieFactory.PENDING_REGISTRATION_TOKEN_COOKIE;
 
-    private final OnboardingService onboardingService;
+    private final UserRegistrationService userRegistrationService;
     private final AuthCookieFactory authCookieFactory;
 
     @PutMapping("/identity")
-    public ResponseEntity<Void> saveIdentity(
-            @CookieValue(value = PENDING_ONBOARDING_TOKEN_COOKIE, required = false)
-                    String pendingOnboardingToken,
-            @Valid @RequestBody OnboardingIdentityRequest request) {
+    public ResponseEntity<Void> registerUser(
+            @CookieValue(value = PENDING_REGISTRATION_TOKEN_COOKIE, required = false)
+                    String pendingRegistrationToken,
+            @Valid @RequestBody UserRegistrationRequest request) {
 
-        String serviceToken = onboardingService.saveIdentity(pendingOnboardingToken, request);
+        String serviceToken =
+                userRegistrationService.registerUser(pendingRegistrationToken, request);
 
         return ResponseEntity.ok()
                 .header(
@@ -38,7 +39,7 @@ public class OnboardingController {
                         authCookieFactory.accessToken(serviceToken).toString())
                 .header(
                         HttpHeaders.SET_COOKIE,
-                        authCookieFactory.deletePendingOnboardingToken().toString())
+                        authCookieFactory.deletePendingRegistrationToken().toString())
                 .build();
     }
 }

@@ -9,13 +9,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.team.dating_backend.auth.dto.PendingOnboardingTokenPayload;
+import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
-import com.team.dating_backend.auth.exception.PendingOnboardingAccessDeniedException;
+import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.user.dto.request.OnboardingIdentityRequest;
+import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -30,7 +30,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class OnboardingServiceTest {
+class UserRegistrationServiceTest {
 
     private static final String PENDING_TOKEN = "pending-token";
     private static final String PROVIDER_USER_ID = "kakao-123";
@@ -42,7 +42,7 @@ class OnboardingServiceTest {
 
     @Mock private UserAuthAccountRepository userAuthAccountRepository;
 
-    @InjectMocks private OnboardingService onboardingService;
+    @InjectMocks private UserRegistrationService userRegistrationService;
 
     @Test
     void 신규_인증_계정이면_User와_UserAuthAccount를_생성한다() {
@@ -57,7 +57,7 @@ class OnboardingServiceTest {
         given(jwtService.createServiceAuthToken(10L)).willReturn(ACCESS_TOKEN);
 
         // when
-        String result = onboardingService.saveIdentity(PENDING_TOKEN, identityRequest());
+        String result = userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest());
 
         // then
         assertEquals(ACCESS_TOKEN, result);
@@ -80,7 +80,7 @@ class OnboardingServiceTest {
         given(jwtService.createServiceAuthToken(20L)).willReturn(ACCESS_TOKEN);
 
         // when
-        String result = onboardingService.saveIdentity(PENDING_TOKEN, identityRequest());
+        String result = userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest());
 
         // then
         assertEquals(ACCESS_TOKEN, result);
@@ -101,16 +101,16 @@ class OnboardingServiceTest {
 
         // when & then
         assertThrows(
-                PendingOnboardingAccessDeniedException.class,
-                () -> onboardingService.saveIdentity(PENDING_TOKEN, identityRequest()));
+                PendingRegistrationAccessDeniedException.class,
+                () -> userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest()));
         verify(userRepository, never()).save(any(User.class));
         verify(userAuthAccountRepository, never()).save(any(UserAuthAccount.class));
     }
 
     private void givenPendingPayload() {
-        given(jwtService.parsePendingToken(PENDING_TOKEN))
+        given(jwtService.parsePendingRegistrationToken(PENDING_TOKEN))
                 .willReturn(
-                        new PendingOnboardingTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
+                        new PendingRegistrationTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
     }
 
     private User savedUser(Long userId) {
@@ -128,7 +128,7 @@ class OnboardingServiceTest {
         return account;
     }
 
-    private OnboardingIdentityRequest identityRequest() {
-        return new OnboardingIdentityRequest("우", LocalDate.of(2000, 1, 1), Gender.MALE);
+    private UserRegistrationRequest registrationRequest() {
+        return new UserRegistrationRequest("우", LocalDate.of(2000, 1, 1), Gender.MALE);
     }
 }

@@ -28,23 +28,24 @@ public class AuthLoginResponseFactory {
             return redirect(
                     destinationFor(authenticated.destination()),
                     authCookieFactory.accessToken(serviceToken),
-                    authCookieFactory.deletePendingOnboardingToken());
+                    authCookieFactory.deletePendingRegistrationToken());
         }
 
-        SocialLoginResult.PendingOnboarding pendingOnboarding =
-                (SocialLoginResult.PendingOnboarding) loginResult;
+        SocialLoginResult.PendingRegistration pendingRegistration =
+                (SocialLoginResult.PendingRegistration) loginResult;
         String pendingToken =
-                jwtService.createPendingToken(
-                        pendingOnboarding.provider(), pendingOnboarding.providerUserId());
+                jwtService.createPendingRegistrationToken(
+                        pendingRegistration.provider(), pendingRegistration.providerUserId());
 
         return redirect(
-                destinationFor(LoginDestination.ONBOARDING),
-                authCookieFactory.pendingOnboardingToken(pendingToken),
+                destinationFor(LoginDestination.REGISTRATION),
+                authCookieFactory.pendingRegistrationToken(pendingToken),
                 authCookieFactory.deleteAccessToken());
     }
 
     public void validateRedirectUris() {
         destinationFor(LoginDestination.SERVICE);
+        destinationFor(LoginDestination.REGISTRATION);
         destinationFor(LoginDestination.ONBOARDING);
     }
 
@@ -63,6 +64,7 @@ public class AuthLoginResponseFactory {
         String redirectUri =
                 switch (destination) {
                     case SERVICE -> authWebProperties.getServiceRedirectUri();
+                    case REGISTRATION -> authWebProperties.getRegistrationRedirectUri();
                     case ONBOARDING -> authWebProperties.getOnboardingRedirectUri();
                 };
 

@@ -72,7 +72,7 @@ class SocialLoginServiceTest {
     }
 
     @Test
-    void 연결된_인증_계정이_없으면_신규_온보딩_결과를_반환한다() {
+    void 연결된_인증_계정이_없으면_신규_회원가입_결과를_반환한다() {
         // given
         given(
                         userAuthAccountRepository.findByProviderAndProviderUserId(
@@ -84,14 +84,14 @@ class SocialLoginServiceTest {
                 socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.PendingOnboarding pending =
-                assertInstanceOf(SocialLoginResult.PendingOnboarding.class, result);
+        SocialLoginResult.PendingRegistration pending =
+                assertInstanceOf(SocialLoginResult.PendingRegistration.class, result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());
     }
 
     @Test
-    void WITHDRAWN_회원이_카카오로_로그인하면_재가입_온보딩_결과를_반환한다() {
+    void WITHDRAWN_회원이_카카오로_로그인하면_재가입_회원가입_결과를_반환한다() {
         // given
         UserAuthAccount account = linkedAccount(UserStatus.WITHDRAWN, null);
         given(
@@ -104,8 +104,8 @@ class SocialLoginServiceTest {
                 socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.PendingOnboarding pending =
-                assertInstanceOf(SocialLoginResult.PendingOnboarding.class, result);
+        SocialLoginResult.PendingRegistration pending =
+                assertInstanceOf(SocialLoginResult.PendingRegistration.class, result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());
     }

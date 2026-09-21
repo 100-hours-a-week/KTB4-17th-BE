@@ -8,9 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
-import com.team.dating_backend.auth.exception.PendingOnboardingAccessDeniedException;
-import com.team.dating_backend.user.dto.request.OnboardingIdentityRequest;
-import com.team.dating_backend.user.service.OnboardingService;
+import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
+import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
+import com.team.dating_backend.user.service.UserRegistrationService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,12 +19,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(OnboardingController.class)
-class OnboardingControllerTest {
+@WebMvcTest(UserRegistrationController.class)
+class UserRegistrationControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockitoBean private OnboardingService onboardingService;
+    @MockitoBean private UserRegistrationService userRegistrationService;
 
     @MockitoBean private AuthCookieFactory authCookieFactory;
 
@@ -32,14 +32,14 @@ class OnboardingControllerTest {
     void 재사용된_Pending_토큰은_AUTH_REQUIRED를_반환한다() throws Exception {
         // given
         given(
-                        onboardingService.saveIdentity(
-                                eq("stale-pending"), any(OnboardingIdentityRequest.class)))
-                .willThrow(new PendingOnboardingAccessDeniedException());
+                        userRegistrationService.registerUser(
+                                eq("stale-pending"), any(UserRegistrationRequest.class)))
+                .willThrow(new PendingRegistrationAccessDeniedException());
 
         // when & then
         mockMvc.perform(
-                        put("/api/v1/onboarding/identity")
-                                .cookie(new Cookie("PENDING_ONBOARDING_TOKEN", "stale-pending"))
+                        put("/api/v1/registration/identity")
+                                .cookie(new Cookie("PENDING_REGISTRATION_TOKEN", "stale-pending"))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """

@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AuthWebProperties {
 
     private String serviceRedirectUri;
+    private String registrationRedirectUri;
     private String onboardingRedirectUri;
     private boolean secureCookie;
     private String sameSite = "Lax";

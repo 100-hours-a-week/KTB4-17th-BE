@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public class AuthCookieFactory {
 
     public static final String ACCESS_TOKEN_COOKIE = "ACCESS_TOKEN";
-    public static final String PENDING_ONBOARDING_TOKEN_COOKIE = "PENDING_ONBOARDING_TOKEN";
+    public static final String PENDING_REGISTRATION_TOKEN_COOKIE = "PENDING_REGISTRATION_TOKEN";
 
     private final AuthWebProperties authWebProperties;
     private final JwtProperties jwtProperties;
@@ -24,9 +24,9 @@ public class AuthCookieFactory {
                 Duration.ofMinutes(jwtProperties.getServiceExpirationMinutes()));
     }
 
-    public ResponseCookie pendingOnboardingToken(String token) {
+    public ResponseCookie pendingRegistrationToken(String token) {
         return create(
-                PENDING_ONBOARDING_TOKEN_COOKIE,
+                PENDING_REGISTRATION_TOKEN_COOKIE,
                 token,
                 Duration.ofMinutes(jwtProperties.getPendingExpirationMinutes()));
     }
@@ -35,8 +35,8 @@ public class AuthCookieFactory {
         return create(ACCESS_TOKEN_COOKIE, "", Duration.ZERO);
     }
 
-    public ResponseCookie deletePendingOnboardingToken() {
-        return create(PENDING_ONBOARDING_TOKEN_COOKIE, "", Duration.ZERO);
+    public ResponseCookie deletePendingRegistrationToken() {
+        return create(PENDING_REGISTRATION_TOKEN_COOKIE, "", Duration.ZERO);
     }
 
     private ResponseCookie create(String name, String value, Duration maxAge) {

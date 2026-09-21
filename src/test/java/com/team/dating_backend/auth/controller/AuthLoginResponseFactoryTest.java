@@ -26,6 +26,8 @@ import org.springframework.http.ResponseEntity;
 class AuthLoginResponseFactoryTest {
 
     private static final String SERVICE_REDIRECT_URI = "https://frontend.example.com/service";
+    private static final String REGISTRATION_REDIRECT_URI =
+            "https://frontend.example.com/registration";
     private static final String ONBOARDING_REDIRECT_URI = "https://frontend.example.com/onboarding";
 
     @Mock private JwtService jwtService;
@@ -36,6 +38,7 @@ class AuthLoginResponseFactoryTest {
     void setUp() {
         AuthWebProperties authWebProperties = new AuthWebProperties();
         authWebProperties.setServiceRedirectUri(SERVICE_REDIRECT_URI);
+        authWebProperties.setRegistrationRedirectUri(REGISTRATION_REDIRECT_URI);
         authWebProperties.setOnboardingRedirectUri(ONBOARDING_REDIRECT_URI);
         authWebProperties.setSecureCookie(true);
 
@@ -69,33 +72,34 @@ class AuthLoginResponseFactoryTest {
         assertTrue(setCookieHeaders.getFirst().contains("ACCESS_TOKEN=service-token"));
         assertTrue(setCookieHeaders.getFirst().contains("HttpOnly"));
         assertTrue(setCookieHeaders.getFirst().contains("Secure"));
-        assertTrue(setCookieHeaders.get(1).contains("PENDING_ONBOARDING_TOKEN="));
+        assertTrue(setCookieHeaders.get(1).contains("PENDING_REGISTRATION_TOKEN="));
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
         verify(jwtService).createServiceAuthToken(1L);
         verifyNoMoreInteractions(jwtService);
     }
 
     @Test
-    void 신규_회원은_PENDING_TOKEN과_온보딩_목적지로_리다이렉트된다() {
+    void 신규_회원은_PENDING_REGISTRATION_TOKEN과_회원가입_목적지로_리다이렉트된다() {
         // given
-        given(jwtService.createPendingToken(AuthProvider.KAKAO, "kakao-123"))
+        given(jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123"))
                 .willReturn("pending-token");
         SocialLoginResult loginResult =
-                new SocialLoginResult.PendingOnboarding(AuthProvider.KAKAO, "kakao-123");
+                new SocialLoginResult.PendingRegistration(AuthProvider.KAKAO, "kakao-123");
 
         // when
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
 
         // then
         assertEquals(HttpStatus.FOUND, response.getStatusCode());
-        assertEquals(ONBOARDING_REDIRECT_URI, response.getHeaders().getLocation().toString());
+        assertEquals(REGISTRATION_REDIRECT_URI, response.getHeaders().getLocation().toString());
 
         List<String> setCookieHeaders = response.getHeaders().get(HttpHeaders.SET_COOKIE);
-        assertTrue(setCookieHeaders.getFirst().contains("PENDING_ONBOARDING_TOKEN=pending-token"));
+        assertTrue(
+                setCookieHeaders.getFirst().contains("PENDING_REGISTRATION_TOKEN=pending-token"));
         assertTrue(setCookieHeaders.getFirst().contains("Max-Age=600"));
         assertTrue(setCookieHeaders.get(1).contains("ACCESS_TOKEN="));
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
-        verify(jwtService).createPendingToken(AuthProvider.KAKAO, "kakao-123");
+        verify(jwtService).createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
         verifyNoMoreInteractions(jwtService);
     }
 

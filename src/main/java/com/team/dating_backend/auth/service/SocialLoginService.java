@@ -22,7 +22,8 @@ public class SocialLoginService {
                 .findByProviderAndProviderUserId(provider, providerUserId)
                 .<SocialLoginResult>map(
                         account -> resolveExistingUser(account.getUser(), provider, providerUserId))
-                .orElseGet(() -> new SocialLoginResult.PendingOnboarding(provider, providerUserId));
+                .orElseGet(
+                        () -> new SocialLoginResult.PendingRegistration(provider, providerUserId));
     }
 
     private SocialLoginResult resolveExistingUser(
@@ -36,7 +37,7 @@ public class SocialLoginService {
         }
 
         if (user.getStatus() == UserStatus.WITHDRAWN) {
-            return new SocialLoginResult.PendingOnboarding(provider, providerUserId);
+            return new SocialLoginResult.PendingRegistration(provider, providerUserId);
         }
 
         throw new IllegalStateException("Unsupported user status for social login");
