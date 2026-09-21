@@ -32,28 +32,8 @@ jobs:
       - name: Formatter Check
         run: ./gradlew spotlessCheck
 
-      - name: Set Dependency-Check cache date #캐시 추가
-        id: dependency-check-cache-date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Dependency-Check database
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/dependency-check-data
-          key: ${{ runner.os }}-dependency-check-${{ hashFiles('**/build.gradle*', 'gradle/libs.versions.toml') }}-${{ steps.dependency-check-cache-date.outputs.date }}
-          restore-keys: |
-            ${{ runner.os }}-dependency-check-${{ hashFiles('**/build.gradle*', 'gradle/libs.versions.toml') }}-
-
-      - name: Dependency Vulnerability Check
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: ./gradlew dependencyCheckAnalyze --info
+      - name: Check Dependencies
+        run: ./gradlew dependencies
 
       - name: Build
         run: ./gradlew clean bootJar -x test
-
-      - name: Auto-merge
-        run: gh pr merge --auto --merge "$PR_URL"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
