@@ -2,10 +2,12 @@ package com.team.dating_backend.user.service;
 
 import com.team.dating_backend.auth.dto.PendingOnboardingTokenPayload;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
+import com.team.dating_backend.auth.exception.PendingOnboardingAccessDeniedException;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.user.dto.request.OnboardingIdentityRequest;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -25,17 +27,33 @@ public class OnboardingService {
         PendingOnboardingTokenPayload payload =
                 jwtService.parsePendingToken(pendingOnboardingToken);
 
+        UserAuthAccount existingAccount =
+                userAuthAccountRepository
+                        .findForUpdateByProviderAndProviderUserId(
+                                payload.provider(), payload.providerUserId())
+                        .orElse(null);
+
+        if (existingAccount != null
+                && existingAccount.getUser().getStatus() != UserStatus.WITHDRAWN) {
+            throw new PendingOnboardingAccessDeniedException();
+        }
+
         LocalDateTime now = LocalDateTime.now();
 
         User user = User.create(request.name(), request.birthDate(), request.gender(), now);
 
         User savedUser = userRepository.save(user);
 
-        UserAuthAccount userAuthAccount =
-                UserAuthAccount.create(
-                        savedUser, payload.provider(), payload.providerUserId(), now);
+        if (existingAccount == null) {
+            UserAuthAccount userAuthAccount =
+                    UserAuthAccount.create(
+                            savedUser, payload.provider(), payload.providerUserId(), now);
 
-        userAuthAccountRepository.save(userAuthAccount);
+            userAuthAccountRepository.save(userAuthAccount);
+        } else {
+            existingAccount.relink(savedUser, now);
+            userAuthAccountRepository.save(existingAccount);
+        }
 
         return jwtService.createServiceAuthToken(savedUser.getId());
     }
