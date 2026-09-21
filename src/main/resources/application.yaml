@@ -16,3 +16,11 @@ spring:
 logging:
   level:
     org.hibernate.SQL: debug
+
+app:
+  auth:
+    service-redirect-uri: ${AUTH_SERVICE_REDIRECT_URI:}
+    registration-redirect-uri: ${AUTH_REGISTRATION_REDIRECT_URI:}
+    onboarding-redirect-uri: ${AUTH_ONBOARDING_REDIRECT_URI:}
+    secure-cookie: ${AUTH_COOKIE_SECURE:false}
+    same-site: ${AUTH_COOKIE_SAME_SITE:Lax}

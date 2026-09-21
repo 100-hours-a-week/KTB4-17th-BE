@@ -1,7 +1,7 @@
 package com.team.dating_backend.auth.service;
 
 import com.team.dating_backend.auth.config.JwtProperties;
-import com.team.dating_backend.auth.dto.PendingOnboardingTokenPayload;
+import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -22,12 +22,12 @@ public class JwtService {
     private static final String PROVIDER_CLAIM = "provider";
     private static final String PROVIDER_USER_ID_CLAIM = "provider_user_id";
     private static final String PURPOSE_CLAIM = "purpose";
-    private static final String PENDING_ONBOARDING_PURPOSE = "PENDING_ONBOARDING";
+    private static final String PENDING_REGISTRATION_PURPOSE = "PENDING_REGISTRATION";
     private static final String SERVICE_AUTH_PURPOSE = "SERVICE_AUTH";
 
     private final JwtProperties jwtProperties;
 
-    public String createPendingToken(AuthProvider provider, String providerUserId) {
+    public String createPendingRegistrationToken(AuthProvider provider, String providerUserId) {
         Instant issuedAt = Instant.now();
         Instant expiresAt =
                 issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
@@ -35,7 +35,7 @@ public class JwtService {
         return Jwts.builder()
                 .claim(PROVIDER_CLAIM, provider.name())
                 .claim(PROVIDER_USER_ID_CLAIM, providerUserId)
-                .claim(PURPOSE_CLAIM, PENDING_ONBOARDING_PURPOSE)
+                .claim(PURPOSE_CLAIM, PENDING_REGISTRATION_PURPOSE)
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
                 .signWith(signingKey())
@@ -46,9 +46,9 @@ public class JwtService {
         return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecret()));
     }
 
-    public PendingOnboardingTokenPayload parsePendingToken(String token) {
+    public PendingRegistrationTokenPayload parsePendingRegistrationToken(String token) {
         if (token == null || token.isBlank()) {
-            throw new JwtException("Pending onboarding token is missing");
+            throw new JwtException("Pending registration token is missing");
         }
 
         Claims claims =
@@ -60,8 +60,8 @@ public class JwtService {
 
         String purpose = claims.get(PURPOSE_CLAIM, String.class);
 
-        if (!PENDING_ONBOARDING_PURPOSE.equals(purpose)) {
-            throw new JwtException("Invalid pending onboarding token purpose");
+        if (!PENDING_REGISTRATION_PURPOSE.equals(purpose)) {
+            throw new JwtException("Invalid pending registration token purpose");
         }
 
         String providerValue = claims.get(PROVIDER_CLAIM, String.class);
@@ -71,13 +71,13 @@ public class JwtService {
                 || providerValue.isBlank()
                 || providerUserId == null
                 || providerUserId.isBlank()) {
-            throw new JwtException("Required pending onboarding token claim is missing");
+            throw new JwtException("Required pending registration token claim is missing");
         }
 
         try {
             AuthProvider provider = AuthProvider.valueOf(providerValue);
 
-            return new PendingOnboardingTokenPayload(provider, providerUserId);
+            return new PendingRegistrationTokenPayload(provider, providerUserId);
         } catch (IllegalArgumentException exception) {
             throw new JwtException("Invalid authentication provider", exception);
         }
