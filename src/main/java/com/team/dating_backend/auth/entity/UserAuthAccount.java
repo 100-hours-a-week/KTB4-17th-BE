@@ -59,4 +59,9 @@ public class UserAuthAccount {
 
         return userAuthAccount;
     }
+
+    public void relink(User user, LocalDateTime now) {
+        this.user = user;
+        this.linkedAt = now;
+    }
 }
