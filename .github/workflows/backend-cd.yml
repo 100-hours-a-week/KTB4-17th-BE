@@ -14,7 +14,7 @@ permissions:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  ECR_REGISTRY: ${{ variables.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
