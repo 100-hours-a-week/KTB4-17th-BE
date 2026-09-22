@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - chore/backend-CD
 
 
 permissions:
