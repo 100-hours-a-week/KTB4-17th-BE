@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
     id 'com.diffplug.spotless' version '8.10.2'
+	id 'org.owasp.dependencycheck' version '13.0.0'
 	id 'checkstyle'
 }
 
@@ -22,8 +23,16 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-restclient'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
@@ -38,7 +47,7 @@ tasks.named('test') {
 
 spotless {
 	java {
-		googleJavaFormat('1.36.0')
+		googleJavaFormat('1.36.0').aosp()
 
 		removeUnusedImports()
 		forbidWildcardImports()
@@ -50,4 +59,14 @@ spotless {
 
 checkstyle {
 	toolVersion = '14.1.0'
+}
+
+def nvdApiKey = System.getenv('NVD_API_KEY')
+
+dependencyCheck {
+	if (nvdApiKey?.trim()) {
+		nvd {
+			apiKey = nvdApiKey
+		}
+	}
 }

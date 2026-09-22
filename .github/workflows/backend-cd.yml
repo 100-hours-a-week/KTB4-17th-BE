@@ -1,0 +1,94 @@
+name: Backend CD
+
+on:
+  push:
+    branches:
+      - main
+
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build_image:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" |
+          
+            docker login \
+              --username AWS \
+              --password-stdin "$ECR_REGISTRY"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            .
+
+      - name: Push image to ECR
+        run: |
+          docker push \
+            "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  deploy:
+    name: Backend Blue-Green Deploy
+    needs: build_image
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Configure SSH
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/ssh"
+
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" \
+            > "$RUNNER_TEMP/ssh/ec2_key"
+
+          printf '%s\n' "$EC2_KNOWN_HOSTS" \
+            > "$RUNNER_TEMP/ssh/known_hosts"
+
+          chmod 600 "$RUNNER_TEMP/ssh/ec2_key"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_PORT: ${{ secrets.EC2_PORT }}
+        run: |
+          set -euo pipefail
+
+          IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          ssh \
+            -i "$RUNNER_TEMP/ssh/ec2_key" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -p "${EC2_PORT:-22}" \
+            "$EC2_USER@$EC2_HOST" \
+            "cd /home/ubuntu/app && ./deploy-be.sh '$IMAGE_URL'"

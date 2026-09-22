@@ -39,3 +39,6 @@ out/
 ### Local configuration ###
 src/main/resources/application-local.yaml
 .DS_Store
+
+### env ###
+.env
