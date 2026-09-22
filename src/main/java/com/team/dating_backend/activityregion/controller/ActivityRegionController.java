@@ -4,7 +4,7 @@ import com.team.dating_backend.activityregion.dto.request.ActivityRegionSearchRe
 import com.team.dating_backend.activityregion.dto.response.ActivityRegionSearchItem;
 import com.team.dating_backend.activityregion.dto.response.ActivityRegionSearchResponse;
 import com.team.dating_backend.activityregion.service.ActivityRegionSearchService;
-import com.team.dating_backend.common.dto.response.ApiResponse;
+import com.team.dating_backend.common.dto.response.SuccessResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,14 +21,14 @@ public class ActivityRegionController {
     private final ActivityRegionSearchService activityRegionSearchService;
 
     @GetMapping
-    public ApiResponse<ActivityRegionSearchResponse> searchRegions(
+    public SuccessResponse<ActivityRegionSearchResponse> searchRegions(
             @Valid @ModelAttribute ActivityRegionSearchRequest request) {
         List<ActivityRegionSearchItem> items =
                 activityRegionSearchService.searchRegions(request.normalizedQuery()).stream()
                         .map(ActivityRegionSearchItem::from)
                         .toList();
 
-        return ApiResponse.success(
+        return SuccessResponse.of(
                 "activity_regions_get_success", new ActivityRegionSearchResponse(items));
     }
 }
