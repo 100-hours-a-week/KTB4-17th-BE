@@ -1,10 +1,19 @@
 package com.team.dating_backend.common.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.common.enums.ErrorCode;
 import java.util.List;
 
-public record ErrorResponse(String errorCode, List<FieldErrorResponse> errors) {
+public record ErrorResponse(
+        String errorCode,
+        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<FieldErrorResponse> errors) {
 
-    public static ErrorResponse invalidRequest(String field, String reason) {
-        return new ErrorResponse("INVALID_REQUEST", List.of(new FieldErrorResponse(field, reason)));
+    public static ErrorResponse of(ErrorCode errorCode) {
+        return new ErrorResponse(errorCode.name(), List.of());
+    }
+
+    public static ErrorResponse invalidRequest(List<FieldErrorResponse> errors) {
+        return new ErrorResponse(CommonErrorCode.INVALID_REQUEST.name(), List.copyOf(errors));
     }
 }
