@@ -1,0 +1,12 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate   # 운영: 스키마 변경 없이 엔티티-테이블 매핑 검증만
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    root: info
+    org.hibernate.SQL: warn   # 운영에서는 SQL 로깅 비활성화(오버헤드 방지)
