@@ -1,0 +1,12 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create   # 개발 중: create / create-drop / update 중 선택
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: debug              # 실행되는 SQL 출력
+    org.hibernate.orm.jdbc.bind: trace    # 바인딩되는 파라미터 값까지 출력
