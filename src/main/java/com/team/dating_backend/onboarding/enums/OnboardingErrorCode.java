@@ -5,7 +5,8 @@ import org.springframework.http.HttpStatus;
 
 public enum OnboardingErrorCode implements ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND),
-    ONBOARDING_ACCESS_NOT_ALLOWED(HttpStatus.FORBIDDEN);
+    ONBOARDING_ACCESS_NOT_ALLOWED(HttpStatus.FORBIDDEN),
+    NICKNAME_ALREADY_IN_USE(HttpStatus.CONFLICT);
 
     private final HttpStatus status;
 
