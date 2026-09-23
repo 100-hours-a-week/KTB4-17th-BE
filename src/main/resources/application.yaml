@@ -1,8 +1,4 @@
 spring:
-  # 활성 프로파일: 환경변수 SPRING_PROFILES_ACTIVE 로 지정, 없으면 local
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
-
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 
@@ -14,11 +10,16 @@ spring:
 
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO}
+    properties:
+      hibernate:
+        format_sql: ${JPA_FORMAT_SQL}
 
 jwt:
   secret: ${JWT_SECRET}
-  pending-expiration-minutes: 10
-  service-expiration-minutes: 60
+  pending-expiration-minutes: ${JWT_PENDING_EXPIRATION_MINUTES}
+  service-expiration-minutes: ${JWT_SERVICE_EXPIRATION_MINUTES}
 
 kakao:
   oauth:
@@ -39,3 +40,14 @@ app:
 
   security:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
+
+  file:
+    s3:
+      bucket: ${AWS_S3_BUCKET}
+      region: ${AWS_S3_REGION}
+      presigned-url-expiration: ${AWS_S3_PRESIGNED_URL_EXPIRATION}
+
+logging:
+  level:
+    org.hibernate.SQL: ${LOGGING_LEVEL_HIBERNATE_SQL}
+    org.hibernate.orm.jdbc.bind: ${LOGGING_LEVEL_HIBERNATE_BIND}
