@@ -20,13 +20,23 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
-        return error(exception.getErrorCode());
+        ErrorCode errorCode = exception.getErrorCode();
+
+        if (errorCode.status().is5xxServerError()) {
+            log.error("Business exception. errorCode={}", errorCode.name(), exception);
+        }
+
+        return error(errorCode);
     }
 
     @ExceptionHandler(RequestValidationException.class)
     public ResponseEntity<ErrorResponse> handleRequestValidation(
             RequestValidationException exception) {
-        return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.status())
+        if (!exception.hasErrors()) {
+            return error(exception.getErrorCode());
+        }
+
+        return ResponseEntity.status(exception.getErrorCode().status())
                 .body(ErrorResponse.invalidRequest(exception.getErrors()));
     }
 
