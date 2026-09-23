@@ -15,7 +15,7 @@ import com.team.dating_backend.onboarding.enums.OnboardingStep;
 import com.team.dating_backend.onboarding.service.OnboardingService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
-import com.team.dating_backend.security.SecurityConfig;
+import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.UserStatus;
