@@ -9,4 +9,6 @@ public interface ProfileRepository extends JpaRepository<Profile, Long> {
     Optional<Profile> findByUserIdAndDeletedAtIsNull(Long userId);
 
     boolean existsByNicknameAndDeletedAtIsNull(String nickname);
+
+    boolean existsByNicknameAndDeletedAtIsNullAndUserIdNot(String nickname, Long userId);
 }

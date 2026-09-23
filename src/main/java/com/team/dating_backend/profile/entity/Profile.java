@@ -32,12 +32,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Entity
 @Table(
         name = "profiles",
-        uniqueConstraints = {
-            @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"),
-            @UniqueConstraint(
-                    name = "uk_profiles_nickname_deleted_at",
-                    columnNames = {"nickname", "deleted_at"})
-        })
+        uniqueConstraints =
+                @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Profile {
 
