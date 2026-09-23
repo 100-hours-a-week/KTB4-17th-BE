@@ -1,4 +1,8 @@
 spring:
+  # 활성 프로파일: 환경변수 SPRING_PROFILES_ACTIVE 로 지정, 없으면 local
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 

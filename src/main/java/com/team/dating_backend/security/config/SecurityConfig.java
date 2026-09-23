@@ -1,7 +1,9 @@
-package com.team.dating_backend.security;
+package com.team.dating_backend.security.config;
 
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.security.config.SecurityProperties;
+import com.team.dating_backend.security.ApiAccessDeniedHandler;
+import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.ServiceJwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;

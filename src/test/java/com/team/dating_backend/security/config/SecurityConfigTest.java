@@ -1,4 +1,4 @@
-package com.team.dating_backend.security;
+package com.team.dating_backend.security.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,7 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.security.config.SecurityProperties;
+import com.team.dating_backend.security.ApiAccessDeniedHandler;
+import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
 import java.util.Map;
