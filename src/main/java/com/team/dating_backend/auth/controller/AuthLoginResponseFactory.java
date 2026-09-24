@@ -26,21 +26,19 @@ public class AuthLoginResponseFactory {
             String serviceToken = jwtService.createServiceAuthToken(authenticated.userId());
 
             return redirect(
-                    destinationFor(authenticated.destination()),
-                    authCookieFactory.accessToken(serviceToken),
-                    authCookieFactory.deletePendingRegistrationToken());
+                destinationFor(authenticated.destination()),
+                authCookieFactory.accessToken(serviceToken),
+                authCookieFactory.deletePendingRegistrationToken());
         }
 
-        SocialLoginResult.PendingRegistration pendingRegistration =
-                (SocialLoginResult.PendingRegistration) loginResult;
-        String pendingToken =
-                jwtService.createPendingRegistrationToken(
-                        pendingRegistration.provider(), pendingRegistration.providerUserId());
+        SocialLoginResult.PendingRegistration pendingRegistration = (SocialLoginResult.PendingRegistration) loginResult;
+        String pendingToken = jwtService.createPendingRegistrationToken(
+            pendingRegistration.provider(), pendingRegistration.providerUserId());
 
         return redirect(
-                destinationFor(LoginDestination.REGISTRATION),
-                authCookieFactory.pendingRegistrationToken(pendingToken),
-                authCookieFactory.deleteAccessToken());
+            destinationFor(LoginDestination.REGISTRATION),
+            authCookieFactory.pendingRegistrationToken(pendingToken),
+            authCookieFactory.deleteAccessToken());
     }
 
     public void validateRedirectUris() {
@@ -50,23 +48,22 @@ public class AuthLoginResponseFactory {
     }
 
     private ResponseEntity<Void> redirect(
-            URI destination, ResponseCookie issuedCookie, ResponseCookie deletedCookie) {
+        URI destination, ResponseCookie issuedCookie, ResponseCookie deletedCookie) {
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(destination)
-                .header(HttpHeaders.SET_COOKIE, issuedCookie.toString())
-                .header(HttpHeaders.SET_COOKIE, deletedCookie.toString())
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("Referrer-Policy", "no-referrer")
-                .build();
+            .location(destination)
+            .header(HttpHeaders.SET_COOKIE, issuedCookie.toString())
+            .header(HttpHeaders.SET_COOKIE, deletedCookie.toString())
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .header("Referrer-Policy", "no-referrer")
+            .build();
     }
 
     private URI destinationFor(LoginDestination destination) {
-        String redirectUri =
-                switch (destination) {
-                    case SERVICE -> authWebProperties.getServiceRedirectUri();
-                    case REGISTRATION -> authWebProperties.getRegistrationRedirectUri();
-                    case ONBOARDING -> authWebProperties.getOnboardingRedirectUri();
-                };
+        String redirectUri = switch (destination) {
+            case SERVICE -> authWebProperties.getServiceRedirectUri();
+            case REGISTRATION -> authWebProperties.getRegistrationRedirectUri();
+            case ONBOARDING -> authWebProperties.getOnboardingRedirectUri();
+        };
 
         if (!StringUtils.hasText(redirectUri)) {
             throw new IllegalStateException("Authentication redirect URI is not configured");

@@ -20,9 +20,9 @@ public class NicknameAvailabilityController {
 
     @GetMapping("/availability")
     public SuccessResponse<NicknameAvailabilityResponse> checkNicknameAvailability(
-            @Valid @ModelAttribute NicknameAvailabilityRequest request) {
+        @Valid @ModelAttribute NicknameAvailabilityRequest request) {
         return SuccessResponse.of(
-                "nickname_availability_check_success",
-                nicknameAvailabilityService.checkNicknameAvailability(request.nickname()));
+            "nickname_availability_check_success",
+            nicknameAvailabilityService.checkNicknameAvailability(request.nickname()));
     }
 }

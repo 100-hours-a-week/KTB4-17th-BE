@@ -12,17 +12,16 @@ import org.springframework.data.repository.query.Param;
 public interface UserAuthAccountRepository extends JpaRepository<UserAuthAccount, Long> {
 
     Optional<UserAuthAccount> findByProviderAndProviderUserId(
-            AuthProvider provider, String providerUserId);
+        AuthProvider provider, String providerUserId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query(
-            """
-            select account
-            from UserAuthAccount account
-            where account.provider = :provider
-              and account.providerUserId = :providerUserId
-            """)
+    @Query("""
+        select account
+        from UserAuthAccount account
+        where account.provider = :provider
+          and account.providerUserId = :providerUserId
+        """)
     Optional<UserAuthAccount> findForUpdateByProviderAndProviderUserId(
-            @Param("provider") AuthProvider provider,
-            @Param("providerUserId") String providerUserId);
+        @Param("provider") AuthProvider provider,
+        @Param("providerUserId") String providerUserId);
 }

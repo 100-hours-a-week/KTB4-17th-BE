@@ -13,13 +13,13 @@ public class OAuthExceptionHandler {
 
     @ExceptionHandler(OAuthInvalidRequestException.class)
     public ResponseEntity<AuthErrorResponse> handleInvalidRequest(
-            OAuthInvalidRequestException exception) {
+        OAuthInvalidRequestException exception) {
         return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST");
     }
 
     @ExceptionHandler(OAuthProviderUnavailableException.class)
     public ResponseEntity<AuthErrorResponse> handleProviderUnavailable(
-            OAuthProviderUnavailableException exception) {
+        OAuthProviderUnavailableException exception) {
         return error(HttpStatus.BAD_GATEWAY, "AUTH_PROVIDER_UNAVAILABLE");
     }
 

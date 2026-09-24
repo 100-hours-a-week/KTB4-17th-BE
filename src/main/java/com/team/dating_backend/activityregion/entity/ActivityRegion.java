@@ -18,10 +18,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Getter
 @Entity
 @Table(name = "activity_regions")
-@Check(
-        constraints =
-                "representative_latitude BETWEEN -90 AND 90 "
-                        + "AND representative_longitude BETWEEN -180 AND 180")
+@Check(constraints = "representative_latitude BETWEEN -90 AND 90 "
+    + "AND representative_longitude BETWEEN -180 AND 180")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ActivityRegion {
 
@@ -53,11 +51,11 @@ public class ActivityRegion {
     private LocalDateTime updatedAt;
 
     public ActivityRegion(
-            String regionCode,
-            String provinceName,
-            String regionName,
-            BigDecimal representativeLatitude,
-            BigDecimal representativeLongitude) {
+        String regionCode,
+        String provinceName,
+        String regionName,
+        BigDecimal representativeLatitude,
+        BigDecimal representativeLongitude) {
         this.regionCode = regionCode;
         this.provinceName = provinceName;
         this.regionName = regionName;

@@ -13,8 +13,8 @@ public class UserRegistrationExceptionHandler {
 
     @ExceptionHandler({JwtException.class, PendingRegistrationAccessDeniedException.class})
     public ResponseEntity<AuthErrorResponse> handlePendingRegistrationAuthorizationFailure(
-            RuntimeException exception) {
+        RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(new AuthErrorResponse("AUTH_REQUIRED"));
+            .body(new AuthErrorResponse("AUTH_REQUIRED"));
     }
 }

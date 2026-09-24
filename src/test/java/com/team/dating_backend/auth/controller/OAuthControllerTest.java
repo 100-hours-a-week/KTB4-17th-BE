@@ -34,15 +34,20 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(OAuthController.class)
 class OAuthControllerTest {
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private OAuthProviderClientRegistry oauthProviderClientRegistry;
+    @MockitoBean
+    private OAuthProviderClientRegistry oauthProviderClientRegistry;
 
-    @MockitoBean private OAuthStateService oauthStateService;
+    @MockitoBean
+    private OAuthStateService oauthStateService;
 
-    @MockitoBean private SocialLoginService socialLoginService;
+    @MockitoBean
+    private SocialLoginService socialLoginService;
 
-    @MockitoBean private AuthLoginResponseFactory authLoginResponseFactory;
+    @MockitoBean
+    private AuthLoginResponseFactory authLoginResponseFactory;
 
     @Test
     void 카카오_로그인_시작은_state를_만들고_카카오_인가_URL로_리다이렉트한다() throws Exception {
@@ -50,18 +55,18 @@ class OAuthControllerTest {
         OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
         given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
         given(oauthStateService.createState(eq(AuthProvider.KAKAO), any(HttpSession.class)))
-                .willReturn("state-value");
+            .willReturn("state-value");
         given(kakaoClient.createAuthorizationUrl("state-value"))
-                .willReturn("https://kauth.kakao.com/oauth/authorize?state=state-value");
+            .willReturn("https://kauth.kakao.com/oauth/authorize?state=state-value");
 
         // when & then
         mockMvc.perform(get("/api/v1/auth/kakao"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(
-                        header().string(
-                                        "Location",
-                                        "https://kauth.kakao.com/oauth/authorize?state=state-value"));
+            .andExpect(status().isFound())
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(
+                header().string(
+                    "Location",
+                    "https://kauth.kakao.com/oauth/authorize?state=state-value"));
 
         verify(oauthProviderClientRegistry).get(AuthProvider.KAKAO);
         verify(authLoginResponseFactory).validateRedirectUris();
@@ -73,14 +78,14 @@ class OAuthControllerTest {
     void 콜백에_code가_없으면_INVALID_REQUEST를_반환하고_외부_API를_호출하지_않는다() throws Exception {
         // when & then
         mockMvc.perform(get("/api/v1/auth/kakao/callback").param("state", "state-value"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
 
         verifyNoInteractions(
-                oauthProviderClientRegistry,
-                oauthStateService,
-                socialLoginService,
-                authLoginResponseFactory);
+            oauthProviderClientRegistry,
+            oauthStateService,
+            socialLoginService,
+            authLoginResponseFactory);
     }
 
     @Test
@@ -88,12 +93,10 @@ class OAuthControllerTest {
         // given
         OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
         OAuthIdentity identity = new OAuthIdentity(AuthProvider.KAKAO, "kakao-123");
-        SocialLoginResult loginResult =
-                new SocialLoginResult.Authenticated(1L, LoginDestination.SERVICE);
-        ResponseEntity<Void> loginResponse =
-                ResponseEntity.status(HttpStatus.FOUND)
-                        .location(URI.create("https://frontend.example.com/service"))
-                        .build();
+        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L, LoginDestination.SERVICE);
+        ResponseEntity<Void> loginResponse = ResponseEntity.status(HttpStatus.FOUND)
+            .location(URI.create("https://frontend.example.com/service"))
+            .build();
 
         given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
         given(kakaoClient.requestIdentity("authorization-code")).willReturn(identity);
@@ -102,15 +105,15 @@ class OAuthControllerTest {
 
         // when & then
         mockMvc.perform(
-                        get("/api/v1/auth/kakao/callback")
-                                .param("code", "authorization-code")
-                                .param("state", "state-value"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://frontend.example.com/service"));
+            get("/api/v1/auth/kakao/callback")
+                .param("code", "authorization-code")
+                .param("state", "state-value"))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", "https://frontend.example.com/service"));
 
         verify(oauthStateService)
-                .validateAndConsumeState(
-                        eq(AuthProvider.KAKAO), eq("state-value"), any(HttpSession.class));
+            .validateAndConsumeState(
+                eq(AuthProvider.KAKAO), eq("state-value"), any(HttpSession.class));
         verify(kakaoClient).requestIdentity("authorization-code");
         verify(socialLoginService).login(AuthProvider.KAKAO, "kakao-123");
         verify(authLoginResponseFactory).validateRedirectUris();
@@ -123,20 +126,20 @@ class OAuthControllerTest {
         OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
         given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
         willThrow(new OAuthProviderUnavailableException())
-                .given(kakaoClient)
-                .requestIdentity("authorization-code");
+            .given(kakaoClient)
+            .requestIdentity("authorization-code");
 
         // when & then
         mockMvc.perform(
-                        get("/api/v1/auth/kakao/callback")
-                                .param("code", "authorization-code")
-                                .param("state", "state-value"))
-                .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.errorCode").value("AUTH_PROVIDER_UNAVAILABLE"));
+            get("/api/v1/auth/kakao/callback")
+                .param("code", "authorization-code")
+                .param("state", "state-value"))
+            .andExpect(status().isBadGateway())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_PROVIDER_UNAVAILABLE"));
 
         verify(oauthStateService)
-                .validateAndConsumeState(
-                        eq(AuthProvider.KAKAO), eq("state-value"), any(HttpSession.class));
+            .validateAndConsumeState(
+                eq(AuthProvider.KAKAO), eq("state-value"), any(HttpSession.class));
         verify(kakaoClient).requestIdentity("authorization-code");
         verify(authLoginResponseFactory).validateRedirectUris();
         verifyNoInteractions(socialLoginService);

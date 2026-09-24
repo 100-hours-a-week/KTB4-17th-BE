@@ -26,8 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProfileSaveService {
 
-    private static final String ACTIVITY_REGION_NOT_FOUND_REASON =
-            "must reference an existing activity region";
+    private static final String ACTIVITY_REGION_NOT_FOUND_REASON = "must reference an existing activity region";
     private static final String ACTIVE_NICKNAME_UNIQUE_INDEX = "uk_profiles_active_nickname";
 
     private final UserRepository userRepository;
@@ -36,12 +35,10 @@ public class ProfileSaveService {
 
     @Transactional
     public ProfileSaveResult saveProfile(Long userId, ProfileSaveRequest request) {
-        User user =
-                userRepository
-                        .findById(userId)
-                        .orElseThrow(() -> new UserNotFoundException(userId));
-        Optional<Profile> existingProfile =
-                profileRepository.findByUserIdAndDeletedAtIsNull(userId);
+        User user = userRepository
+            .findById(userId)
+            .orElseThrow(() -> new UserNotFoundException(userId));
+        Optional<Profile> existingProfile = profileRepository.findByUserIdAndDeletedAtIsNull(userId);
         boolean created = existingProfile.isEmpty();
         Profile profile = existingProfile.orElseGet(() -> new Profile(user));
 
@@ -49,20 +46,19 @@ public class ProfileSaveService {
         ActivityRegion activityRegion = findActivityRegion(request.activityRegionId());
 
         profile.updateProfile(
-                activityRegion,
-                request.nickname(),
-                request.heightAsShort(),
-                request.bodyType(),
-                request.educationLevel(),
-                request.job(),
-                request.religion(),
-                request.mbti(),
-                request.drinking(),
-                request.smoking());
+            activityRegion,
+            request.nickname(),
+            request.heightAsShort(),
+            request.bodyType(),
+            request.educationLevel(),
+            request.job(),
+            request.religion(),
+            request.mbti(),
+            request.drinking(),
+            request.smoking());
 
         Profile savedProfile = saveAndFlush(profile);
-        ProfileSaveResponse response =
-                new ProfileSaveResponse(ProfileSaveProfileResponse.from(savedProfile));
+        ProfileSaveResponse response = new ProfileSaveResponse(ProfileSaveProfileResponse.from(savedProfile));
         return new ProfileSaveResult(created, response);
     }
 
@@ -83,8 +79,8 @@ public class ProfileSaveService {
             if (current instanceof ConstraintViolationException constraintViolation) {
                 String constraintName = constraintViolation.getConstraintName();
                 if (ACTIVE_NICKNAME_UNIQUE_INDEX.equals(constraintName)
-                        || (constraintName != null
-                                && constraintName.endsWith("." + ACTIVE_NICKNAME_UNIQUE_INDEX))) {
+                    || (constraintName != null
+                        && constraintName.endsWith("." + ACTIVE_NICKNAME_UNIQUE_INDEX))) {
                     return true;
                 }
             }
@@ -95,8 +91,8 @@ public class ProfileSaveService {
 
     private void validateNickname(String nickname, Long userId) {
         if (nickname != null
-                && profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(
-                        nickname, userId)) {
+            && profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(
+                nickname, userId)) {
             throw new NicknameAlreadyInUseException(nickname);
         }
     }
@@ -107,13 +103,12 @@ public class ProfileSaveService {
         }
 
         return activityRegionRepository
-                .findById(activityRegionId)
-                .orElseThrow(
-                        () ->
-                                new RequestValidationException(
-                                        List.of(
-                                                new FieldErrorResponse(
-                                                        "activityRegionId",
-                                                        ACTIVITY_REGION_NOT_FOUND_REASON))));
+            .findById(activityRegionId)
+            .orElseThrow(
+                () -> new RequestValidationException(
+                    List.of(
+                        new FieldErrorResponse(
+                            "activityRegionId",
+                            ACTIVITY_REGION_NOT_FOUND_REASON))));
     }
 }

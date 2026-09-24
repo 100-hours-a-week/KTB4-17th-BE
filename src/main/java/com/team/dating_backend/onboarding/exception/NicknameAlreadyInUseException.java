@@ -7,7 +7,7 @@ public class NicknameAlreadyInUseException extends BusinessException {
 
     public NicknameAlreadyInUseException(String nickname) {
         super(
-                OnboardingErrorCode.NICKNAME_ALREADY_IN_USE,
-                "Nickname is already in use: " + nickname);
+            OnboardingErrorCode.NICKNAME_ALREADY_IN_USE,
+            "Nickname is already in use: " + nickname);
     }
 }

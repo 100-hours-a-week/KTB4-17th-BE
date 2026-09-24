@@ -24,13 +24,12 @@ public class S3FileStorage implements FileStorage {
     @Override
     public void upload(String storageKey, byte[] content, String mimeType) {
         try {
-            PutObjectRequest request =
-                    PutObjectRequest.builder()
-                            .bucket(s3Properties.getBucket())
-                            .key(storageKey)
-                            .contentType(mimeType)
-                            .contentLength((long) content.length)
-                            .build();
+            PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(s3Properties.getBucket())
+                .key(storageKey)
+                .contentType(mimeType)
+                .contentLength((long) content.length)
+                .build();
 
             s3Client.putObject(request, RequestBody.fromBytes(content));
         } catch (SdkException exception) {
@@ -41,17 +40,15 @@ public class S3FileStorage implements FileStorage {
     @Override
     public String createReadUrl(String storageKey) {
         try {
-            GetObjectRequest getObjectRequest =
-                    GetObjectRequest.builder()
-                            .bucket(s3Properties.getBucket())
-                            .key(storageKey)
-                            .build();
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(s3Properties.getBucket())
+                .key(storageKey)
+                .build();
 
-            GetObjectPresignRequest presignRequest =
-                    GetObjectPresignRequest.builder()
-                            .signatureDuration(s3Properties.getPresignedUrlExpiration())
-                            .getObjectRequest(getObjectRequest)
-                            .build();
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(s3Properties.getPresignedUrlExpiration())
+                .getObjectRequest(getObjectRequest)
+                .build();
 
             return s3Presigner.presignGetObject(presignRequest).url().toString();
         } catch (SdkException exception) {
@@ -62,11 +59,10 @@ public class S3FileStorage implements FileStorage {
     @Override
     public void delete(String storageKey) {
         try {
-            DeleteObjectRequest request =
-                    DeleteObjectRequest.builder()
-                            .bucket(s3Properties.getBucket())
-                            .key(storageKey)
-                            .build();
+            DeleteObjectRequest request = DeleteObjectRequest.builder()
+                .bucket(s3Properties.getBucket())
+                .key(storageKey)
+                .build();
 
             s3Client.deleteObject(request);
         } catch (SdkException exception) {

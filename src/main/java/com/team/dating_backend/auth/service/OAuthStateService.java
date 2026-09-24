@@ -24,7 +24,7 @@ public class OAuthStateService {
     }
 
     public void validateAndConsumeState(
-            AuthProvider provider, String receivedState, HttpSession session) {
+        AuthProvider provider, String receivedState, HttpSession session) {
         String stateKey = stateKey(provider);
         String createdAtKey = stateCreatedAtKey(provider);
 

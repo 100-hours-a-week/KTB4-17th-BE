@@ -20,14 +20,12 @@ class OAuthStateServiceTest {
 
         // when & then
         assertDoesNotThrow(
-                () ->
-                        oauthStateService.validateAndConsumeState(
-                                AuthProvider.KAKAO, state, session));
+            () -> oauthStateService.validateAndConsumeState(
+                AuthProvider.KAKAO, state, session));
         assertThrows(
-                OAuthInvalidRequestException.class,
-                () ->
-                        oauthStateService.validateAndConsumeState(
-                                AuthProvider.KAKAO, state, session));
+            OAuthInvalidRequestException.class,
+            () -> oauthStateService.validateAndConsumeState(
+                AuthProvider.KAKAO, state, session));
     }
 
     @Test
@@ -38,14 +36,12 @@ class OAuthStateServiceTest {
 
         // when & then
         assertThrows(
-                OAuthInvalidRequestException.class,
-                () ->
-                        oauthStateService.validateAndConsumeState(
-                                AuthProvider.KAKAO, "wrong-state", session));
+            OAuthInvalidRequestException.class,
+            () -> oauthStateService.validateAndConsumeState(
+                AuthProvider.KAKAO, "wrong-state", session));
         assertThrows(
-                OAuthInvalidRequestException.class,
-                () ->
-                        oauthStateService.validateAndConsumeState(
-                                AuthProvider.KAKAO, state, session));
+            OAuthInvalidRequestException.class,
+            () -> oauthStateService.validateAndConsumeState(
+                AuthProvider.KAKAO, state, session));
     }
 }

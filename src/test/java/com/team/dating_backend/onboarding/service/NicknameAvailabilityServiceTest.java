@@ -27,8 +27,7 @@ class NicknameAvailabilityServiceTest {
     void 활성_프로필에_동일한_닉네임이_없으면_사용_가능하다() {
         given(profileRepository.existsByNicknameAndDeletedAtIsNull(NICKNAME)).willReturn(false);
 
-        NicknameAvailabilityResponse response =
-                nicknameAvailabilityService.checkNicknameAvailability(NICKNAME);
+        NicknameAvailabilityResponse response = nicknameAvailabilityService.checkNicknameAvailability(NICKNAME);
 
         assertThat(response.available()).isTrue();
         verify(profileRepository).existsByNicknameAndDeletedAtIsNull(NICKNAME);
@@ -38,8 +37,7 @@ class NicknameAvailabilityServiceTest {
     void 활성_프로필에_동일한_닉네임이_있으면_사용_불가능하다() {
         given(profileRepository.existsByNicknameAndDeletedAtIsNull(NICKNAME)).willReturn(true);
 
-        NicknameAvailabilityResponse response =
-                nicknameAvailabilityService.checkNicknameAvailability(NICKNAME);
+        NicknameAvailabilityResponse response = nicknameAvailabilityService.checkNicknameAvailability(NICKNAME);
 
         assertThat(response.available()).isFalse();
         verify(profileRepository).existsByNicknameAndDeletedAtIsNull(NICKNAME);

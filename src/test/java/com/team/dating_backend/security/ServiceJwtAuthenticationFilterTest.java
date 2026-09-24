@@ -60,9 +60,8 @@ class ServiceJwtAuthenticationFilterTest {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         assertTrue(authentication.isAuthenticated());
 
-        ServiceAuthenticationPrincipal principal =
-                assertInstanceOf(
-                        ServiceAuthenticationPrincipal.class, authentication.getPrincipal());
+        ServiceAuthenticationPrincipal principal = assertInstanceOf(
+            ServiceAuthenticationPrincipal.class, authentication.getPrincipal());
 
         assertEquals(123L, principal.userId());
         verify(filterChain).doFilter(request, response);
@@ -102,8 +101,7 @@ class ServiceJwtAuthenticationFilterTest {
     @Test
     void Pending_토큰은_ACCESS_TOKEN으로_인증되지_않는다() throws Exception {
         // given
-        String pendingToken =
-                jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
+        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setCookies(new Cookie(AuthCookieFactory.ACCESS_TOKEN_COOKIE, pendingToken));
         MockHttpServletResponse response = new MockHttpServletResponse();

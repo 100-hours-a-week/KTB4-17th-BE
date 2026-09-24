@@ -22,34 +22,37 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(UserRegistrationController.class)
 class UserRegistrationControllerTest {
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private UserRegistrationService userRegistrationService;
+    @MockitoBean
+    private UserRegistrationService userRegistrationService;
 
-    @MockitoBean private AuthCookieFactory authCookieFactory;
+    @MockitoBean
+    private AuthCookieFactory authCookieFactory;
 
     @Test
     void 재사용된_Pending_토큰은_AUTH_REQUIRED를_반환한다() throws Exception {
         // given
         given(
-                        userRegistrationService.registerUser(
-                                eq("stale-pending"), any(UserRegistrationRequest.class)))
-                .willThrow(new PendingRegistrationAccessDeniedException());
+            userRegistrationService.registerUser(
+                eq("stale-pending"), any(UserRegistrationRequest.class)))
+            .willThrow(new PendingRegistrationAccessDeniedException());
 
         // when & then
         mockMvc.perform(
-                        put("/api/v1/registration/identity")
-                                .cookie(new Cookie("PENDING_REGISTRATION_TOKEN", "stale-pending"))
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        """
-                                        {
-                                          "name": "우",
-                                          "birthDate": "2000-01-01",
-                                          "gender": "MALE"
-                                        }
-                                        """))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+            put("/api/v1/registration/identity")
+                .cookie(new Cookie("PENDING_REGISTRATION_TOKEN", "stale-pending"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "name": "우",
+                          "birthDate": "2000-01-01",
+                          "gender": "MALE"
+                        }
+                        """))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 }

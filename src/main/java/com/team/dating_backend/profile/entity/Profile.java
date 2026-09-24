@@ -30,10 +30,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 @Getter
 @Entity
-@Table(
-        name = "profiles",
-        uniqueConstraints =
-                @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"))
+@Table(name = "profiles", uniqueConstraints = @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Profile {
 
@@ -98,16 +95,16 @@ public class Profile {
     }
 
     public void updateProfile(
-            ActivityRegion activityRegion,
-            String nickname,
-            Short height,
-            BodyType bodyType,
-            EducationLevel educationLevel,
-            String job,
-            Religion religion,
-            Mbti mbti,
-            Drinking drinking,
-            Smoking smoking) {
+        ActivityRegion activityRegion,
+        String nickname,
+        Short height,
+        BodyType bodyType,
+        EducationLevel educationLevel,
+        String job,
+        Religion religion,
+        Mbti mbti,
+        Drinking drinking,
+        Smoking smoking) {
         this.activityRegion = activityRegion;
         this.nickname = nickname;
         this.height = height;

@@ -22,22 +22,23 @@ import org.springframework.test.web.servlet.MockMvc;
 class NicknameAvailabilityControllerTest {
 
     private static final String NICKNAME = "하리";
-    private static final String VALIDATION_REASON =
-            "must be 2 to 10 characters using Korean, English letters, or digits";
+    private static final String VALIDATION_REASON = "must be 2 to 10 characters using Korean, English letters, or digits";
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private NicknameAvailabilityService nicknameAvailabilityService;
+    @MockitoBean
+    private NicknameAvailabilityService nicknameAvailabilityService;
 
     @Test
     void 사용_가능한_닉네임이면_200과_true를_반환한다() throws Exception {
         given(nicknameAvailabilityService.checkNicknameAvailability(NICKNAME))
-                .willReturn(new NicknameAvailabilityResponse(true));
+            .willReturn(new NicknameAvailabilityResponse(true));
 
         mockMvc.perform(get("/api/v1/nicknames/availability").param("nickname", NICKNAME))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("nickname_availability_check_success"))
-                .andExpect(jsonPath("$.data.available").value(true));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("nickname_availability_check_success"))
+            .andExpect(jsonPath("$.data.available").value(true));
 
         verify(nicknameAvailabilityService).checkNicknameAvailability(NICKNAME);
     }
@@ -45,12 +46,12 @@ class NicknameAvailabilityControllerTest {
     @Test
     void 중복된_닉네임이면_200과_false를_반환한다() throws Exception {
         given(nicknameAvailabilityService.checkNicknameAvailability(NICKNAME))
-                .willReturn(new NicknameAvailabilityResponse(false));
+            .willReturn(new NicknameAvailabilityResponse(false));
 
         mockMvc.perform(get("/api/v1/nicknames/availability").param("nickname", NICKNAME))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("nickname_availability_check_success"))
-                .andExpect(jsonPath("$.data.available").value(false));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("nickname_availability_check_success"))
+            .andExpect(jsonPath("$.data.available").value(false));
 
         verify(nicknameAvailabilityService).checkNicknameAvailability(NICKNAME);
     }
@@ -58,10 +59,10 @@ class NicknameAvailabilityControllerTest {
     @Test
     void 닉네임이_누락되면_400과_검증_오류를_반환한다() throws Exception {
         mockMvc.perform(get("/api/v1/nicknames/availability"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-                .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
+            .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
 
         verifyNoInteractions(nicknameAvailabilityService);
     }
@@ -71,10 +72,10 @@ class NicknameAvailabilityControllerTest {
     @ValueSource(strings = {"한", "12345678901", " ", "닉네임!", "nick name"})
     void 닉네임_형식이_올바르지_않으면_400과_검증_오류를_반환한다(String nickname) throws Exception {
         mockMvc.perform(get("/api/v1/nicknames/availability").param("nickname", nickname))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-                .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
+            .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
 
         verifyNoInteractions(nicknameAvailabilityService);
     }

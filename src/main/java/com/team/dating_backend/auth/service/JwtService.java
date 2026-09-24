@@ -29,17 +29,16 @@ public class JwtService {
 
     public String createPendingRegistrationToken(AuthProvider provider, String providerUserId) {
         Instant issuedAt = Instant.now();
-        Instant expiresAt =
-                issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
+        Instant expiresAt = issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
 
         return Jwts.builder()
-                .claim(PROVIDER_CLAIM, provider.name())
-                .claim(PROVIDER_USER_ID_CLAIM, providerUserId)
-                .claim(PURPOSE_CLAIM, PENDING_REGISTRATION_PURPOSE)
-                .issuedAt(Date.from(issuedAt))
-                .expiration(Date.from(expiresAt))
-                .signWith(signingKey())
-                .compact();
+            .claim(PROVIDER_CLAIM, provider.name())
+            .claim(PROVIDER_USER_ID_CLAIM, providerUserId)
+            .claim(PURPOSE_CLAIM, PENDING_REGISTRATION_PURPOSE)
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(expiresAt))
+            .signWith(signingKey())
+            .compact();
     }
 
     private SecretKey signingKey() {
@@ -51,12 +50,11 @@ public class JwtService {
             throw new JwtException("Pending registration token is missing");
         }
 
-        Claims claims =
-                Jwts.parser()
-                        .verifyWith(signingKey())
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload();
+        Claims claims = Jwts.parser()
+            .verifyWith(signingKey())
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
 
         String purpose = claims.get(PURPOSE_CLAIM, String.class);
 
@@ -68,9 +66,9 @@ public class JwtService {
         String providerUserId = claims.get(PROVIDER_USER_ID_CLAIM, String.class);
 
         if (providerValue == null
-                || providerValue.isBlank()
-                || providerUserId == null
-                || providerUserId.isBlank()) {
+            || providerValue.isBlank()
+            || providerUserId == null
+            || providerUserId.isBlank()) {
             throw new JwtException("Required pending registration token claim is missing");
         }
 
@@ -86,16 +84,15 @@ public class JwtService {
     public String createServiceAuthToken(Long userId) {
         Instant issuedAt = Instant.now();
 
-        Instant expiresAt =
-                issuedAt.plus(jwtProperties.getServiceExpirationMinutes(), ChronoUnit.MINUTES);
+        Instant expiresAt = issuedAt.plus(jwtProperties.getServiceExpirationMinutes(), ChronoUnit.MINUTES);
 
         return Jwts.builder()
-                .subject(userId.toString())
-                .claim(PURPOSE_CLAIM, SERVICE_AUTH_PURPOSE)
-                .issuedAt(Date.from(issuedAt))
-                .expiration(Date.from(expiresAt))
-                .signWith(signingKey())
-                .compact();
+            .subject(userId.toString())
+            .claim(PURPOSE_CLAIM, SERVICE_AUTH_PURPOSE)
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(expiresAt))
+            .signWith(signingKey())
+            .compact();
     }
 
     public Long parseServiceAuthToken(String token) {
@@ -103,12 +100,11 @@ public class JwtService {
             throw new JwtException("Service auth token is missing");
         }
 
-        Claims claims =
-                Jwts.parser()
-                        .verifyWith(signingKey())
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload();
+        Claims claims = Jwts.parser()
+            .verifyWith(signingKey())
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
 
         String purpose = claims.get(PURPOSE_CLAIM, String.class);
 

@@ -27,9 +27,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 
 @Tag("s3-integration")
-@SpringBootTest(
-        classes = S3FileStorageIntegrationTest.S3StorageTestConfiguration.class,
-        webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(classes = S3FileStorageIntegrationTest.S3StorageTestConfiguration.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class S3FileStorageIntegrationTest {
 
     private static final String MIME_TYPE = "image/png";
@@ -51,11 +49,14 @@ class S3FileStorageIntegrationTest {
         }
     }
 
-    @Autowired private S3FileStorage s3FileStorage;
+    @Autowired
+    private S3FileStorage s3FileStorage;
 
-    @Autowired private S3Client s3Client;
+    @Autowired
+    private S3Client s3Client;
 
-    @Autowired private S3Properties s3Properties;
+    @Autowired
+    private S3Properties s3Properties;
 
     @Test
     void 실제_S3에_이미지를_업로드하고_Presigned_URL로_조회한다() throws Exception {
@@ -67,12 +68,11 @@ class S3FileStorageIntegrationTest {
             s3FileStorage.upload(storageKey, TEST_IMAGE, MIME_TYPE);
 
             // Then
-            HeadObjectResponse savedObject =
-                    s3Client.headObject(
-                            HeadObjectRequest.builder()
-                                    .bucket(s3Properties.getBucket())
-                                    .key(storageKey)
-                                    .build());
+            HeadObjectResponse savedObject = s3Client.headObject(
+                HeadObjectRequest.builder()
+                    .bucket(s3Properties.getBucket())
+                    .key(storageKey)
+                    .build());
 
             assertThat(savedObject.contentType()).isEqualTo(MIME_TYPE);
             assertThat(savedObject.contentLength()).isEqualTo((long) TEST_IMAGE.length);
@@ -81,11 +81,10 @@ class S3FileStorageIntegrationTest {
             String presignedUrl = s3FileStorage.createReadUrl(storageKey);
 
             // Then
-            HttpResponse<byte[]> response =
-                    HttpClient.newHttpClient()
-                            .send(
-                                    HttpRequest.newBuilder(URI.create(presignedUrl)).GET().build(),
-                                    HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response = HttpClient.newHttpClient()
+                .send(
+                    HttpRequest.newBuilder(URI.create(presignedUrl)).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
 
             assertThat(response.statusCode()).isEqualTo(200);
             assertThat(response.body()).containsExactly(TEST_IMAGE);

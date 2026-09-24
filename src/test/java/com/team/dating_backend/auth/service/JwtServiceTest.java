@@ -13,10 +13,9 @@ import org.junit.jupiter.api.Test;
 
 class JwtServiceTest {
 
-    private static final String TEST_SECRET =
-            Base64.getEncoder()
-                    .encodeToString(
-                            "01234567890123456789012345678901".getBytes(StandardCharsets.UTF_8));
+    private static final String TEST_SECRET = Base64.getEncoder()
+        .encodeToString(
+            "01234567890123456789012345678901".getBytes(StandardCharsets.UTF_8));
 
     private JwtService jwtService;
 
@@ -45,8 +44,7 @@ class JwtServiceTest {
     @Test
     void Pending_토큰은_서비스_인증_토큰으로_인정하지_않는다() {
         // given
-        String pendingToken =
-                jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
+        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
 
         // when & then
         assertThrows(JwtException.class, () -> jwtService.parseServiceAuthToken(pendingToken));
@@ -71,7 +69,7 @@ class JwtServiceTest {
 
         // when & then
         assertThrows(
-                JwtException.class, () -> expiredJwtService.parseServiceAuthToken(expiredToken));
+            JwtException.class, () -> expiredJwtService.parseServiceAuthToken(expiredToken));
     }
 
     @Test
@@ -81,10 +79,10 @@ class JwtServiceTest {
 
         JwtProperties differentProperties = new JwtProperties();
         differentProperties.setSecret(
-                Base64.getEncoder()
-                        .encodeToString(
-                                "different-secret-0123456789012345"
-                                        .getBytes(StandardCharsets.UTF_8)));
+            Base64.getEncoder()
+                .encodeToString(
+                    "different-secret-0123456789012345"
+                        .getBytes(StandardCharsets.UTF_8)));
         differentProperties.setServiceExpirationMinutes(60);
 
         JwtService differentJwtService = new JwtService(differentProperties);

@@ -24,17 +24,15 @@ public class UserRegistrationService {
 
     @Transactional
     public String registerUser(String pendingRegistrationToken, UserRegistrationRequest request) {
-        PendingRegistrationTokenPayload payload =
-                jwtService.parsePendingRegistrationToken(pendingRegistrationToken);
+        PendingRegistrationTokenPayload payload = jwtService.parsePendingRegistrationToken(pendingRegistrationToken);
 
-        UserAuthAccount existingAccount =
-                userAuthAccountRepository
-                        .findForUpdateByProviderAndProviderUserId(
-                                payload.provider(), payload.providerUserId())
-                        .orElse(null);
+        UserAuthAccount existingAccount = userAuthAccountRepository
+            .findForUpdateByProviderAndProviderUserId(
+                payload.provider(), payload.providerUserId())
+            .orElse(null);
 
         if (existingAccount != null
-                && existingAccount.getUser().getStatus() != UserStatus.WITHDRAWN) {
+            && existingAccount.getUser().getStatus() != UserStatus.WITHDRAWN) {
             throw new PendingRegistrationAccessDeniedException();
         }
 
@@ -45,9 +43,8 @@ public class UserRegistrationService {
         User savedUser = userRepository.save(user);
 
         if (existingAccount == null) {
-            UserAuthAccount userAuthAccount =
-                    UserAuthAccount.create(
-                            savedUser, payload.provider(), payload.providerUserId(), now);
+            UserAuthAccount userAuthAccount = UserAuthAccount.create(
+                savedUser, payload.provider(), payload.providerUserId(), now);
 
             userAuthAccountRepository.save(userAuthAccount);
         } else {

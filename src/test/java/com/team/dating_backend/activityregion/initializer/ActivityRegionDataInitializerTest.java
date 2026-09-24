@@ -30,7 +30,8 @@ class ActivityRegionDataInitializerTest {
 
     private static final String CSV_PATH = "data/activity-regions-2025.csv";
 
-    @Mock private ActivityRegionRepository activityRegionRepository;
+    @Mock
+    private ActivityRegionRepository activityRegionRepository;
 
     private ActivityRegionDataInitializer activityRegionDataInitializer;
 
@@ -52,16 +53,16 @@ class ActivityRegionDataInitializerTest {
         List<ActivityRegion> savedRegions = toList(regionsCaptor.getValue());
         assertThat(savedRegions).hasSize(csvRegions.size());
         assertThat(savedRegions)
-                .anySatisfy(
-                        activityRegion -> {
-                            assertThat(activityRegion.getRegionCode()).isEqualTo("11010");
-                            assertThat(activityRegion.getProvinceName()).isEqualTo("서울특별시");
-                            assertThat(activityRegion.getRegionName()).isEqualTo("종로구");
-                            assertThat(activityRegion.getRepresentativeLatitude())
-                                    .isEqualByComparingTo("37.594916");
-                            assertThat(activityRegion.getRepresentativeLongitude())
-                                    .isEqualByComparingTo("126.977313");
-                        });
+            .anySatisfy(
+                activityRegion -> {
+                    assertThat(activityRegion.getRegionCode()).isEqualTo("11010");
+                    assertThat(activityRegion.getProvinceName()).isEqualTo("서울특별시");
+                    assertThat(activityRegion.getRegionName()).isEqualTo("종로구");
+                    assertThat(activityRegion.getRepresentativeLatitude())
+                        .isEqualByComparingTo("37.594916");
+                    assertThat(activityRegion.getRepresentativeLongitude())
+                        .isEqualByComparingTo("126.977313");
+                });
     }
 
     @Test
@@ -81,9 +82,9 @@ class ActivityRegionDataInitializerTest {
         given(activityRegionRepository.count()).willReturn(csvRegionCount - 1);
 
         assertThatThrownBy(
-                        () -> activityRegionDataInitializer.run(new DefaultApplicationArguments()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Activity region data is partially loaded");
+            () -> activityRegionDataInitializer.run(new DefaultApplicationArguments()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Activity region data is partially loaded");
 
         verify(activityRegionRepository, never()).saveAll(any());
         verify(activityRegionRepository, never()).findAll();
@@ -91,23 +92,22 @@ class ActivityRegionDataInitializerTest {
 
     @Test
     void 동일한_개수라도_지역_코드가_CSV와_다르면_애플리케이션_시작에_실패한다() throws Exception {
-        List<ActivityRegion> persistedRegions =
-                new ArrayList<>(toActivityRegions(readCsvActivityRegions()));
+        List<ActivityRegion> persistedRegions = new ArrayList<>(toActivityRegions(readCsvActivityRegions()));
         persistedRegions.set(
-                0,
-                new ActivityRegion(
-                        "99999",
-                        "서울특별시",
-                        "존재하지않는지역",
-                        new BigDecimal("37.594916"),
-                        new BigDecimal("126.977313")));
+            0,
+            new ActivityRegion(
+                "99999",
+                "서울특별시",
+                "존재하지않는지역",
+                new BigDecimal("37.594916"),
+                new BigDecimal("126.977313")));
         given(activityRegionRepository.count()).willReturn((long) persistedRegions.size());
         given(activityRegionRepository.findAll()).willReturn(persistedRegions);
 
         assertThatThrownBy(
-                        () -> activityRegionDataInitializer.run(new DefaultApplicationArguments()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Activity region data does not match the CSV");
+            () -> activityRegionDataInitializer.run(new DefaultApplicationArguments()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Activity region data does not match the CSV");
 
         verify(activityRegionRepository, never()).saveAll(any());
     }
@@ -115,9 +115,8 @@ class ActivityRegionDataInitializerTest {
     private List<CsvActivityRegion> readCsvActivityRegions() throws IOException {
         ClassPathResource resource = new ClassPathResource(CSV_PATH);
 
-        try (BufferedReader reader =
-                new BufferedReader(
-                        new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(
+            new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             reader.readLine();
             List<CsvActivityRegion> regions = new ArrayList<>();
             String line;
@@ -129,12 +128,12 @@ class ActivityRegionDataInitializerTest {
 
                 String[] values = line.split(",", -1);
                 regions.add(
-                        new CsvActivityRegion(
-                                values[0].trim(),
-                                values[1].trim(),
-                                values[2].trim(),
-                                new BigDecimal(values[3].trim()),
-                                new BigDecimal(values[4].trim())));
+                    new CsvActivityRegion(
+                        values[0].trim(),
+                        values[1].trim(),
+                        values[2].trim(),
+                        new BigDecimal(values[3].trim()),
+                        new BigDecimal(values[4].trim())));
             }
             return regions;
         }
@@ -142,15 +141,14 @@ class ActivityRegionDataInitializerTest {
 
     private List<ActivityRegion> toActivityRegions(List<CsvActivityRegion> csvRegions) {
         return csvRegions.stream()
-                .map(
-                        csvRegion ->
-                                new ActivityRegion(
-                                        csvRegion.regionCode(),
-                                        csvRegion.provinceName(),
-                                        csvRegion.regionName(),
-                                        csvRegion.representativeLatitude(),
-                                        csvRegion.representativeLongitude()))
-                .toList();
+            .map(
+                csvRegion -> new ActivityRegion(
+                    csvRegion.regionCode(),
+                    csvRegion.provinceName(),
+                    csvRegion.regionName(),
+                    csvRegion.representativeLatitude(),
+                    csvRegion.representativeLongitude()))
+            .toList();
     }
 
     private List<ActivityRegion> toList(Iterable<ActivityRegion> regions) {
@@ -160,9 +158,9 @@ class ActivityRegionDataInitializerTest {
     }
 
     private record CsvActivityRegion(
-            String regionCode,
-            String provinceName,
-            String regionName,
-            BigDecimal representativeLatitude,
-            BigDecimal representativeLongitude) {}
+        String regionCode,
+        String provinceName,
+        String regionName,
+        BigDecimal representativeLatitude,
+        BigDecimal representativeLongitude) {}
 }

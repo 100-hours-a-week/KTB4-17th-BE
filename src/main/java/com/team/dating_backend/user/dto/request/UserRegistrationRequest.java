@@ -6,4 +6,4 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 
 public record UserRegistrationRequest(
-        @NotBlank String name, @NotNull LocalDate birthDate, @NotNull Gender gender) {}
+    @NotBlank String name, @NotNull LocalDate birthDate, @NotNull Gender gender) {}

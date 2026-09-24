@@ -34,25 +34,25 @@ public class OAuthController {
 
     @GetMapping("/{provider}")
     public ResponseEntity<Void> startLogin(
-            @PathVariable("provider") String providerValue, HttpSession session) {
+        @PathVariable("provider") String providerValue, HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
         authLoginResponseFactory.validateRedirectUris();
         OAuthProviderClient providerClient = oauthProviderClientRegistry.get(provider);
         String state = oauthStateService.createState(provider, session);
 
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(providerClient.createAuthorizationUrl(state)))
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("Referrer-Policy", "no-referrer")
-                .build();
+            .location(URI.create(providerClient.createAuthorizationUrl(state)))
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .header("Referrer-Policy", "no-referrer")
+            .build();
     }
 
     @GetMapping("/{provider}/callback")
     public ResponseEntity<Void> handleCallback(
-            @PathVariable("provider") String providerValue,
-            @RequestParam(value = "code", required = false) String code,
-            @RequestParam(value = "state", required = false) String state,
-            HttpSession session) {
+        @PathVariable("provider") String providerValue,
+        @RequestParam(value = "code", required = false) String code,
+        @RequestParam(value = "state", required = false) String state,
+        HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
         validateCallbackParameters(code, state);
         authLoginResponseFactory.validateRedirectUris();
@@ -60,8 +60,7 @@ public class OAuthController {
         oauthStateService.validateAndConsumeState(provider, state, session);
 
         OAuthIdentity identity = providerClient.requestIdentity(code);
-        SocialLoginResult loginResult =
-                socialLoginService.login(identity.provider(), identity.providerUserId());
+        SocialLoginResult loginResult = socialLoginService.login(identity.provider(), identity.providerUserId());
 
         return authLoginResponseFactory.create(loginResult);
     }

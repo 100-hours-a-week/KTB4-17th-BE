@@ -48,8 +48,7 @@ class ProfileSaveServiceTest {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         activityRegionRepository = mock(ActivityRegionRepository.class);
-        profileSaveService =
-                new ProfileSaveService(userRepository, profileRepository, activityRegionRepository);
+        profileSaveService = new ProfileSaveService(userRepository, profileRepository, activityRegionRepository);
     }
 
     @Test
@@ -59,17 +58,16 @@ class ProfileSaveServiceTest {
         given(activityRegion.getId()).willReturn(ACTIVITY_REGION_ID);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
-                .willReturn(false);
+            .willReturn(false);
         given(activityRegionRepository.findById(ACTIVITY_REGION_ID))
-                .willReturn(Optional.of(activityRegion));
+            .willReturn(Optional.of(activityRegion));
         given(profileRepository.saveAndFlush(any(Profile.class)))
-                .willAnswer(invocation -> invocation.getArgument(0));
+            .willAnswer(invocation -> invocation.getArgument(0));
 
-        ProfileSaveResult result =
-                profileSaveService.saveProfile(
-                        USER_ID, partialRequest(ACTIVITY_REGION_ID, NICKNAME));
+        ProfileSaveResult result = profileSaveService.saveProfile(
+            USER_ID, partialRequest(ACTIVITY_REGION_ID, NICKNAME));
 
         assertThat(result.created()).isTrue();
         assertThat(result.response().profile().activityRegionId()).isEqualTo(ACTIVITY_REGION_ID);
@@ -90,11 +88,10 @@ class ProfileSaveServiceTest {
         Profile profile = completeProfile(user);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.of(profile));
+            .willReturn(Optional.of(profile));
         given(profileRepository.saveAndFlush(profile)).willReturn(profile);
 
-        ProfileSaveResult result =
-                profileSaveService.saveProfile(USER_ID, partialRequest(null, null));
+        ProfileSaveResult result = profileSaveService.saveProfile(USER_ID, partialRequest(null, null));
 
         assertThat(result.created()).isFalse();
         assertThat(profile.getActivityRegion()).isNull();
@@ -116,9 +113,9 @@ class ProfileSaveServiceTest {
         Profile profile = completeProfile(user);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.of(profile));
+            .willReturn(Optional.of(profile));
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
-                .willReturn(false);
+            .willReturn(false);
         given(profileRepository.saveAndFlush(profile)).willReturn(profile);
 
         profileSaveService.saveProfile(USER_ID, partialRequest(null, NICKNAME));
@@ -132,15 +129,14 @@ class ProfileSaveServiceTest {
         User user = mock(User.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
-                .willReturn(true);
+            .willReturn(true);
 
         assertThatThrownBy(
-                        () ->
-                                profileSaveService.saveProfile(
-                                        USER_ID, partialRequest(null, NICKNAME)))
-                .isInstanceOf(NicknameAlreadyInUseException.class);
+            () -> profileSaveService.saveProfile(
+                USER_ID, partialRequest(null, NICKNAME)))
+            .isInstanceOf(NicknameAlreadyInUseException.class);
 
         verify(profileRepository).existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID);
         verifyNoInteractions(activityRegionRepository);
@@ -151,36 +147,33 @@ class ProfileSaveServiceTest {
         User user = mock(User.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
-                .willReturn(false);
+            .willReturn(false);
         given(profileRepository.saveAndFlush(any(Profile.class)))
-                .willThrow(dataIntegrityViolationException("profiles.uk_profiles_active_nickname"));
+            .willThrow(dataIntegrityViolationException("profiles.uk_profiles_active_nickname"));
 
         assertThatThrownBy(
-                        () ->
-                                profileSaveService.saveProfile(
-                                        USER_ID, partialRequest(null, NICKNAME)))
-                .isInstanceOf(NicknameAlreadyInUseException.class);
+            () -> profileSaveService.saveProfile(
+                USER_ID, partialRequest(null, NICKNAME)))
+            .isInstanceOf(NicknameAlreadyInUseException.class);
     }
 
     @Test
     void 저장_중_다른_무결성_제약이_충돌하면_원래_예외가_발생한다() {
         User user = mock(User.class);
-        DataIntegrityViolationException exception =
-                dataIntegrityViolationException("uk_profiles_user_id");
+        DataIntegrityViolationException exception = dataIntegrityViolationException("uk_profiles_user_id");
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
-                .willReturn(false);
+            .willReturn(false);
         given(profileRepository.saveAndFlush(any(Profile.class))).willThrow(exception);
 
         assertThatThrownBy(
-                        () ->
-                                profileSaveService.saveProfile(
-                                        USER_ID, partialRequest(null, NICKNAME)))
-                .isSameAs(exception);
+            () -> profileSaveService.saveProfile(
+                USER_ID, partialRequest(null, NICKNAME)))
+            .isSameAs(exception);
     }
 
     @Test
@@ -188,22 +181,21 @@ class ProfileSaveServiceTest {
         User user = mock(User.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
         given(activityRegionRepository.findById(ACTIVITY_REGION_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(
-                        () ->
-                                profileSaveService.saveProfile(
-                                        USER_ID, partialRequest(ACTIVITY_REGION_ID, null)))
-                .isInstanceOfSatisfying(
-                        RequestValidationException.class,
-                        exception -> {
-                            assertThat(exception.getErrors()).hasSize(1);
-                            assertThat(exception.getErrors().getFirst().field())
-                                    .isEqualTo("activityRegionId");
-                            assertThat(exception.getErrors().getFirst().reason())
-                                    .isEqualTo("must reference an existing activity region");
-                        });
+            () -> profileSaveService.saveProfile(
+                USER_ID, partialRequest(ACTIVITY_REGION_ID, null)))
+            .isInstanceOfSatisfying(
+                RequestValidationException.class,
+                exception -> {
+                    assertThat(exception.getErrors()).hasSize(1);
+                    assertThat(exception.getErrors().getFirst().field())
+                        .isEqualTo("activityRegionId");
+                    assertThat(exception.getErrors().getFirst().reason())
+                        .isEqualTo("must reference an existing activity region");
+                });
     }
 
     @Test
@@ -211,40 +203,39 @@ class ProfileSaveServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(
-                        () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, null)))
-                .isInstanceOf(UserNotFoundException.class);
+            () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, null)))
+            .isInstanceOf(UserNotFoundException.class);
 
         verifyNoInteractions(profileRepository, activityRegionRepository);
     }
 
     private ProfileSaveRequest partialRequest(Long activityRegionId, String nickname) {
         return new ProfileSaveRequest(
-                nickname, activityRegionId, null, null, null, null, null, null, null, null);
+            nickname, activityRegionId, null, null, null, null, null, null, null, null);
     }
 
     private Profile completeProfile(User user) {
         Profile profile = new Profile(user);
         profile.updateProfile(
-                mock(ActivityRegion.class),
-                NICKNAME,
-                (short) 175,
-                BodyType.AVERAGE,
-                EducationLevel.BACHELOR,
-                "개발자",
-                Religion.NONE,
-                Mbti.INTJ,
-                Drinking.OCCASIONAL,
-                Smoking.NON_SMOKER);
+            mock(ActivityRegion.class),
+            NICKNAME,
+            (short) 175,
+            BodyType.AVERAGE,
+            EducationLevel.BACHELOR,
+            "개발자",
+            Religion.NONE,
+            Mbti.INTJ,
+            Drinking.OCCASIONAL,
+            Smoking.NON_SMOKER);
         return profile;
     }
 
     private DataIntegrityViolationException dataIntegrityViolationException(String constraintName) {
-        ConstraintViolationException constraintViolation =
-                new ConstraintViolationException(
-                        "constraint violation",
-                        new SQLException(),
-                        ConstraintViolationException.ConstraintKind.UNIQUE,
-                        constraintName);
+        ConstraintViolationException constraintViolation = new ConstraintViolationException(
+            "constraint violation",
+            new SQLException(),
+            ConstraintViolationException.ConstraintKind.UNIQUE,
+            constraintName);
         return new DataIntegrityViolationException("data integrity violation", constraintViolation);
     }
 }
