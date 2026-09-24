@@ -51,7 +51,7 @@ class OnboardingServiceTest {
     void 프로필이_존재하지_않으면_다음_단계는_NICKNAME이다() {
         givenOnboardingUser();
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.empty());
+            .willReturn(Optional.empty());
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
@@ -154,15 +154,13 @@ class OnboardingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(
-            value = UserStatus.class,
-            names = {"SUSPENDED", "WITHDRAWN"})
+    @EnumSource(value = UserStatus.class, names = {"SUSPENDED", "WITHDRAWN"})
     void SUSPENDED_또는_WITHDRAWN_회원이면_접근_예외가_발생한다(UserStatus userStatus) {
         User user = user(userStatus);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
 
         assertThatThrownBy(() -> onboardingService.getOnboardingStatus(USER_ID))
-                .isInstanceOf(OnboardingAccessNotAllowedException.class);
+            .isInstanceOf(OnboardingAccessNotAllowedException.class);
 
         verifyNoInteractions(profileRepository);
     }
@@ -172,13 +170,11 @@ class OnboardingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> onboardingService.getOnboardingStatus(USER_ID))
-                .isInstanceOf(UserNotFoundException.class);
+            .isInstanceOf(UserNotFoundException.class);
     }
 
     @ParameterizedTest
-    @EnumSource(
-            value = UserStatus.class,
-            names = {"ONBOARDING", "ACTIVE"})
+    @EnumSource(value = UserStatus.class, names = {"ONBOARDING", "ACTIVE"})
     void 온보딩_중이거나_활성_회원이면_기본_정보를_조회할_수_있다(UserStatus userStatus) {
         User user = user(userStatus);
         LocalDate birthDate = LocalDate.of(1990, 5, 21);
@@ -195,15 +191,13 @@ class OnboardingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(
-            value = UserStatus.class,
-            names = {"SUSPENDED", "WITHDRAWN"})
+    @EnumSource(value = UserStatus.class, names = {"SUSPENDED", "WITHDRAWN"})
     void 정지_또는_탈퇴_회원이면_기본_정보_조회_예외가_발생한다(UserStatus userStatus) {
         User user = user(userStatus);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
 
         assertThatThrownBy(() -> onboardingService.getOnboardingProfile(USER_ID))
-                .isInstanceOf(OnboardingAccessNotAllowedException.class);
+            .isInstanceOf(OnboardingAccessNotAllowedException.class);
     }
 
     @Test
@@ -211,7 +205,7 @@ class OnboardingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> onboardingService.getOnboardingProfile(USER_ID))
-                .isInstanceOf(UserNotFoundException.class);
+            .isInstanceOf(UserNotFoundException.class);
     }
 
     private void givenOnboardingUser() {
@@ -221,7 +215,7 @@ class OnboardingServiceTest {
 
     private void givenProfile(Profile profile) {
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
-                .willReturn(Optional.of(profile));
+            .willReturn(Optional.of(profile));
     }
 
     private User user(UserStatus status) {

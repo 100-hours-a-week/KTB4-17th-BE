@@ -20,17 +20,17 @@ public class OnboardingController {
 
     @GetMapping
     public SuccessResponse<OnboardingStatusResponse> showOnboardingStatus(
-            @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
         return SuccessResponse.of(
-                "onboarding_status_get_success",
-                onboardingService.getOnboardingStatus(principal.userId()));
+            "onboarding_status_get_success",
+            onboardingService.getOnboardingStatus(principal.userId()));
     }
 
     @GetMapping("/profile")
     public SuccessResponse<OnboardingProfileResponse> showOnboardingProfile(
-            @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
         return SuccessResponse.of(
-                "user_onboarding_profile_get_success",
-                onboardingService.getOnboardingProfile(principal.userId()));
+            "user_onboarding_profile_get_success",
+            onboardingService.getOnboardingProfile(principal.userId()));
     }
 }

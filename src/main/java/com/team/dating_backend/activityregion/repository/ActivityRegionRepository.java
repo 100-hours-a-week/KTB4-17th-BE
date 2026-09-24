@@ -8,15 +8,14 @@ import org.springframework.data.repository.query.Param;
 
 public interface ActivityRegionRepository extends JpaRepository<ActivityRegion, Long> {
 
-    @Query(
-            """
-            SELECT activityRegion
-            FROM ActivityRegion activityRegion
-            WHERE CONCAT(activityRegion.provinceName, ' ', activityRegion.regionName)
-                    LIKE CONCAT('%', :query, '%')
-            ORDER BY activityRegion.provinceName ASC,
-                    activityRegion.regionName ASC,
-                    activityRegion.regionCode ASC
-            """)
+    @Query("""
+        SELECT activityRegion
+        FROM ActivityRegion activityRegion
+        WHERE CONCAT(activityRegion.provinceName, ' ', activityRegion.regionName)
+                LIKE CONCAT('%', :query, '%')
+        ORDER BY activityRegion.provinceName ASC,
+                activityRegion.regionName ASC,
+                activityRegion.regionCode ASC
+        """)
     List<ActivityRegion> findByDisplayNameContaining(@Param("query") String query);
 }

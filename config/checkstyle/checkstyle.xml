@@ -4,6 +4,9 @@
         "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <module name="Checker">
+    <!-- Java indentation must use spaces, not literal tab characters. -->
+    <module name="FileTabCharacter"/>
+
     <module name="TreeWalker">
 
         <!-- wildcard import 금지 -->

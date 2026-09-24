@@ -22,7 +22,7 @@ class ApiAccessDeniedHandlerTest {
 
         // when
         accessDeniedHandler.handle(
-                request, response, new AccessDeniedException("Access is denied"));
+            request, response, new AccessDeniedException("Access is denied"));
 
         // then
         assertEquals(HttpServletResponse.SC_FORBIDDEN, response.getStatus());

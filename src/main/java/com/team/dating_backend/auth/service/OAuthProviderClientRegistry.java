@@ -10,17 +10,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class OAuthProviderClientRegistry {
 
-    private final Map<AuthProvider, OAuthProviderClient> clients =
-            new EnumMap<>(AuthProvider.class);
+    private final Map<AuthProvider, OAuthProviderClient> clients = new EnumMap<>(AuthProvider.class);
 
     public OAuthProviderClientRegistry(List<OAuthProviderClient> providerClients) {
         for (OAuthProviderClient providerClient : providerClients) {
-            OAuthProviderClient existingClient =
-                    clients.put(providerClient.provider(), providerClient);
+            OAuthProviderClient existingClient = clients.put(providerClient.provider(), providerClient);
 
             if (existingClient != null) {
                 throw new IllegalStateException(
-                        "Duplicate OAuth provider client: " + providerClient.provider());
+                    "Duplicate OAuth provider client: " + providerClient.provider());
             }
         }
     }

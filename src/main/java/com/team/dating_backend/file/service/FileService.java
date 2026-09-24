@@ -36,13 +36,12 @@ public class FileService {
         UploadFile uploadFile = command.file();
         String storageKey = "file/" + UUID.randomUUID();
 
-        File file =
-                File.create(
-                        command.ownerUserId(),
-                        storageKey,
-                        uploadFile.originalName(),
-                        uploadFile.mimeType(),
-                        uploadFile.content().length);
+        File file = File.create(
+            command.ownerUserId(),
+            storageKey,
+            uploadFile.originalName(),
+            uploadFile.mimeType(),
+            uploadFile.content().length);
 
         try {
             fileStorage.upload(storageKey, uploadFile.content(), uploadFile.mimeType());
@@ -74,11 +73,11 @@ public class FileService {
         }
 
         return new FileReadResult(
-                file.getId(),
-                file.getOriginalName(),
-                file.getMimeType(),
-                file.getFileSize(),
-                readUrl);
+            file.getId(),
+            file.getOriginalName(),
+            file.getMimeType(),
+            file.getFileSize(),
+            readUrl);
     }
 
     @Transactional
@@ -99,8 +98,8 @@ public class FileService {
         }
 
         return fileRepository
-                .findActiveById(fileId)
-                .orElseThrow(() -> new FileNotFoundException(fileId));
+            .findActiveById(fileId)
+            .orElseThrow(() -> new FileNotFoundException(fileId));
     }
 
     private void validateUpload(FileUploadCommand command) {
@@ -119,14 +118,14 @@ public class FileService {
         }
 
         if (file.originalName() == null
-                || file.originalName().isBlank()
-                || file.originalName().length() > 255) {
+            || file.originalName().isBlank()
+            || file.originalName().length() > 255) {
             throw new RequestValidationException("파일명은 1~255자여야 합니다.");
         }
 
         if (file.mimeType() == null
-                || file.mimeType().isBlank()
-                || file.mimeType().length() > 100) {
+            || file.mimeType().isBlank()
+            || file.mimeType().length() > 100) {
             throw new RequestValidationException("MIME 타입은 1~100자여야 합니다.");
         }
     }

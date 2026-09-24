@@ -18,28 +18,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/registration")
 public class UserRegistrationController {
 
-    private static final String PENDING_REGISTRATION_TOKEN_COOKIE =
-            AuthCookieFactory.PENDING_REGISTRATION_TOKEN_COOKIE;
+    private static final String PENDING_REGISTRATION_TOKEN_COOKIE = AuthCookieFactory.PENDING_REGISTRATION_TOKEN_COOKIE;
 
     private final UserRegistrationService userRegistrationService;
     private final AuthCookieFactory authCookieFactory;
 
     @PutMapping("/identity")
     public ResponseEntity<Void> registerUser(
-            @CookieValue(value = PENDING_REGISTRATION_TOKEN_COOKIE, required = false)
-                    String pendingRegistrationToken,
-            @Valid @RequestBody UserRegistrationRequest request) {
+        @CookieValue(value = PENDING_REGISTRATION_TOKEN_COOKIE, required = false) String pendingRegistrationToken,
+        @Valid @RequestBody UserRegistrationRequest request) {
 
-        String serviceToken =
-                userRegistrationService.registerUser(pendingRegistrationToken, request);
+        String serviceToken = userRegistrationService.registerUser(pendingRegistrationToken, request);
 
         return ResponseEntity.ok()
-                .header(
-                        HttpHeaders.SET_COOKIE,
-                        authCookieFactory.accessToken(serviceToken).toString())
-                .header(
-                        HttpHeaders.SET_COOKIE,
-                        authCookieFactory.deletePendingRegistrationToken().toString())
-                .build();
+            .header(
+                HttpHeaders.SET_COOKIE,
+                authCookieFactory.accessToken(serviceToken).toString())
+            .header(
+                HttpHeaders.SET_COOKIE,
+                authCookieFactory.deletePendingRegistrationToken().toString())
+            .build();
     }
 }

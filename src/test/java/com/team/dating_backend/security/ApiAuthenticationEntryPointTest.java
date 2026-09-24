@@ -16,14 +16,13 @@ class ApiAuthenticationEntryPointTest {
     @Test
     void 인증_실패를_AUTH_REQUIRED_JSON으로_응답한다() throws Exception {
         // given
-        ApiAuthenticationEntryPoint entryPoint =
-                new ApiAuthenticationEntryPoint(new ObjectMapper());
+        ApiAuthenticationEntryPoint entryPoint = new ApiAuthenticationEntryPoint(new ObjectMapper());
         HttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         // when
         entryPoint.commence(
-                request, response, new BadCredentialsException("Authentication is required"));
+            request, response, new BadCredentialsException("Authentication is required"));
 
         // then
         assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.getStatus());

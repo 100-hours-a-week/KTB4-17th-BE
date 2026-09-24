@@ -25,8 +25,8 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+        HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+        throws ServletException, IOException {
 
         String accessToken = resolveAccessToken(request);
 
@@ -43,8 +43,8 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
 
             ServiceAuthenticationPrincipal principal = new ServiceAuthenticationPrincipal(userId);
 
-            Authentication authentication =
-                    UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of());
+            Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null,
+                List.of());
 
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
@@ -62,9 +62,9 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         return Arrays.stream(cookies)
-                .filter(cookie -> AuthCookieFactory.ACCESS_TOKEN_COOKIE.equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .findFirst()
-                .orElse(null);
+            .filter(cookie -> AuthCookieFactory.ACCESS_TOKEN_COOKIE.equals(cookie.getName()))
+            .map(Cookie::getValue)
+            .findFirst()
+            .orElse(null);
     }
 }

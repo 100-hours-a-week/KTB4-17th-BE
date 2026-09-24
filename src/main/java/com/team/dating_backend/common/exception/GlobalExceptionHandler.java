@@ -31,29 +31,27 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RequestValidationException.class)
     public ResponseEntity<ErrorResponse> handleRequestValidation(
-            RequestValidationException exception) {
+        RequestValidationException exception) {
         if (!exception.hasErrors()) {
             return error(exception.getErrorCode());
         }
 
         return ResponseEntity.status(exception.getErrorCode().status())
-                .body(ErrorResponse.invalidRequest(exception.getErrors()));
+            .body(ErrorResponse.invalidRequest(exception.getErrors()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException exception) {
-        List<FieldErrorResponse> errors =
-                exception.getBindingResult().getFieldErrors().stream()
-                        .map(
-                                fieldError ->
-                                        new FieldErrorResponse(
-                                                fieldError.getField(),
-                                                fieldError.getDefaultMessage()))
-                        .toList();
+        MethodArgumentNotValidException exception) {
+        List<FieldErrorResponse> errors = exception.getBindingResult().getFieldErrors().stream()
+            .map(
+                fieldError -> new FieldErrorResponse(
+                    fieldError.getField(),
+                    fieldError.getDefaultMessage()))
+            .toList();
 
         return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.status())
-                .body(ErrorResponse.invalidRequest(errors));
+            .body(ErrorResponse.invalidRequest(errors));
     }
 
     @ExceptionHandler({

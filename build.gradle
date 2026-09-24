@@ -53,7 +53,7 @@ tasks.named('test') {
 
 spotless {
 	java {
-		googleJavaFormat('1.36.0').aosp()
+		eclipse().configFile('config/formatter/java-formatter.xml')
 
 		removeUnusedImports()
 		forbidWildcardImports()

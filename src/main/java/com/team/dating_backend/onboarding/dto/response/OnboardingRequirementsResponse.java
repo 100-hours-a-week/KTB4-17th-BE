@@ -1,11 +1,11 @@
 package com.team.dating_backend.onboarding.dto.response;
 
 public record OnboardingRequirementsResponse(
-        boolean nicknameComplete,
-        boolean regionComplete,
-        boolean basicInfoComplete,
-        boolean lifestyleComplete,
-        boolean mbtiComplete) {
+    boolean nicknameComplete,
+    boolean regionComplete,
+    boolean basicInfoComplete,
+    boolean lifestyleComplete,
+    boolean mbtiComplete) {
 
     public static OnboardingRequirementsResponse complete() {
         return new OnboardingRequirementsResponse(true, true, true, true, true);

@@ -30,19 +30,18 @@ public class OnboardingService {
 
         if (user.getStatus() == UserStatus.ACTIVE) {
             return new OnboardingStatusResponse(
-                    user.getStatus(),
-                    OnboardingStep.COMPLETE,
-                    OnboardingRequirementsResponse.complete());
+                user.getStatus(),
+                OnboardingStep.COMPLETE,
+                OnboardingRequirementsResponse.complete());
         }
 
-        OnboardingRequirementsResponse requirements =
-                profileRepository
-                        .findByUserIdAndDeletedAtIsNull(userId)
-                        .map(this::calculateRequirements)
-                        .orElseGet(OnboardingRequirementsResponse::incomplete);
+        OnboardingRequirementsResponse requirements = profileRepository
+            .findByUserIdAndDeletedAtIsNull(userId)
+            .map(this::calculateRequirements)
+            .orElseGet(OnboardingRequirementsResponse::incomplete);
 
         return new OnboardingStatusResponse(
-                user.getStatus(), determineNextStep(requirements), requirements);
+            user.getStatus(), determineNextStep(requirements), requirements);
     }
 
     @Transactional(readOnly = true)
@@ -65,23 +64,21 @@ public class OnboardingService {
     private OnboardingRequirementsResponse calculateRequirements(Profile profile) {
         boolean nicknameComplete = StringUtils.hasText(profile.getNickname());
         boolean regionComplete = profile.getActivityRegion() != null;
-        boolean basicInfoComplete =
-                profile.getHeight() != null
-                        && profile.getBodyType() != null
-                        && profile.getEducationLevel() != null
-                        && StringUtils.hasText(profile.getJob());
-        boolean lifestyleComplete =
-                profile.getReligion() != null
-                        && profile.getDrinking() != null
-                        && profile.getSmoking() != null;
+        boolean basicInfoComplete = profile.getHeight() != null
+            && profile.getBodyType() != null
+            && profile.getEducationLevel() != null
+            && StringUtils.hasText(profile.getJob());
+        boolean lifestyleComplete = profile.getReligion() != null
+            && profile.getDrinking() != null
+            && profile.getSmoking() != null;
         boolean mbtiComplete = profile.getMbti() != null;
 
         return new OnboardingRequirementsResponse(
-                nicknameComplete,
-                regionComplete,
-                basicInfoComplete,
-                lifestyleComplete,
-                mbtiComplete);
+            nicknameComplete,
+            regionComplete,
+            basicInfoComplete,
+            lifestyleComplete,
+            mbtiComplete);
     }
 
     private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {

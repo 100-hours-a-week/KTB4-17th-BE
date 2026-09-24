@@ -36,22 +36,26 @@ class UserRegistrationServiceTest {
     private static final String PROVIDER_USER_ID = "kakao-123";
     private static final String ACCESS_TOKEN = "access-token";
 
-    @Mock private JwtService jwtService;
+    @Mock
+    private JwtService jwtService;
 
-    @Mock private UserRepository userRepository;
+    @Mock
+    private UserRepository userRepository;
 
-    @Mock private UserAuthAccountRepository userAuthAccountRepository;
+    @Mock
+    private UserAuthAccountRepository userAuthAccountRepository;
 
-    @InjectMocks private UserRegistrationService userRegistrationService;
+    @InjectMocks
+    private UserRegistrationService userRegistrationService;
 
     @Test
     void 신규_인증_계정이면_User와_UserAuthAccount를_생성한다() {
         // given
         givenPendingPayload();
         given(
-                        userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
-                                AuthProvider.KAKAO, PROVIDER_USER_ID))
-                .willReturn(Optional.empty());
+            userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
+                AuthProvider.KAKAO, PROVIDER_USER_ID))
+            .willReturn(Optional.empty());
         User savedUser = savedUser(10L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
         given(jwtService.createServiceAuthToken(10L)).willReturn(ACCESS_TOKEN);
@@ -72,9 +76,9 @@ class UserRegistrationServiceTest {
         givenPendingPayload();
         UserAuthAccount existingAccount = accountLinkedTo(UserStatus.WITHDRAWN);
         given(
-                        userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
-                                AuthProvider.KAKAO, PROVIDER_USER_ID))
-                .willReturn(Optional.of(existingAccount));
+            userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
+                AuthProvider.KAKAO, PROVIDER_USER_ID))
+            .willReturn(Optional.of(existingAccount));
         User savedUser = savedUser(20L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
         given(jwtService.createServiceAuthToken(20L)).willReturn(ACCESS_TOKEN);
@@ -95,22 +99,22 @@ class UserRegistrationServiceTest {
         givenPendingPayload();
         UserAuthAccount existingAccount = accountLinkedTo(UserStatus.ACTIVE);
         given(
-                        userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
-                                AuthProvider.KAKAO, PROVIDER_USER_ID))
-                .willReturn(Optional.of(existingAccount));
+            userAuthAccountRepository.findForUpdateByProviderAndProviderUserId(
+                AuthProvider.KAKAO, PROVIDER_USER_ID))
+            .willReturn(Optional.of(existingAccount));
 
         // when & then
         assertThrows(
-                PendingRegistrationAccessDeniedException.class,
-                () -> userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest()));
+            PendingRegistrationAccessDeniedException.class,
+            () -> userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest()));
         verify(userRepository, never()).save(any(User.class));
         verify(userAuthAccountRepository, never()).save(any(UserAuthAccount.class));
     }
 
     private void givenPendingPayload() {
         given(jwtService.parsePendingRegistrationToken(PENDING_TOKEN))
-                .willReturn(
-                        new PendingRegistrationTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
+            .willReturn(
+                new PendingRegistrationTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
     }
 
     private User savedUser(Long userId) {

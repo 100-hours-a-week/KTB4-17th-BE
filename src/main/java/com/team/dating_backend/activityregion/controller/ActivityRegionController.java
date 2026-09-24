@@ -22,13 +22,13 @@ public class ActivityRegionController {
 
     @GetMapping
     public SuccessResponse<ActivityRegionSearchResponse> searchRegions(
-            @Valid @ModelAttribute ActivityRegionSearchRequest request) {
-        List<ActivityRegionSearchItem> items =
-                activityRegionSearchService.searchRegions(request.normalizedQuery()).stream()
-                        .map(ActivityRegionSearchItem::from)
-                        .toList();
+        @Valid @ModelAttribute ActivityRegionSearchRequest request) {
+        List<ActivityRegionSearchItem> items = activityRegionSearchService.searchRegions(request.normalizedQuery())
+            .stream()
+            .map(ActivityRegionSearchItem::from)
+            .toList();
 
         return SuccessResponse.of(
-                "activity_regions_get_success", new ActivityRegionSearchResponse(items));
+            "activity_regions_get_success", new ActivityRegionSearchResponse(items));
     }
 }

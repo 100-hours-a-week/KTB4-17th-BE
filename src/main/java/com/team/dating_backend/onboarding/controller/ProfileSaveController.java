@@ -25,8 +25,8 @@ public class ProfileSaveController {
 
     @PutMapping
     public ResponseEntity<SuccessResponse<ProfileSaveResponse>> saveProfile(
-            @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-            @Valid @RequestBody ProfileSaveRequest request) {
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @Valid @RequestBody ProfileSaveRequest request) {
         ProfileSaveResult result = profileSaveService.saveProfile(principal.userId(), request);
 
         if (!result.created()) {
@@ -34,6 +34,6 @@ public class ProfileSaveController {
         }
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(SuccessResponse.of("profile_save_success", result.response()));
+            .body(SuccessResponse.of("profile_save_success", result.response()));
     }
 }

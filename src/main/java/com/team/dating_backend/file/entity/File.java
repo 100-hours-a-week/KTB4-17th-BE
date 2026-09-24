@@ -15,11 +15,9 @@ import org.hibernate.annotations.CreationTimestamp;
 
 @Getter
 @Entity
-@Table(
-        name = "files",
-        uniqueConstraints = {
-            @UniqueConstraint(name = "uk_files_storage_key", columnNames = "storage_key")
-        })
+@Table(name = "files", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_files_storage_key", columnNames = "storage_key")
+})
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class File {
 
@@ -50,11 +48,11 @@ public class File {
     private LocalDateTime deletedAt;
 
     private File(
-            Long ownerUserId,
-            String storageKey,
-            String originalName,
-            String mimeType,
-            long fileSize) {
+        Long ownerUserId,
+        String storageKey,
+        String originalName,
+        String mimeType,
+        long fileSize) {
         this.ownerUserId = ownerUserId;
         this.storageKey = storageKey;
         this.originalName = originalName;
@@ -63,11 +61,11 @@ public class File {
     }
 
     public static File create(
-            Long ownerUserId,
-            String storageKey,
-            String originalName,
-            String mimeType,
-            long fileSize) {
+        Long ownerUserId,
+        String storageKey,
+        String originalName,
+        String mimeType,
+        long fileSize) {
         return new File(ownerUserId, storageKey, originalName, mimeType, fileSize);
     }
 

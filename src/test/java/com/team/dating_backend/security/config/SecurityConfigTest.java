@@ -39,11 +39,14 @@ import tools.jackson.databind.ObjectMapper;
 })
 class SecurityConfigTest {
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private JwtService jwtService;
+    @MockitoBean
+    private JwtService jwtService;
 
-    @MockitoBean private SecurityProperties securityProperties;
+    @MockitoBean
+    private SecurityProperties securityProperties;
 
     @BeforeEach
     void setUp() {
@@ -53,8 +56,8 @@ class SecurityConfigTest {
     @Test
     void 보호_API에_인증정보가_없으면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/api/v1/security/protected"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 
     @Test
@@ -69,28 +72,26 @@ class SecurityConfigTest {
 
         // when & then
         mockMvc.perform(
-                        get("/api/v1/security/protected")
-                                .cookie(
-                                        new Cookie(
-                                                AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                                                "service-token")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userId").value(42));
+            get("/api/v1/security/protected")
+                .cookie(
+                    new Cookie(
+                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
+                        "service-token")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.userId").value(42));
     }
 
     @Test
     void CORS_설정은_허용된_Origin을_등록한다() {
-        SecurityConfig securityConfig =
-                new SecurityConfig(
-                        jwtService,
-                        new ApiAuthenticationEntryPoint(new ObjectMapper()),
-                        new ApiAccessDeniedHandler(new ObjectMapper()),
-                        securityProperties);
+        SecurityConfig securityConfig = new SecurityConfig(
+            jwtService,
+            new ApiAuthenticationEntryPoint(new ObjectMapper()),
+            new ApiAccessDeniedHandler(new ObjectMapper()),
+            securityProperties);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/v1/security/protected");
 
-        CorsConfiguration configuration =
-                securityConfig.corsConfigurationSource().getCorsConfiguration(request);
+        CorsConfiguration configuration = securityConfig.corsConfigurationSource().getCorsConfiguration(request);
 
         assertEquals(List.of("http://localhost:5173"), configuration.getAllowedOrigins());
         assertTrue(configuration.getAllowedMethods().contains("OPTIONS"));
@@ -102,7 +103,7 @@ class SecurityConfigTest {
 
         @GetMapping("/api/v1/security/protected")
         Map<String, Long> protectedEndpoint(
-                @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+            @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
             return Map.of("userId", principal.userId());
         }
 

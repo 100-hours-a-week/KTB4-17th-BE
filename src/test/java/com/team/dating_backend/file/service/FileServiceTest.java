@@ -78,8 +78,8 @@ class FileServiceTest {
         FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
 
         // When & Then
-        RequestValidationException exception =
-                assertThrows(RequestValidationException.class, () -> fileService.upload(command));
+        RequestValidationException exception = assertThrows(RequestValidationException.class,
+            () -> fileService.upload(command));
 
         assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INVALID_REQUEST);
 
@@ -95,17 +95,15 @@ class FileServiceTest {
 
         FileService fileService = new FileService(storage, repository);
 
-        UploadFile uploadFile =
-                new UploadFile(
-                        "profile.jpg",
-                        "image/jpeg",
-                        "image-content".getBytes(StandardCharsets.UTF_8));
+        UploadFile uploadFile = new UploadFile(
+            "profile.jpg",
+            "image/jpeg",
+            "image-content".getBytes(StandardCharsets.UTF_8));
 
         FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
 
         // When
-        FileUploadException exception =
-                assertThrows(FileUploadException.class, () -> fileService.upload(command));
+        FileUploadException exception = assertThrows(FileUploadException.class, () -> fileService.upload(command));
 
         // Then
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_FAILED);
@@ -121,16 +119,14 @@ class FileServiceTest {
 
         FileService fileService = new FileService(storage, repository);
 
-        UploadFile uploadFile =
-                new UploadFile(
-                        "profile.jpg",
-                        "image/jpeg",
-                        "image-content".getBytes(StandardCharsets.UTF_8));
+        UploadFile uploadFile = new UploadFile(
+            "profile.jpg",
+            "image/jpeg",
+            "image-content".getBytes(StandardCharsets.UTF_8));
 
         FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
 
-        FileUploadException exception =
-                assertThrows(FileUploadException.class, () -> fileService.upload(command));
+        FileUploadException exception = assertThrows(FileUploadException.class, () -> fileService.upload(command));
 
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_FAILED);
         assertThat(exception.getCause()).isInstanceOf(RuntimeException.class);
@@ -171,8 +167,7 @@ class FileServiceTest {
         FileService fileService = new FileService(storage, repository);
 
         // When & Then
-        FileNotFoundException exception =
-                assertThrows(FileNotFoundException.class, () -> fileService.read(999L));
+        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> fileService.read(999L));
 
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_NOT_FOUND);
 
@@ -198,7 +193,7 @@ class FileServiceTest {
         assertThat(storage.wasDeleted()).isFalse();
 
         assertThatThrownBy(() -> fileService.read(file.getId()))
-                .isInstanceOf(FileNotFoundException.class);
+            .isInstanceOf(FileNotFoundException.class);
     }
 
     @Test
@@ -212,8 +207,7 @@ class FileServiceTest {
         repository.save(file);
 
         // When
-        FileReadException exception =
-                assertThrows(FileReadException.class, () -> fileService.read(file.getId()));
+        FileReadException exception = assertThrows(FileReadException.class, () -> fileService.read(file.getId()));
 
         // Then
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_READ_URL_FAILED);
@@ -232,8 +226,8 @@ class FileServiceTest {
         repository.failNextSave();
 
         // When
-        FileDeleteException exception =
-                assertThrows(FileDeleteException.class, () -> fileService.softDelete(file.getId()));
+        FileDeleteException exception = assertThrows(FileDeleteException.class,
+            () -> fileService.softDelete(file.getId()));
 
         // Then
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_DELETE_FAILED);

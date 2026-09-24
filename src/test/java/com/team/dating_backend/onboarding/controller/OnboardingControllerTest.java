@@ -37,13 +37,17 @@ class OnboardingControllerTest {
     private static final Long USER_ID = 1L;
     private static final String ACCESS_TOKEN = "service-token";
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private OnboardingService onboardingService;
+    @MockitoBean
+    private OnboardingService onboardingService;
 
-    @MockitoBean private JwtService jwtService;
+    @MockitoBean
+    private JwtService jwtService;
 
-    @MockitoBean private SecurityProperties securityProperties;
+    @MockitoBean
+    private SecurityProperties securityProperties;
 
     @BeforeEach
     void setUp() {
@@ -53,28 +57,28 @@ class OnboardingControllerTest {
 
     @Test
     void 온보딩_진행_상태를_조회하면_200과_그에_대한_응답을_반환한다() throws Exception {
-        OnboardingRequirementsResponse requirements =
-                new OnboardingRequirementsResponse(true, true, false, false, false);
+        OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true, false, false,
+            false);
         given(onboardingService.getOnboardingStatus(USER_ID))
-                .willReturn(
-                        new OnboardingStatusResponse(
-                                UserStatus.ONBOARDING, OnboardingStep.PROFILE, requirements));
+            .willReturn(
+                new OnboardingStatusResponse(
+                    UserStatus.ONBOARDING, OnboardingStep.PROFILE, requirements));
 
         mockMvc.perform(
-                        get("/api/v1/users/me/onboarding")
-                                .cookie(
-                                        new Cookie(
-                                                AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                                                ACCESS_TOKEN)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("onboarding_status_get_success"))
-                .andExpect(jsonPath("$.data.userStatus").value("ONBOARDING"))
-                .andExpect(jsonPath("$.data.onboardingNextStep").value("PROFILE"))
-                .andExpect(jsonPath("$.data.requirements.nicknameComplete").value(true))
-                .andExpect(jsonPath("$.data.requirements.regionComplete").value(true))
-                .andExpect(jsonPath("$.data.requirements.basicInfoComplete").value(false))
-                .andExpect(jsonPath("$.data.requirements.lifestyleComplete").value(false))
-                .andExpect(jsonPath("$.data.requirements.mbtiComplete").value(false));
+            get("/api/v1/users/me/onboarding")
+                .cookie(
+                    new Cookie(
+                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
+                        ACCESS_TOKEN)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("onboarding_status_get_success"))
+            .andExpect(jsonPath("$.data.userStatus").value("ONBOARDING"))
+            .andExpect(jsonPath("$.data.onboardingNextStep").value("PROFILE"))
+            .andExpect(jsonPath("$.data.requirements.nicknameComplete").value(true))
+            .andExpect(jsonPath("$.data.requirements.regionComplete").value(true))
+            .andExpect(jsonPath("$.data.requirements.basicInfoComplete").value(false))
+            .andExpect(jsonPath("$.data.requirements.lifestyleComplete").value(false))
+            .andExpect(jsonPath("$.data.requirements.mbtiComplete").value(false));
 
         verify(onboardingService).getOnboardingStatus(USER_ID);
     }
@@ -83,19 +87,19 @@ class OnboardingControllerTest {
     void 온보딩_프로필을_조회하면_200과_그에_대한_응답을_반환한다() throws Exception {
         LocalDate birthDate = LocalDate.of(1990, 5, 21);
         given(onboardingService.getOnboardingProfile(USER_ID))
-                .willReturn(new OnboardingProfileResponse(USER_ID, birthDate, Gender.FEMALE));
+            .willReturn(new OnboardingProfileResponse(USER_ID, birthDate, Gender.FEMALE));
 
         mockMvc.perform(
-                        get("/api/v1/users/me/onboarding/profile")
-                                .cookie(
-                                        new Cookie(
-                                                AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                                                ACCESS_TOKEN)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("user_onboarding_profile_get_success"))
-                .andExpect(jsonPath("$.data.userId").value(USER_ID))
-                .andExpect(jsonPath("$.data.birthDate").value("1990-05-21"))
-                .andExpect(jsonPath("$.data.gender").value("FEMALE"));
+            get("/api/v1/users/me/onboarding/profile")
+                .cookie(
+                    new Cookie(
+                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
+                        ACCESS_TOKEN)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("user_onboarding_profile_get_success"))
+            .andExpect(jsonPath("$.data.userId").value(USER_ID))
+            .andExpect(jsonPath("$.data.birthDate").value("1990-05-21"))
+            .andExpect(jsonPath("$.data.gender").value("FEMALE"));
 
         verify(onboardingService).getOnboardingProfile(USER_ID);
     }
