@@ -14,6 +14,9 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
     Optional<Like> findFirstBySenderIdAndReceiverIdAndStatusOrderByIdDesc(
         Long senderId, Long receiverId, LikeStatus status);
 
+    Optional<Like> findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(
+        Long senderId, Long receiverId, LikeStatus status);
+
     @Modifying
     @Query("""
         update MemberLike memberLike

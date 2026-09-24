@@ -2,16 +2,18 @@ package com.team.dating_backend.matching.service;
 
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
 import com.team.dating_backend.matching.entity.Like;
+import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.matching.enums.LikeErrorCode;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
-import com.team.dating_backend.matching.repository.ExistingMatchRepository;
 import com.team.dating_backend.matching.repository.LikeRepository;
+import com.team.dating_backend.matching.repository.MatchRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +25,7 @@ public class LikeSendService {
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
     private final LikeRepository likeRepository;
-    private final ExistingMatchRepository existingMatchRepository;
+    private final MatchRepository matchRepository;
 
     @Transactional
     public LikeCreateResponse sendLike(Long senderId, Long receiverId) {
@@ -41,7 +43,7 @@ public class LikeSendService {
             || userBlockRepository.existsActiveBlockBetween(senderId, receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND);
         }
-        if (existingMatchRepository.existsBetween(senderId, receiverId)) {
+        if (matchRepository.existsBetween(senderId, receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.MATCH_ALREADY_EXISTS);
         }
         if (likeRepository
@@ -51,7 +53,17 @@ public class LikeSendService {
             throw new LikeBusinessException(LikeErrorCode.DUPLICATE_PENDING_LIKE);
         }
 
+        Optional<Like> firstLike = likeRepository.findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(
+            receiverId, senderId, LikeStatus.PENDING);
         Like like = likeRepository.save(new Like(senderId, receiverId, LocalDateTime.now()));
+        if (firstLike.isPresent()) {
+            Like earlierLike = firstLike.get();
+            LocalDateTime matchedAt = LocalDateTime.now();
+            earlierLike.resolveLike(LikeStatus.MATCHED, matchedAt);
+            like.resolveLike(LikeStatus.MATCHED, matchedAt);
+            matchRepository.save(
+                new Match(earlierLike.getSenderId(), earlierLike.getReceiverId(), matchedAt));
+        }
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
 
