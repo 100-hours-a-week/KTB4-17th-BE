@@ -3,11 +3,14 @@ package com.team.dating_backend.user.controller;
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
 import io.jsonwebtoken.JwtException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = UserRegistrationController.class)
 public class UserRegistrationExceptionHandler {
 
