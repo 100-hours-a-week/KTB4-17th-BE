@@ -64,6 +64,18 @@ class LikeControllerTest {
     }
 
     @Test
+    void 상호_좋아요가_성립하면_201과_MATCHED를_반환한다() throws Exception {
+        given(likeSendService.sendLike(1L, 2L))
+            .willReturn(new LikeCreateResponse(11L, LikeStatus.MATCHED));
+
+        mockMvc.perform(authenticatedPost("{\"receiverId\":2}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.message").value("like_create_success"))
+            .andExpect(jsonPath("$.data.likeId").value(11))
+            .andExpect(jsonPath("$.data.status").value("MATCHED"));
+    }
+
+    @Test
     void 수신자_ID가_유효하지_않으면_400을_반환한다() throws Exception {
         mockMvc.perform(authenticatedPost("{\"receiverId\":0}"))
             .andExpect(status().isBadRequest())

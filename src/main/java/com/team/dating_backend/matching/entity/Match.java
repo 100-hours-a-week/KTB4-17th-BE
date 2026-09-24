@@ -1,6 +1,6 @@
 package com.team.dating_backend.matching.entity;
 
-import com.team.dating_backend.matching.enums.LikeStatus;
+import com.team.dating_backend.matching.enums.MatchStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,11 +14,11 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-@Entity(name = "MemberLike")
+@Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "likes")
-public class Like {
+@Table(name = "matches")
+public class Match {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,26 +32,15 @@ public class Like {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
-    private LikeStatus status;
+    private MatchStatus status;
 
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "matched_at", nullable = false)
+    private LocalDateTime matchedAt;
 
-    @Column(name = "resolved_at")
-    private LocalDateTime resolvedAt;
-
-    public Like(Long senderId, Long receiverId, LocalDateTime createdAt) {
+    public Match(Long senderId, Long receiverId, LocalDateTime matchedAt) {
         this.senderId = senderId;
         this.receiverId = receiverId;
-        this.status = LikeStatus.PENDING;
-        this.createdAt = createdAt;
-    }
-
-    public void resolveLike(LikeStatus resolvedStatus, LocalDateTime resolvedAt) {
-        if (status != LikeStatus.PENDING || resolvedStatus == LikeStatus.PENDING) {
-            throw new IllegalStateException("Only a pending like can be resolved");
-        }
-        status = resolvedStatus;
-        this.resolvedAt = resolvedAt;
+        this.status = MatchStatus.ACTIVE;
+        this.matchedAt = matchedAt;
     }
 }
