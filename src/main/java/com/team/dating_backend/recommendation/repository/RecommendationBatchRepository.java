@@ -2,12 +2,15 @@ package com.team.dating_backend.recommendation.repository;
 
 import com.team.dating_backend.recommendation.entity.RecommendationBatch;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RecommendationBatchRepository extends JpaRepository<RecommendationBatch, Long> {
+
+    Optional<RecommendationBatch> findByUserIdAndDeletedAtIsNull(Long userId);
 
     @Modifying
     @Query("""

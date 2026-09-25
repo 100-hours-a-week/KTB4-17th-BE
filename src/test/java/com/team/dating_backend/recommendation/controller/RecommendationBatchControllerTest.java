@@ -1,16 +1,20 @@
 package com.team.dating_backend.recommendation.controller;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationBatchGetResponse;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
+import com.team.dating_backend.recommendation.service.RecommendationBatchGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,6 +51,9 @@ class RecommendationBatchControllerTest {
     @MockitoBean
     private RecommendationBatchCreateService service;
 
+    @MockitoBean
+    private RecommendationBatchGetService recommendationBatchGetService;
+
     @Test
     void 배치를_생성하면_201과_ID_생성_시각을_반환한다() throws Exception {
         given(service.createRecommendationBatch(5L)).willReturn(
@@ -79,6 +86,44 @@ class RecommendationBatchControllerTest {
             new RecommendationBusinessException(RecommendationErrorCode.REQUESTER_NOT_ACTIVE));
 
         mockMvc.perform(post("/api/v1/recommendation-batches"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("REQUESTER_NOT_ACTIVE"));
+    }
+
+    @Test
+    void 활성_배치가_있으면_200과_배치_ID를_반환한다() throws Exception {
+        given(recommendationBatchGetService.getActiveRecommendationBatch(5L))
+            .willReturn(new RecommendationBatchGetResponse(42L));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/active"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("recommendation_batch_get_success"))
+            .andExpect(jsonPath("$.data.batchId").isNumber())
+            .andExpect(jsonPath("$.data.batchId").value(42))
+            .andExpect(jsonPath("$.data.generationState").doesNotExist())
+            .andExpect(jsonPath("$.data.createdAt").doesNotExist())
+            .andExpect(jsonPath("$.data.emptyState").doesNotExist());
+        verify(recommendationBatchGetService).getActiveRecommendationBatch(5L);
+    }
+
+    @Test
+    void 활성_배치가_없으면_200과_배치_ID로_null을_반환한다() throws Exception {
+        given(recommendationBatchGetService.getActiveRecommendationBatch(5L))
+            .willReturn(new RecommendationBatchGetResponse(null));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/active"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("recommendation_batch_get_success"))
+            .andExpect(jsonPath("$.data.batchId").value(nullValue()));
+        verify(recommendationBatchGetService).getActiveRecommendationBatch(5L);
+    }
+
+    @Test
+    void 비활성_사용자의_조회는_403을_반환한다() throws Exception {
+        given(recommendationBatchGetService.getActiveRecommendationBatch(5L)).willThrow(
+            new RecommendationBusinessException(RecommendationErrorCode.REQUESTER_NOT_ACTIVE));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/active"))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.errorCode").value("REQUESTER_NOT_ACTIVE"));
     }
