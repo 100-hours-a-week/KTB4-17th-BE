@@ -3,6 +3,7 @@ package com.team.dating_backend.recommendation.controller;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +14,7 @@ import com.team.dating_backend.recommendation.service.RecommendationBatchCreateS
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -48,7 +50,9 @@ class RecommendationBatchControllerTest {
     @Test
     void 배치를_생성하면_201과_ID_생성_시각을_반환한다() throws Exception {
         given(service.createRecommendationBatch(5L)).willReturn(
-            new RecommendationBatchCreateResponse(42L, LocalDateTime.of(2026, 9, 25, 12, 30)));
+            Optional.of(
+                new RecommendationBatchCreateResponse(
+                    42L, LocalDateTime.of(2026, 9, 25, 12, 30))));
 
         mockMvc.perform(post("/api/v1/recommendation-batches"))
             .andExpect(status().isCreated())
@@ -56,6 +60,16 @@ class RecommendationBatchControllerTest {
             .andExpect(jsonPath("$.data.batchId").isNumber())
             .andExpect(jsonPath("$.data.batchId").value(42))
             .andExpect(jsonPath("$.data.createdAt").value("2026-09-25T12:30:00"));
+        verify(service).createRecommendationBatch(5L);
+    }
+
+    @Test
+    void 후보가_없으면_204와_빈_본문을_반환한다() throws Exception {
+        given(service.createRecommendationBatch(5L)).willReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/v1/recommendation-batches"))
+            .andExpect(status().isNoContent())
+            .andExpect(content().string(""));
         verify(service).createRecommendationBatch(5L);
     }
 
