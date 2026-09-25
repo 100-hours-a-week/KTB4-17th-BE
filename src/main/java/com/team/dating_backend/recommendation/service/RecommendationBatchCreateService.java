@@ -14,6 +14,7 @@ import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +29,7 @@ public class RecommendationBatchCreateService {
     private final RecommendationItemRepository recommendationItemRepository;
 
     @Transactional
-    public RecommendationBatchCreateResponse createRecommendationBatch(Long requesterUserId) {
+    public Optional<RecommendationBatchCreateResponse> createRecommendationBatch(Long requesterUserId) {
         User requester = userRepository.findById(requesterUserId)
             .orElseThrow(
                 () -> new RecommendationBusinessException(
@@ -39,16 +40,21 @@ public class RecommendationBatchCreateService {
 
         List<Long> candidateUserIds = recommendationCandidateRepository
             .findEligibleCandidateIds(requesterUserId);
-        LocalDateTime createdAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        if (candidateUserIds.isEmpty()) {
+            recommendationBatchRepository.markActiveBatchesDeleted(requesterUserId, now);
+            return Optional.empty();
+        }
+
         RecommendationBatch batch = recommendationBatchRepository
-            .save(new RecommendationBatch(requesterUserId, createdAt));
+            .save(new RecommendationBatch(requesterUserId, now));
         List<RecommendationItem> items = new ArrayList<>(candidateUserIds.size());
         for (int index = 0; index < candidateUserIds.size(); index++) {
             items.add(new RecommendationItem(batch.getId(), candidateUserIds.get(index), index + 1));
         }
         recommendationItemRepository.saveAll(items);
         recommendationBatchRepository.markPreviousBatchesDeleted(
-            requesterUserId, batch.getId(), createdAt);
-        return new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt());
+            requesterUserId, batch.getId(), now);
+        return Optional.of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
     }
 }

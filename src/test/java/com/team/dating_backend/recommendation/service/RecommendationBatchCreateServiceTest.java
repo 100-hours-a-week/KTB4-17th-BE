@@ -64,7 +64,7 @@ class RecommendationBatchCreateServiceTest {
         given(recommendationCandidateRepository.findEligibleCandidateIds(5L))
             .willReturn(List.of(2L, 9L));
 
-        var response = service.createRecommendationBatch(5L);
+        var response = service.createRecommendationBatch(5L).orElseThrow();
 
         assertThat(response.batchId()).isEqualTo(42L);
         ArgumentCaptor<RecommendationBatch> batchCaptor = ArgumentCaptor.forClass(
@@ -93,21 +93,24 @@ class RecommendationBatchCreateServiceTest {
         saveOrder.verify(recommendationItemRepository).saveAll(any());
         saveOrder.verify(recommendationBatchRepository).markPreviousBatchesDeleted(
             5L, 42L, batch.getCreatedAt());
+        verify(recommendationBatchRepository, never()).markActiveBatchesDeleted(any(), any());
     }
 
     @Test
-    void 후보가_없어도_빈_배치를_생성한다() {
+    void 후보가_없으면_배치와_아이템을_저장하지_않고_기존_활성_배치를_종료한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findById(5L)).willReturn(Optional.of(requester));
         given(recommendationCandidateRepository.findEligibleCandidateIds(5L))
             .willReturn(List.of());
 
-        assertThat(service.createRecommendationBatch(5L).batchId()).isEqualTo(42L);
+        assertThat(service.createRecommendationBatch(5L)).isEmpty();
 
-        verify(recommendationBatchRepository).save(any(RecommendationBatch.class));
-        verify(recommendationItemRepository).saveAll(List.of());
-        verify(recommendationBatchRepository).markPreviousBatchesDeleted(
-            eq(5L), eq(42L), any());
+        verify(recommendationBatchRepository).markActiveBatchesDeleted(
+            eq(5L), any());
+        verify(recommendationBatchRepository, never()).save(any(RecommendationBatch.class));
+        verify(recommendationBatchRepository, never()).markPreviousBatchesDeleted(
+            any(), any(), any());
+        verifyNoInteractions(recommendationItemRepository);
     }
 
     @Test

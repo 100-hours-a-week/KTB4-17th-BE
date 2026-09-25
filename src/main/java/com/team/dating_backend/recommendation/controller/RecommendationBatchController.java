@@ -4,6 +4,7 @@ import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,9 +23,12 @@ public class RecommendationBatchController {
     @PostMapping
     public ResponseEntity<SuccessResponse<RecommendationBatchCreateResponse>> createRecommendationBatch(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
-        RecommendationBatchCreateResponse response = recommendationBatchCreateService
+        Optional<RecommendationBatchCreateResponse> response = recommendationBatchCreateService
             .createRecommendationBatch(principal.userId());
+        if (response.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(SuccessResponse.of("recommendation_batch_create_success", response));
+            .body(SuccessResponse.of("recommendation_batch_create_success", response.get()));
     }
 }

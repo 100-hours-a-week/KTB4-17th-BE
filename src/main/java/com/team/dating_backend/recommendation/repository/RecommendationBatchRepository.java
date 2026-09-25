@@ -14,6 +14,17 @@ public interface RecommendationBatchRepository extends JpaRepository<Recommendat
         UPDATE RecommendationBatch batch
         SET batch.deletedAt = :deletedAt
         WHERE batch.userId = :requesterUserId
+          AND batch.deletedAt IS NULL
+        """)
+    int markActiveBatchesDeleted(
+        @Param("requesterUserId") Long requesterUserId,
+        @Param("deletedAt") LocalDateTime deletedAt);
+
+    @Modifying
+    @Query("""
+        UPDATE RecommendationBatch batch
+        SET batch.deletedAt = :deletedAt
+        WHERE batch.userId = :requesterUserId
           AND batch.id <> :newBatchId
           AND batch.deletedAt IS NULL
         """)
