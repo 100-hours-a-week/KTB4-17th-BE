@@ -1,0 +1,30 @@
+package com.team.dating_backend.recommendation.controller;
+
+import com.team.dating_backend.common.dto.response.SuccessResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
+import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
+import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/v1/recommendation-batches")
+public class RecommendationBatchController {
+
+    private final RecommendationBatchCreateService recommendationBatchCreateService;
+
+    @PostMapping
+    public ResponseEntity<SuccessResponse<RecommendationBatchCreateResponse>> createRecommendationBatch(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+        RecommendationBatchCreateResponse response = recommendationBatchCreateService
+            .createRecommendationBatch(principal.userId());
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(SuccessResponse.of("recommendation_batch_create_success", response));
+    }
+}
