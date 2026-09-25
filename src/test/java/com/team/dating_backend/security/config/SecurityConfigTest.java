@@ -98,6 +98,18 @@ class SecurityConfigTest {
         assertTrue(configuration.getAllowCredentials());
     }
 
+    @Test
+    void WebSocket_handshake에_ACCESS_TOKEN이_없으면_401을_반환한다() throws Exception {
+        mockMvc.perform(
+            get("/ws/chat")
+                .header("Connection", "Upgrade")
+                .header("Upgrade", "websocket")
+                .header("Sec-WebSocket-Version", "13")
+                .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+    }
+
     @RestController
     static class SecurityProbeController {
 
