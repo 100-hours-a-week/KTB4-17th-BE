@@ -4,7 +4,7 @@ import com.team.dating_backend.common.enums.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum RecommendationErrorCode implements ErrorCode {
-    REQUESTER_NOT_ACTIVE(HttpStatus.FORBIDDEN);
+    REQUESTER_NOT_ACTIVE(HttpStatus.FORBIDDEN), RESOURCE_NOT_AVAILABLE(HttpStatus.NOT_FOUND);
 
     private final HttpStatus status;
 
