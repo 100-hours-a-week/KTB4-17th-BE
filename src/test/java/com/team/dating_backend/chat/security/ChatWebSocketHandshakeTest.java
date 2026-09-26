@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.net.URI;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -14,6 +16,8 @@ import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
+import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
+import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -37,10 +41,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
+import org.springframework.messaging.simp.stomp.StompFrameHandler;
+import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.converter.JacksonJsonMessageConverter;
+import org.springframework.messaging.simp.user.SimpUser;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
+import org.springframework.web.socket.messaging.SessionSubscribeEvent;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 @SpringBootTest(classes = ChatWebSocketHandshakeTest.TestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -60,6 +71,15 @@ class ChatWebSocketHandshakeTest {
 
     @Autowired
     private BlockingQueue<SessionConnectEvent> sessionConnectEvents;
+
+    @Autowired
+    private BlockingQueue<SessionSubscribeEvent> sessionSubscribeEvents;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
 
     @Test
     void 유효한_ACCESS_TOKEN이면_STOMP에_인증사용자가_전달된다() throws Exception {
@@ -94,6 +114,63 @@ class ChatWebSocketHandshakeTest {
 
             assertTrue(authentication.isAuthenticated());
             assertEquals(42L, principal.userId());
+        } finally {
+            if (session != null && session.isConnected()) {
+                session.disconnect();
+            }
+            client.stop();
+        }
+    }
+
+    @Test
+    void 인증된_사용자가_구독한_user_destination으로_메시지_이벤트가_전달된다() throws Exception {
+        String token = jwtService.createServiceAuthToken(42L);
+
+        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+        headers.add(
+            HttpHeaders.COOKIE,
+            AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + token);
+        headers.setOrigin("http://localhost:5173");
+        headers.setSecWebSocketProtocol("v12.stomp");
+
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+        StompSession session = null;
+        BlockingQueue<ChatMessageCreatedEvent> receivedEvents = new LinkedBlockingQueue<>();
+        UUID clientMessageId = UUID.randomUUID();
+        ChatMessageCreatedEvent expected = new ChatMessageCreatedEvent(
+            30L,
+            500L,
+            clientMessageId,
+            false,
+            ChatMessageType.TEXT,
+            "안녕하세요",
+            LocalDateTime.of(2026, 9, 27, 10, 0));
+        try {
+            session = client.connectAsync(
+                "ws://127.0.0.1:" + port + "/ws/chat",
+                headers,
+                new StompSessionHandlerAdapter() {})
+                .get(5, TimeUnit.SECONDS);
+            session.subscribe("/user/queue/chat-messages", new StompFrameHandler() {
+                @Override
+                public java.lang.reflect.Type getPayloadType(StompHeaders headers) {
+                    return ChatMessageCreatedEvent.class;
+                }
+
+                @Override
+                public void handleFrame(StompHeaders headers, Object payload) {
+                    receivedEvents.add((ChatMessageCreatedEvent) payload);
+                }
+            });
+            assertNotNull(sessionSubscribeEvents.poll(5, TimeUnit.SECONDS));
+            assertTrue(awaitUserSubscription("42", "/user/queue/chat-messages"));
+            assertEquals("/user/", messagingTemplate.getUserDestinationPrefix());
+
+            messagingTemplate.convertAndSendToUser(
+                "42", "/queue/chat-messages", expected);
+            ChatMessageCreatedEvent receivedEvent = receivedEvents.poll(5, TimeUnit.SECONDS);
+            assertEquals(expected, receivedEvent);
         } finally {
             if (session != null && session.isConnected()) {
                 session.disconnect();
@@ -140,6 +217,21 @@ class ChatWebSocketHandshakeTest {
             .get(5, TimeUnit.SECONDS));
     }
 
+    private boolean awaitUserSubscription(String userName, String destination)
+        throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            SimpUser user = simpUserRegistry.getUser(userName);
+            if (user != null && user.getSessions().stream()
+                .flatMap(session -> session.getSubscriptions().stream())
+                .anyMatch(subscription -> destination.equals(subscription.getDestination()))) {
+                return true;
+            }
+            Thread.sleep(10);
+        }
+        return false;
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration(exclude = {
         DataSourceAutoConfiguration.class,
@@ -168,9 +260,20 @@ class ChatWebSocketHandshakeTest {
         }
 
         @Bean
+        BlockingQueue<SessionSubscribeEvent> sessionSubscribeEvents() {
+            return new LinkedBlockingQueue<>();
+        }
+
+        @Bean
         ApplicationListener<SessionConnectEvent> sessionConnectEventListener(
             BlockingQueue<SessionConnectEvent> sessionConnectEvents) {
             return sessionConnectEvents::add;
+        }
+
+        @Bean
+        ApplicationListener<SessionSubscribeEvent> sessionSubscribeEventListener(
+            BlockingQueue<SessionSubscribeEvent> sessionSubscribeEvents) {
+            return sessionSubscribeEvents::add;
         }
     }
 }
