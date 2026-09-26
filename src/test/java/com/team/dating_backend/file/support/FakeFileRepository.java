@@ -17,6 +17,37 @@ public final class FakeFileRepository implements FileRepository {
 
     @Override
     public File save(File file) {
+        return persist(file);
+    }
+
+    @Override
+    public File saveAndFlush(File file) {
+        return persist(file);
+    }
+
+    @Override
+    public Optional<File> findActiveById(Long fileId) {
+        return Optional.ofNullable(files.get(fileId)).filter(file -> !file.isDeleted());
+    }
+
+    @Override
+    public Optional<File> findActiveByIdAndOwner(Long fileId, Long ownerUserId) {
+        return findActiveById(fileId).filter(file -> file.getOwnerUserId().equals(ownerUserId));
+    }
+
+    public File savedFile() {
+        return savedFile;
+    }
+
+    public int saveCount() {
+        return saveCount;
+    }
+
+    public void failNextSave() {
+        nextSaveException = new RuntimeException("DB 저장 실패");
+    }
+
+    private File persist(File file) {
         if (nextSaveException != null) {
             RuntimeException exception = nextSaveException;
             nextSaveException = null;
@@ -31,23 +62,6 @@ public final class FakeFileRepository implements FileRepository {
         savedFile = file;
         saveCount++;
         return file;
-    }
-
-    @Override
-    public Optional<File> findActiveById(Long fileId) {
-        return Optional.ofNullable(files.get(fileId)).filter(file -> !file.isDeleted());
-    }
-
-    public File savedFile() {
-        return savedFile;
-    }
-
-    public int saveCount() {
-        return saveCount;
-    }
-
-    public void failNextSave() {
-        nextSaveException = new RuntimeException("DB 저장 실패");
     }
 
     private void assignId(File file, Long id) {

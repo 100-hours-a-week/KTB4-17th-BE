@@ -1,5 +1,8 @@
 package com.team.dating_backend.file.entity;
 
+import com.team.dating_backend.file.enums.FileErrorCode;
+import com.team.dating_backend.file.exception.FileBusinessException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -71,7 +74,7 @@ public class File {
 
     public void markDeleted(LocalDateTime deletedAt) {
         if (deletedAt == null) {
-            throw new IllegalArgumentException("삭제 시각은 null일 수 없습니다.");
+            throw new FileBusinessException(FileErrorCode.FILE_INVALID_STATE);
         }
 
         if (this.deletedAt == null) {

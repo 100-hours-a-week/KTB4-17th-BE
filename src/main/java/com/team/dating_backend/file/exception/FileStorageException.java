@@ -1,12 +1,17 @@
 package com.team.dating_backend.file.exception;
 
+import com.team.dating_backend.file.enums.FileErrorCode;
+
 public class FileStorageException extends RuntimeException {
 
-    public FileStorageException(String message) {
-        super(message);
+    private final FileErrorCode errorCode;
+
+    public FileStorageException(FileErrorCode errorCode, Throwable cause) {
+        super(null, cause);
+        this.errorCode = errorCode;
     }
 
-    public FileStorageException(String message, Throwable cause) {
-        super(message, cause);
+    public FileErrorCode getErrorCode() {
+        return errorCode;
     }
 }
