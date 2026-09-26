@@ -11,7 +11,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,7 +21,9 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "chat_messages", indexes = @Index(name = "idx_chat_message_room_status_id", columnList = "chat_room_id,status,id"))
+@Table(name = "chat_messages", uniqueConstraints = @UniqueConstraint(name = "uk_chat_message_sender_client_id", columnNames = {
+    "sender_id",
+    "client_message_id"}), indexes = @Index(name = "idx_chat_message_room_status_id", columnList = "chat_room_id,status,id"))
 public class ChatMessage {
 
     @Id
@@ -31,6 +35,9 @@ public class ChatMessage {
 
     @Column(name = "sender_id", nullable = false)
     private Long senderParticipantId;
+
+    @Column(name = "client_message_id", nullable = false, updatable = false)
+    private UUID clientMessageId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "message_type", nullable = false, length = 30)
@@ -51,4 +58,19 @@ public class ChatMessage {
 
     @Column(name = "receiver_deleted_at")
     private LocalDateTime receiverDeletedAt;
+
+    public ChatMessage(
+        Long chatRoomId,
+        Long senderParticipantId,
+        UUID clientMessageId,
+        String textContent,
+        LocalDateTime createdAt) {
+        this.chatRoomId = chatRoomId;
+        this.senderParticipantId = senderParticipantId;
+        this.clientMessageId = clientMessageId;
+        this.messageType = ChatMessageType.TEXT;
+        this.textContent = textContent;
+        this.status = ChatMessageStatus.SENT;
+        this.createdAt = createdAt;
+    }
 }

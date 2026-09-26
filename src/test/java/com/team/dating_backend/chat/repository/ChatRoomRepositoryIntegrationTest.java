@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -202,10 +203,11 @@ class ChatRoomRepositoryIntegrationTest {
         LocalDateTime senderDeletedAt,
         LocalDateTime receiverDeletedAt) {
         jdbcTemplate.update(
-            "insert into chat_messages (id, chat_room_id, sender_id, message_type, text_content, status, created_at, sender_deleted_at, receiver_deleted_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into chat_messages (id, chat_room_id, sender_id, client_message_id, message_type, text_content, status, created_at, sender_deleted_at, receiver_deleted_at) values (?, ?, ?, UNHEX(REPLACE(?, '-', '')), ?, ?, ?, ?, ?, ?)",
             messageId,
             roomId,
             senderParticipantId,
+            UUID.randomUUID().toString(),
             messageType,
             textContent,
             status,
