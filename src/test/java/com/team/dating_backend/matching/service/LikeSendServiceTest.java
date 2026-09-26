@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.service.ChatRoomCreateService;
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.matching.enums.LikeErrorCode;
@@ -34,6 +35,7 @@ class LikeSendServiceTest {
     private UserBlockRepository userBlockRepository;
     private LikeRepository likeRepository;
     private MatchRepository matchRepository;
+    private ChatRoomCreateService chatRoomCreateService;
     private LikeSendService service;
 
     @BeforeEach
@@ -42,11 +44,13 @@ class LikeSendServiceTest {
         userBlockRepository = mock(UserBlockRepository.class);
         likeRepository = mock(LikeRepository.class);
         matchRepository = mock(MatchRepository.class);
+        chatRoomCreateService = mock(ChatRoomCreateService.class);
         service = new LikeSendService(
             userRepository,
             userBlockRepository,
             likeRepository,
-            matchRepository);
+            matchRepository,
+            chatRoomCreateService);
         User activeSender = user(UserStatus.ACTIVE);
         User activeReceiver = user(UserStatus.ACTIVE);
         given(userRepository.findById(1L)).willReturn(Optional.of(activeSender));
@@ -73,6 +77,7 @@ class LikeSendServiceTest {
         assertThat(likeCaptor.getValue().getReceiverId()).isEqualTo(1L);
         assertThat(likeCaptor.getValue().getResolvedAt()).isNull();
         verify(matchRepository, never()).save(any(Match.class));
+        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
     }
 
     @Test
@@ -86,6 +91,12 @@ class LikeSendServiceTest {
                 Like savedLike = invocation.getArgument(0);
                 ReflectionTestUtils.setField(savedLike, "id", 10L);
                 return savedLike;
+            });
+        given(matchRepository.save(any(Match.class)))
+            .willAnswer(invocation -> {
+                Match match = invocation.getArgument(0);
+                ReflectionTestUtils.setField(match, "id", 30L);
+                return match;
             });
 
         var response = service.sendLike(1L, 2L);
@@ -106,6 +117,8 @@ class LikeSendServiceTest {
         assertThat(match.getReceiverId()).isEqualTo(1L);
         assertThat(match.getStatus()).isEqualTo(MatchStatus.ACTIVE);
         assertThat(match.getMatchedAt()).isEqualTo(earlierLike.getResolvedAt());
+        verify(chatRoomCreateService).createChatRoom(
+            30L, 2L, 1L, match.getMatchedAt());
     }
 
     @Test
@@ -120,6 +133,28 @@ class LikeSendServiceTest {
         verify(likeRepository)
             .findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(2L, 1L, LikeStatus.PENDING);
         verify(matchRepository, never()).save(any(Match.class));
+        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
+    }
+
+    @Test
+    void 채팅방_생성_중_예외가_발생하면_예외를_전파한다() {
+        Like earlierLike = new Like(2L, 1L, LocalDateTime.now().minusDays(1));
+        given(likeRepository.findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(
+            2L, 1L, LikeStatus.PENDING)).willReturn(Optional.of(earlierLike));
+        given(likeRepository.save(any(Like.class)))
+            .willAnswer(invocation -> invocation.getArgument(0));
+        given(matchRepository.save(any(Match.class)))
+            .willAnswer(invocation -> {
+                Match match = invocation.getArgument(0);
+                ReflectionTestUtils.setField(match, "id", 30L);
+                return match;
+            });
+        IllegalStateException failure = new IllegalStateException("chat room creation failed");
+        org.mockito.Mockito.doThrow(failure)
+            .when(chatRoomCreateService)
+            .createChatRoom(any(), any(), any(), any());
+
+        assertThatThrownBy(() -> service.sendLike(1L, 2L)).isSameAs(failure);
     }
 
     @Test
@@ -169,7 +204,8 @@ class LikeSendServiceTest {
     @Test
     void 자기_자신에게는_전송할_수_없다() {
         assertError(1L, 1L, LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
-        verifyNoInteractions(userBlockRepository, likeRepository, matchRepository);
+        verifyNoInteractions(
+            userBlockRepository, likeRepository, matchRepository, chatRoomCreateService);
     }
 
     @Test
@@ -178,6 +214,7 @@ class LikeSendServiceTest {
         assertError(1L, 2L, LikeErrorCode.MATCH_ALREADY_EXISTS);
         verify(likeRepository, never()).save(any());
         verify(matchRepository, never()).save(any(Match.class));
+        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
     }
 
     private void assertError(Long senderId, Long receiverId, LikeErrorCode errorCode) {
