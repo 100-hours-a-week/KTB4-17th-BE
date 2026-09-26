@@ -45,6 +45,10 @@ app:
   security:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
+  chat:
+    outbox:
+      max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
+
   file:
     max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}
     allowed-mime-types: ${APP_FILE_ALLOWED_MIME_TYPES}
