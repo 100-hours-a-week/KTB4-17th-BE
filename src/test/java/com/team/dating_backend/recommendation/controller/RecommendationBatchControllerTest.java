@@ -9,12 +9,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.common.dto.response.FieldErrorResponse;
+import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchGetResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationCandidateResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationItemPageInfo;
+import com.team.dating_backend.recommendation.dto.response.RecommendationItemResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
 import com.team.dating_backend.recommendation.service.RecommendationBatchGetService;
+import com.team.dating_backend.recommendation.service.RecommendationItemGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -53,6 +60,9 @@ class RecommendationBatchControllerTest {
 
     @MockitoBean
     private RecommendationBatchGetService recommendationBatchGetService;
+
+    @MockitoBean
+    private RecommendationItemGetService recommendationItemGetService;
 
     @Test
     void 배치를_생성하면_201과_ID_생성_시각을_반환한다() throws Exception {
@@ -126,6 +136,73 @@ class RecommendationBatchControllerTest {
         mockMvc.perform(get("/api/v1/recommendation-batches/active"))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.errorCode").value("REQUESTER_NOT_ACTIVE"));
+    }
+
+    @Test
+    void 추천_Item_목록은_후보_정보와_페이지_정보를_반환한다() throws Exception {
+        RecommendationCandidateResponse candidate = new RecommendationCandidateResponse(
+            21L, "하리", 29, "개발자", "서울특별시 강남구", null);
+        given(recommendationItemGetService.getRecommendationItems(5L, 42L, 100L))
+            .willReturn(new RecommendationItemsGetResponse(
+                List.of(new RecommendationItemResponse(101L, candidate)),
+                new RecommendationItemPageInfo(101L, true, 42L)));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/42/items")
+            .param("cursor", "100"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("recommendation_items_get_success"))
+            .andExpect(jsonPath("$.data.items[0].itemId").value(101))
+            .andExpect(jsonPath("$.data.items[0].candidate.memberId").value(21))
+            .andExpect(jsonPath("$.data.items[0].candidate.nickname").value("하리"))
+            .andExpect(jsonPath("$.data.items[0].candidate.age").value(29))
+            .andExpect(jsonPath("$.data.items[0].candidate.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].candidate.region").value("서울특별시 강남구"))
+            .andExpect(jsonPath("$.data.items[0].candidate.mbti").value(nullValue()))
+            .andExpect(jsonPath("$.data.items[0].capabilities").doesNotExist())
+            .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(101))
+            .andExpect(jsonPath("$.data.pageInfo.hasNext").value(true))
+            .andExpect(jsonPath("$.data.pageInfo.batchId").value(42));
+    }
+
+    @Test
+    void 추천_Item_목록의_사용할_수_없는_배치는_404를_반환한다() throws Exception {
+        given(recommendationItemGetService.getRecommendationItems(5L, 42L, null))
+            .willThrow(new RecommendationBusinessException(
+                RecommendationErrorCode.RESOURCE_NOT_AVAILABLE));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/42/items"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_AVAILABLE"));
+    }
+
+    @Test
+    void 추천_Item_목록_비활성_요청자는_403을_반환한다() throws Exception {
+        given(recommendationItemGetService.getRecommendationItems(5L, 42L, null))
+            .willThrow(new RecommendationBusinessException(
+                RecommendationErrorCode.REQUESTER_NOT_ACTIVE));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/42/items"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("REQUESTER_NOT_ACTIVE"));
+    }
+
+    @Test
+    void 추천_Item_목록의_양수가_아닌_커서는_400을_반환한다() throws Exception {
+        given(recommendationItemGetService.getRecommendationItems(5L, 42L, 0L))
+            .willThrow(new RequestValidationException(
+                List.of(new FieldErrorResponse("cursor", "must be a positive item ID"))));
+
+        mockMvc.perform(get("/api/v1/recommendation-batches/42/items").param("cursor", "0"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+            .andExpect(jsonPath("$.errors[0].field").value("cursor"));
+    }
+
+    @Test
+    void 추천_Item_목록의_잘못된_쿼리_값은_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/recommendation-batches/42/items").param("cursor", "abc"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
     }
 
     @TestConfiguration(proxyBeanMethods = false)
