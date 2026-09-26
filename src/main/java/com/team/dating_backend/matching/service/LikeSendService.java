@@ -1,5 +1,6 @@
 package com.team.dating_backend.matching.service;
 
+import com.team.dating_backend.chat.service.ChatRoomCreateService;
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.entity.Match;
@@ -26,6 +27,7 @@ public class LikeSendService {
     private final UserBlockRepository userBlockRepository;
     private final LikeRepository likeRepository;
     private final MatchRepository matchRepository;
+    private final ChatRoomCreateService chatRoomCreateService;
 
     @Transactional
     public LikeCreateResponse sendLike(Long senderId, Long receiverId) {
@@ -61,8 +63,10 @@ public class LikeSendService {
             LocalDateTime matchedAt = LocalDateTime.now();
             earlierLike.resolveLike(LikeStatus.MATCHED, matchedAt);
             like.resolveLike(LikeStatus.MATCHED, matchedAt);
-            matchRepository.save(
+            Match match = matchRepository.save(
                 new Match(earlierLike.getSenderId(), earlierLike.getReceiverId(), matchedAt));
+            chatRoomCreateService.createChatRoom(
+                match.getId(), match.getSenderId(), match.getReceiverId(), matchedAt);
         }
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
