@@ -1,55 +1,107 @@
 package com.team.dating_backend.file.support;
 
 import com.team.dating_backend.file.storage.FileStorage;
+import com.team.dating_backend.file.storage.PresignedReadUrl;
+import com.team.dating_backend.file.storage.PresignedUploadUrl;
+import com.team.dating_backend.file.storage.StoredObjectInfo;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 
 public final class FakeFileStorage implements FileStorage {
 
-    private boolean saved;
-    private String savedStorageKey;
-    private byte[] savedContent;
-    private String savedMimeType;
+    private final Map<String, StoredObjectInfo> objects = new HashMap<>();
+    private String lastUploadKey;
+    private String promotedSourceKey;
+    private String promotedDestinationKey;
+    private String readUrlStorageKey;
+    private String readUrlDisposition;
     private boolean deleted;
     private String deletedStorageKey;
-    private boolean readUrlCreated;
-    private String readUrlStorageKey;
-    private String readUrl = "https://example.com/presigned-file-url";
 
     @Override
-    public void upload(String storageKey, byte[] content, String mimeType) {
-        this.saved = true;
-        this.savedStorageKey = storageKey;
-        this.savedContent = Arrays.copyOf(content, content.length);
-        this.savedMimeType = mimeType;
+    public PresignedUploadUrl createUploadUrl(String storageKey, String mimeType, Duration expiration) {
+        lastUploadKey = storageKey;
+        return new PresignedUploadUrl(
+            "https://example.com/presigned-put-url",
+            Instant.now().plus(expiration));
     }
 
     @Override
-    public String createReadUrl(String storageKey) {
-        this.readUrlCreated = true;
-        this.readUrlStorageKey = storageKey;
-        return readUrl;
+    public Optional<StoredObjectInfo> inspectUploadedObject(String storageKey) {
+        return Optional.ofNullable(objects.get(storageKey));
+    }
+
+    @Override
+    public void promote(
+        String sourceKey,
+        String destinationKey,
+        String mimeType,
+        String sourceVersionToken) {
+        StoredObjectInfo source = objects.get(sourceKey);
+        if (source == null || !source.versionToken().equals(sourceVersionToken)) {
+            throw new IllegalStateException("source object changed");
+        }
+
+        promotedSourceKey = sourceKey;
+        promotedDestinationKey = destinationKey;
+        objects.put(
+            destinationKey,
+            new StoredObjectInfo(
+                source.fileSize(),
+                mimeType,
+                sourceVersionToken,
+                source.signatureBytes()));
+    }
+
+    @Override
+    public PresignedReadUrl createReadUrl(
+        String storageKey,
+        String mimeType,
+        String disposition,
+        String originalName,
+        Duration expiration) {
+        readUrlStorageKey = storageKey;
+        readUrlDisposition = disposition + "; " + originalName;
+        return new PresignedReadUrl(
+            "https://example.com/presigned-get-url",
+            Instant.now().plus(expiration));
     }
 
     @Override
     public void delete(String storageKey) {
-        this.deleted = true;
-        this.deletedStorageKey = storageKey;
+        deleted = true;
+        deletedStorageKey = storageKey;
+        objects.remove(storageKey);
     }
 
-    public boolean wasSaved() {
-        return saved;
+    public void addUploadedObject(String mimeType, byte[] content) {
+        objects.put(
+            lastUploadKey,
+            new StoredObjectInfo(content.length, mimeType, "etag-1", Arrays.copyOf(content, content.length)));
     }
 
-    public String savedStorageKey() {
-        return savedStorageKey;
+    public String lastUploadKey() {
+        return lastUploadKey;
     }
 
-    public byte[] savedContent() {
-        return savedContent == null ? null : Arrays.copyOf(savedContent, savedContent.length);
+    public String promotedSourceKey() {
+        return promotedSourceKey;
     }
 
-    public String savedMimeType() {
-        return savedMimeType;
+    public String promotedDestinationKey() {
+        return promotedDestinationKey;
+    }
+
+    public String readUrlStorageKey() {
+        return readUrlStorageKey;
+    }
+
+    public String readUrlDisposition() {
+        return readUrlDisposition;
     }
 
     public boolean wasDeleted() {
@@ -58,13 +110,5 @@ public final class FakeFileStorage implements FileStorage {
 
     public String deletedStorageKey() {
         return deletedStorageKey;
-    }
-
-    public boolean wasReadUrlCreated() {
-        return readUrlCreated;
-    }
-
-    public String readUrlStorageKey() {
-        return readUrlStorageKey;
     }
 }

@@ -46,10 +46,17 @@ app:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
   file:
+    max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}
+    allowed-mime-types: ${APP_FILE_ALLOWED_MIME_TYPES}
+    upload-intent-ttl: ${APP_FILE_UPLOAD_INTENT_TTL}
+    upload-intent-retention: ${APP_FILE_UPLOAD_INTENT_RETENTION}
+    cleanup-delay-ms: ${APP_FILE_CLEANUP_DELAY_MS}
+    cleanup-batch-size: ${APP_FILE_CLEANUP_BATCH_SIZE}
     s3:
       bucket: ${AWS_S3_BUCKET}
       region: ${AWS_S3_REGION}
-      presigned-url-expiration: ${AWS_S3_PRESIGNED_URL_EXPIRATION}
+      upload-url-expiration: ${AWS_S3_UPLOAD_URL_EXPIRATION}
+      download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
 
 logging:
   level:

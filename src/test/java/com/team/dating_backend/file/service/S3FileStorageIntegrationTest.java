@@ -13,6 +13,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Tag;
@@ -59,31 +60,54 @@ class S3FileStorageIntegrationTest {
     private S3Properties s3Properties;
 
     @Test
-    void 실제_S3에_이미지를_업로드하고_Presigned_URL로_조회한다() throws Exception {
+    void 실제_S3에_Presigned_PUT으로_업로드하고_검증된_객체를_다운로드한다() throws Exception {
         // Given
-        String storageKey = "integration-tests/" + UUID.randomUUID() + ".png";
+        String objectId = UUID.randomUUID().toString();
+        String stagingKey = "integration-tests/staging/" + objectId;
+        String finalKey = "integration-tests/files/" + objectId;
 
         try {
             // When
-            s3FileStorage.upload(storageKey, TEST_IMAGE, MIME_TYPE);
+            var uploadUrl = s3FileStorage.createUploadUrl(
+                stagingKey,
+                MIME_TYPE,
+                Duration.ofMinutes(5));
+            HttpResponse<String> uploadResponse = HttpClient.newHttpClient()
+                .send(
+                    HttpRequest.newBuilder(URI.create(uploadUrl.url()))
+                        .header("Content-Type", MIME_TYPE)
+                        .PUT(HttpRequest.BodyPublishers.ofByteArray(TEST_IMAGE))
+                        .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(uploadResponse.statusCode()).isEqualTo(200);
+
+            var uploadedObject = s3FileStorage.inspectUploadedObject(stagingKey).orElseThrow();
 
             // Then
             HeadObjectResponse savedObject = s3Client.headObject(
                 HeadObjectRequest.builder()
                     .bucket(s3Properties.getBucket())
-                    .key(storageKey)
+                    .key(stagingKey)
                     .build());
 
             assertThat(savedObject.contentType()).isEqualTo(MIME_TYPE);
             assertThat(savedObject.contentLength()).isEqualTo((long) TEST_IMAGE.length);
+            assertThat(uploadedObject.signatureBytes()).contains(TEST_IMAGE[0], TEST_IMAGE[1]);
 
             // When
-            String presignedUrl = s3FileStorage.createReadUrl(storageKey);
+            s3FileStorage.promote(stagingKey, finalKey, MIME_TYPE, uploadedObject.versionToken());
+            var readUrl = s3FileStorage.createReadUrl(
+                finalKey,
+                MIME_TYPE,
+                "attachment",
+                "integration.png",
+                Duration.ofMinutes(5));
 
             // Then
             HttpResponse<byte[]> response = HttpClient.newHttpClient()
                 .send(
-                    HttpRequest.newBuilder(URI.create(presignedUrl)).GET().build(),
+                    HttpRequest.newBuilder(URI.create(readUrl.url())).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray());
 
             assertThat(response.statusCode()).isEqualTo(200);
@@ -95,7 +119,8 @@ class S3FileStorageIntegrationTest {
             assertThat(image.getWidth()).isEqualTo(1);
             assertThat(image.getHeight()).isEqualTo(1);
         } finally {
-            s3FileStorage.delete(storageKey);
+            s3FileStorage.delete(stagingKey);
+            s3FileStorage.delete(finalKey);
         }
     }
 

@@ -1,237 +1,245 @@
 package com.team.dating_backend.file.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.common.exception.RequestValidationException;
-import com.team.dating_backend.file.dto.FileReadResult;
-import com.team.dating_backend.file.dto.FileUploadCommand;
-import com.team.dating_backend.file.dto.FileUploadResult;
-import com.team.dating_backend.file.dto.UploadFile;
+import com.team.dating_backend.file.config.FileProperties;
+import com.team.dating_backend.file.config.S3Properties;
+import com.team.dating_backend.file.dto.CreateFileUploadIntentCommand;
+import com.team.dating_backend.file.dto.FileAccessUrlResult;
+import com.team.dating_backend.file.dto.FileMetadataResult;
+import com.team.dating_backend.file.dto.FileUploadIntentResult;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.enums.FileErrorCode;
-import com.team.dating_backend.file.exception.FileDeleteException;
-import com.team.dating_backend.file.exception.FileNotFoundException;
-import com.team.dating_backend.file.exception.FileReadException;
-import com.team.dating_backend.file.exception.FileStorageException;
-import com.team.dating_backend.file.exception.FileUploadException;
-import com.team.dating_backend.file.support.FailingFileRepository;
-import com.team.dating_backend.file.support.FailingFileStorage;
+import com.team.dating_backend.file.enums.FileUploadIntentStatus;
+import com.team.dating_backend.file.exception.FileBusinessException;
+import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.file.support.FakeFileRepository;
 import com.team.dating_backend.file.support.FakeFileStorage;
-import java.nio.charset.StandardCharsets;
+import com.team.dating_backend.file.support.FakeFileUploadIntentRepository;
+import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FileServiceTest {
 
+    private static final Long USER_ID = 41L;
+    private static final String PNG_MIME_TYPE = "image/png";
+
     @Test
-    void 파일_업로드에_성공한다() {
-        // Given
-        FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
+    void 업로드_URL과_요청_정책을_반환한다() {
+        TestContext context = newContext(10_000);
 
-        FileService fileService = new FileService(storage, repository);
+        FileUploadIntentResult result = context.fileService().createUploadIntent(
+            USER_ID,
+            new CreateFileUploadIntentCommand("sample.png", PNG_MIME_TYPE));
 
-        byte[] content = "image-content".getBytes(StandardCharsets.UTF_8);
+        assertThat(result.uploadIntentId()).isNotNull();
+        assertThat(result.uploadUrl()).isEqualTo("https://example.com/presigned-put-url");
+        assertThat(result.method()).isEqualTo("PUT");
+        assertThat(result.headers()).containsEntry("Content-Type", PNG_MIME_TYPE);
+        assertThat(result.maxFileSizeBytes()).isEqualTo(10_000);
+        assertThat(context.storage().lastUploadKey()).startsWith("staging/");
+        assertThat(context.intentRepository().intent(result.uploadIntentId()).getFinalStorageKey())
+            .startsWith("files/");
+    }
 
-        UploadFile uploadFile = new UploadFile("profile.jpg", "image/jpeg", content);
+    @Test
+    void S3_직접업로드_완료후_검증하고_최종파일과_메타데이터를_저장한다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = createIntent(context);
+        byte[] imageBytes = validPngBytes(32);
+        context.storage().addUploadedObject(PNG_MIME_TYPE, imageBytes);
 
-        FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
+        FileMetadataResult result = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
 
-        // When
-        FileUploadResult result = fileService.upload(command);
-
-        // Then
         assertThat(result.fileId()).isNotNull();
-
-        assertThat(storage.wasSaved()).isTrue();
-
-        assertThat(storage.savedContent()).containsExactly(content);
-
-        assertThat(storage.savedMimeType()).isEqualTo("image/jpeg");
-
-        assertThat(repository.savedFile()).isNotNull();
-
-        assertThat(repository.savedFile().getOwnerUserId()).isEqualTo(1L);
-
-        assertThat(repository.savedFile().getOriginalName()).isEqualTo("profile.jpg");
-
-        assertThat(repository.savedFile().getMimeType()).isEqualTo("image/jpeg");
-
-        assertThat(repository.savedFile().getFileSize()).isEqualTo(content.length);
-
-        assertThat(repository.savedFile().getStorageKey()).isEqualTo(storage.savedStorageKey());
+        assertThat(result.originalName()).isEqualTo("sample.png");
+        assertThat(result.mimeType()).isEqualTo(PNG_MIME_TYPE);
+        assertThat(result.fileSize()).isEqualTo(imageBytes.length);
+        assertThat(context.files().savedFile().getOwnerUserId()).isEqualTo(USER_ID);
+        assertThat(context.files().savedFile().getStorageKey()).startsWith("files/");
+        assertThat(context.storage().promotedSourceKey()).startsWith("staging/");
+        assertThat(context.storage().promotedDestinationKey()).isEqualTo(
+            context.files().savedFile().getStorageKey());
+        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStatus())
+            .isEqualTo(FileUploadIntentStatus.COMPLETED);
+        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStagingCleanedAt())
+            .isNull();
+        assertThat(context.storage().deletedStorageKey()).startsWith("staging/");
     }
 
     @Test
-    void 빈_파일은_업로드하지_않는다() {
-        // Given
-        FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
+    void 완료_재호출은_같은_fileId를_반환한다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = createIntent(context);
+        context.storage().addUploadedObject(PNG_MIME_TYPE, validPngBytes(32));
 
-        FileService fileService = new FileService(storage, repository);
+        FileMetadataResult first = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
+        FileMetadataResult second = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
 
-        UploadFile uploadFile = new UploadFile("empty.jpg", "image/jpeg", new byte[0]);
-
-        FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
-
-        // When & Then
-        RequestValidationException exception = assertThrows(RequestValidationException.class,
-            () -> fileService.upload(command));
-
-        assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INVALID_REQUEST);
-
-        assertThat(storage.wasSaved()).isFalse();
-        assertThat(repository.savedFile()).isNull();
+        assertThat(second.fileId()).isEqualTo(first.fileId());
+        assertThat(context.files().saveCount()).isEqualTo(1);
     }
 
     @Test
-    void 파일_저장소_저장에_실패하면_DB에_저장하지_않는다() {
-        // Given
-        FakeFileRepository repository = new FakeFileRepository();
-        FailingFileStorage storage = new FailingFileStorage();
+    void S3에_객체가_없으면_재시도할_수_있도록_intent를_되돌린다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = createIntent(context);
 
-        FileService fileService = new FileService(storage, repository);
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId()));
 
-        UploadFile uploadFile = new UploadFile(
-            "profile.jpg",
-            "image/jpeg",
-            "image-content".getBytes(StandardCharsets.UTF_8));
+        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_NOT_COMPLETE);
+        assertThat(exception.getMessage()).isNull();
 
-        FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
-
-        // When
-        FileUploadException exception = assertThrows(FileUploadException.class, () -> fileService.upload(command));
-
-        // Then
-        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_FAILED);
-        assertThat(exception.getCause()).isInstanceOf(FileStorageException.class);
-        assertThat(storage.wasUploadAttempted()).isTrue();
-        assertThat(repository.savedFile()).isNull();
+        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStatus())
+            .isEqualTo(FileUploadIntentStatus.PENDING);
+        assertThat(context.files().savedFile()).isNull();
     }
 
     @Test
-    void DB_저장_실패하면_Storage를_정리한다() {
-        FailingFileRepository repository = new FailingFileRepository();
-        FakeFileStorage storage = new FakeFileStorage();
+    void 허용크기를_초과한_실제객체는_저장하지_않고_정리한다() {
+        TestContext context = newContext(16);
+        FileUploadIntentResult uploadIntent = createIntent(context);
+        context.storage().addUploadedObject(PNG_MIME_TYPE, validPngBytes(32));
 
-        FileService fileService = new FileService(storage, repository);
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId()));
 
-        UploadFile uploadFile = new UploadFile(
-            "profile.jpg",
-            "image/jpeg",
-            "image-content".getBytes(StandardCharsets.UTF_8));
-
-        FileUploadCommand command = new FileUploadCommand(1L, uploadFile);
-
-        FileUploadException exception = assertThrows(FileUploadException.class, () -> fileService.upload(command));
-
-        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_FAILED);
-        assertThat(exception.getCause()).isInstanceOf(RuntimeException.class);
-        assertThat(storage.wasDeleted()).isTrue();
-
-        assertThat(storage.deletedStorageKey()).isEqualTo(storage.savedStorageKey());
+        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_TOO_LARGE);
+        assertThat(exception.getMessage()).isNull();
+        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStatus())
+            .isEqualTo(FileUploadIntentStatus.FAILED);
+        assertThat(context.files().savedFile()).isNull();
+        assertThat(context.storage().wasDeleted()).isTrue();
     }
 
     @Test
-    void 활성_파일을_조회하면_메타데이터와_조회_URL을_반환한다() {
-        // Given
-        FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
-        FileService fileService = new FileService(storage, repository);
+    void ContentType가_이미지여도_시그니처가_다르면_거부한다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = createIntent(context);
+        context.storage().addUploadedObject(PNG_MIME_TYPE, new byte[32]);
 
-        File file = File.create(1L, "file/profile-key", "profile.jpg", "image/jpeg", 13L);
-        repository.save(file);
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId()));
 
-        // When
-        FileReadResult result = fileService.read(file.getId());
-
-        // Then
-        assertThat(result.fileId()).isEqualTo(file.getId());
-        assertThat(result.originalName()).isEqualTo("profile.jpg");
-        assertThat(result.mimeType()).isEqualTo("image/jpeg");
-        assertThat(result.fileSize()).isEqualTo(13L);
-        assertThat(result.readUrl()).isEqualTo("https://example.com/presigned-file-url");
-
-        assertThat(storage.wasReadUrlCreated()).isTrue();
-        assertThat(storage.readUrlStorageKey()).isEqualTo("file/profile-key");
+        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_INVALID_CONTENT);
+        assertThat(context.files().savedFile()).isNull();
     }
 
     @Test
-    void 존재하지_않는_파일은_조회하지_않는다() {
-        // Given
-        FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
-        FileService fileService = new FileService(storage, repository);
+    void DB_완료처리가_실패하면_최종객체를_정리하고_재시도상태로_되돌린다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = createIntent(context);
+        context.storage().addUploadedObject(PNG_MIME_TYPE, validPngBytes(32));
+        context.intentRepository().failNextComplete();
 
-        // When & Then
-        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> fileService.read(999L));
+        assertThrows(
+            RuntimeException.class,
+            () -> context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId()));
+
+        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStatus())
+            .isEqualTo(FileUploadIntentStatus.PENDING);
+        assertThat(context.storage().deletedStorageKey()).startsWith("files/");
+    }
+
+    @Test
+    void 메타데이터와_다운로드_URL은_소유자만_조회할_수_있다() {
+        TestContext context = newContext(10_000);
+        File file = context.files().saveAndFlush(
+            File.create(USER_ID, "files/private-key", "photo.png", PNG_MIME_TYPE, 32L));
+
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().getMetadata(99L, file.getId()));
 
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_NOT_FOUND);
+        assertThat(exception.getMessage()).isNull();
 
-        assertThat(storage.wasReadUrlCreated()).isFalse();
+        FileAccessUrlResult result = context.fileService()
+            .createAccessUrl(USER_ID, file.getId(), "inline");
+
+        assertThat(result.accessUrl()).isEqualTo("https://example.com/presigned-get-url");
+        assertThat(result.disposition()).isEqualTo("inline");
+        assertThat(context.storage().readUrlStorageKey()).isEqualTo("files/private-key");
+        assertThat(context.storage().readUrlDisposition()).contains("inline", "photo.png");
     }
 
     @Test
-    void 파일을_논리삭제한다() {
-        // Given
+    void 다른_사용자의_uploadIntent는_완료할_수_없다() {
+        TestContext context = newContext(10_000);
+        FileUploadIntentResult uploadIntent = context.fileService().createUploadIntent(
+            99L,
+            new CreateFileUploadIntentCommand("sample.png", PNG_MIME_TYPE));
+
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId()));
+
+        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_UPLOAD_INTENT_NOT_FOUND);
+    }
+
+    @Test
+    void 요청검증예외는_메시지없이_errorCode만_가진다() {
+        TestContext context = newContext(10_000);
+
+        RequestValidationException exception = assertThrows(
+            RequestValidationException.class,
+            () -> context.fileService().createUploadIntent(USER_ID, null));
+
+        assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INVALID_REQUEST);
+        assertThat(exception.getMessage()).isNull();
+    }
+
+    private FileUploadIntentResult createIntent(TestContext context) {
+        return context.fileService().createUploadIntent(
+            USER_ID,
+            new CreateFileUploadIntentCommand("sample.png", PNG_MIME_TYPE));
+    }
+
+    private TestContext newContext(long maxSizeBytes) {
         FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
-        FileService fileService = new FileService(storage, repository);
+        FakeFileRepository files = new FakeFileRepository();
+        FakeFileUploadIntentRepository intents = new FakeFileUploadIntentRepository(files);
 
-        File file = File.create(1L, "file/profile-key", "profile.jpg", "image/jpeg", 13L);
-        repository.save(file);
+        FileProperties fileProperties = new FileProperties();
+        fileProperties.setMaxSizeBytes(maxSizeBytes);
+        fileProperties.setAllowedMimeTypes(List.of("image/jpeg", "image/png", "image/webp"));
+        fileProperties.setUploadIntentTtl(Duration.ofMinutes(15));
+        fileProperties.setCleanupDelayMs(300_000);
 
-        // When
-        fileService.softDelete(file.getId());
+        S3Properties s3Properties = new S3Properties();
+        s3Properties.setBucket("test-bucket");
+        s3Properties.setRegion("ap-northeast-2");
+        s3Properties.setUploadUrlExpiration(Duration.ofMinutes(10));
+        s3Properties.setDownloadUrlExpiration(Duration.ofMinutes(5));
 
-        // Then
-        assertThat(repository.savedFile().isDeleted()).isTrue();
-        assertThat(repository.saveCount()).isEqualTo(2);
-        assertThat(storage.wasDeleted()).isFalse();
+        FileService service = new FileService(
+            storage,
+            files,
+            intents,
+            fileProperties,
+            s3Properties,
+            new ImageSignatureValidator());
 
-        assertThatThrownBy(() -> fileService.read(file.getId()))
-            .isInstanceOf(FileNotFoundException.class);
+        return new TestContext(service, storage, files, intents);
     }
 
-    @Test
-    void 파일_조회_URL_생성에_실패하면_파일_조회_예외를_던진다() {
-        // Given
-        FailingFileStorage storage = new FailingFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
-        FileService fileService = new FileService(storage, repository);
-
-        File file = File.create(1L, "file/profile-key", "profile.jpg", "image/jpeg", 13L);
-        repository.save(file);
-
-        // When
-        FileReadException exception = assertThrows(FileReadException.class, () -> fileService.read(file.getId()));
-
-        // Then
-        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_READ_URL_FAILED);
-        assertThat(exception.getCause()).isInstanceOf(FileStorageException.class);
+    private byte[] validPngBytes(int size) {
+        byte[] bytes = new byte[size];
+        byte[] header = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        System.arraycopy(header, 0, bytes, 0, header.length);
+        return bytes;
     }
 
-    @Test
-    void 파일_논리삭제_DB_저장에_실패하면_파일_삭제_예외를_던진다() {
-        // Given
-        FakeFileStorage storage = new FakeFileStorage();
-        FakeFileRepository repository = new FakeFileRepository();
-        FileService fileService = new FileService(storage, repository);
-
-        File file = File.create(1L, "file/profile-key", "profile.jpg", "image/jpeg", 13L);
-        repository.save(file);
-        repository.failNextSave();
-
-        // When
-        FileDeleteException exception = assertThrows(FileDeleteException.class,
-            () -> fileService.softDelete(file.getId()));
-
-        // Then
-        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_DELETE_FAILED);
-        assertThat(exception.getCause()).isInstanceOf(RuntimeException.class);
-        assertThat(storage.wasDeleted()).isFalse();
-    }
+    private record TestContext(
+        FileService fileService,
+        FakeFileStorage storage,
+        FakeFileRepository files,
+        FakeFileUploadIntentRepository intentRepository) {}
 }

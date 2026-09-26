@@ -17,7 +17,17 @@ public class JpaFileRepositoryAdapter implements FileRepository {
     }
 
     @Override
+    public File saveAndFlush(File file) {
+        return fileJpaRepository.saveAndFlush(file);
+    }
+
+    @Override
     public Optional<File> findActiveById(Long fileId) {
         return fileJpaRepository.findByIdAndDeletedAtIsNull(fileId);
+    }
+
+    @Override
+    public Optional<File> findActiveByIdAndOwner(Long fileId, Long ownerUserId) {
+        return fileJpaRepository.findByIdAndOwnerUserIdAndDeletedAtIsNull(fileId, ownerUserId);
     }
 }

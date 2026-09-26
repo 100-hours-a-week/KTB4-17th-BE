@@ -8,6 +8,11 @@ public class RequestValidationException extends BusinessException {
 
     private final List<FieldErrorResponse> errors;
 
+    public RequestValidationException() {
+        super(CommonErrorCode.INVALID_REQUEST);
+        this.errors = List.of();
+    }
+
     public RequestValidationException(String message) {
         super(CommonErrorCode.INVALID_REQUEST, message);
         this.errors = List.of();
