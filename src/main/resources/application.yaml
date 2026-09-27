@@ -67,6 +67,12 @@ app:
   persona-ai:
     base-url: ${AI_PERSONA_BASE_URL:}
 
+  ai-simulation:
+    base-url: ${AI_SIMULATION_BASE_URL:}
+    simulation-path: ${AI_SIMULATION_PATH:/ai/api/v1/simulation}
+    connect-timeout-ms: ${AI_SIMULATION_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_SIMULATION_READ_TIMEOUT_MS:130000}
+
   file:
     max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}
     allowed-mime-types: ${APP_FILE_ALLOWED_MIME_TYPES}
