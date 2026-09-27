@@ -38,30 +38,17 @@ public class ChatParticipant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "chat_room_id",
-        nullable = false
-    )
+    @Column(name = "chat_room_id", nullable = false)
     private Long chatRoomId;
 
-    @Column(
-        name = "user_id",
-        nullable = false
-    )
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "status",
-        nullable = false,
-        length = 20
-    )
+    @Column(name = "status", nullable = false, length = 20)
     private ChatParticipantStatus status;
 
-    @Column(
-        name = "is_chat_notification",
-        nullable = false
-    )
+    @Column(name = "is_chat_notification", nullable = false)
     private boolean chatNotification;
 
     @Column(name = "left_at")

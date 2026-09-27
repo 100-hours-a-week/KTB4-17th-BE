@@ -17,8 +17,8 @@
         <setting id="org.eclipse.jdt.core.formatter.join_wrapped_lines" value="false"/>
         <!-- createAlignmentValue(false, WRAP_ONE_PER_LINE, INDENT_DEFAULT): wrap long enum lists one per line. -->
         <setting id="org.eclipse.jdt.core.formatter.alignment_for_enum_constants" value="48"/>
-        <!-- createAlignmentValue(true, WRAP_ONE_PER_LINE, INDENT_DEFAULT): put annotation arguments on separate lines. -->
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="49"/>
+        <!-- createAlignmentValue(false, WRAP_COMPACT, INDENT_DEFAULT): wrap annotation arguments only when needed. -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="16"/>
         <setting id="org.eclipse.jdt.core.formatter.parentheses_positions_in_annotation" value="separate_lines_if_wrapped"/>
         <setting id="org.eclipse.jdt.core.formatter.wrap_before_binary_operator" value="true"/>
         <setting id="org.eclipse.jdt.core.formatter.alignment_for_selector_in_method_invocation" value="20"/>

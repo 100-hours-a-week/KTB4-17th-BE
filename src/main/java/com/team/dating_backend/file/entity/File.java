@@ -34,45 +34,23 @@ public class File {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "owner_user_id",
-        nullable = false
-    )
+    @Column(name = "owner_user_id", nullable = false)
     private Long ownerUserId;
 
-    @Column(
-        name = "storage_key",
-        nullable = false,
-        length = 512
-    )
+    @Column(name = "storage_key", nullable = false, length = 512)
     private String storageKey;
 
-    @Column(
-        name = "original_name",
-        nullable = false,
-        length = 255
-    )
+    @Column(name = "original_name", nullable = false, length = 255)
     private String originalName;
 
-    @Column(
-        name = "mime_type",
-        nullable = false,
-        length = 100
-    )
+    @Column(name = "mime_type", nullable = false, length = 100)
     private String mimeType;
 
-    @Column(
-        name = "file_size",
-        nullable = false
-    )
+    @Column(name = "file_size", nullable = false)
     private long fileSize;
 
     @CreationTimestamp
-    @Column(
-        name = "created_at",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "deleted_at")

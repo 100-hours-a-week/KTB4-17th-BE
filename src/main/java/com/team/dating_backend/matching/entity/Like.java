@@ -24,30 +24,17 @@ public class Like {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "sender_id",
-        nullable = false
-    )
+    @Column(name = "sender_id", nullable = false)
     private Long senderId;
 
-    @Column(
-        name = "receiver_id",
-        nullable = false
-    )
+    @Column(name = "receiver_id", nullable = false)
     private Long receiverId;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "status",
-        nullable = false,
-        length = 20
-    )
+    @Column(name = "status", nullable = false, length = 20)
     private LikeStatus status;
 
-    @Column(
-        name = "created_at",
-        nullable = false
-    )
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "resolved_at")

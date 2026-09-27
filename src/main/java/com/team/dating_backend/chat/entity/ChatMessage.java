@@ -40,52 +40,27 @@ public class ChatMessage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "chat_room_id",
-        nullable = false
-    )
+    @Column(name = "chat_room_id", nullable = false)
     private Long chatRoomId;
 
-    @Column(
-        name = "sender_id",
-        nullable = false
-    )
+    @Column(name = "sender_id", nullable = false)
     private Long senderParticipantId;
 
-    @Column(
-        name = "client_message_id",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "client_message_id", nullable = false, updatable = false)
     private UUID clientMessageId;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "message_type",
-        nullable = false,
-        length = 30
-    )
+    @Column(name = "message_type", nullable = false, length = 30)
     private ChatMessageType messageType;
 
-    @Column(
-        name = "text_content",
-        length = 1000
-    )
+    @Column(name = "text_content", length = 1000)
     private String textContent;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "status",
-        nullable = false,
-        length = 20
-    )
+    @Column(name = "status", nullable = false, length = 20)
     private ChatMessageStatus status;
 
-    @Column(
-        name = "created_at",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "sender_deleted_at")

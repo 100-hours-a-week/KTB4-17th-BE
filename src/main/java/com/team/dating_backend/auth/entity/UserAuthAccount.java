@@ -44,22 +44,13 @@ public class UserAuthAccount {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "provider",
-        nullable = false
-    )
+    @Column(name = "provider", nullable = false)
     private AuthProvider provider;
 
-    @Column(
-        name = "provider_user_id",
-        nullable = false
-    )
+    @Column(name = "provider_user_id", nullable = false)
     private String providerUserId;
 
-    @Column(
-        name = "linked_at",
-        nullable = false
-    )
+    @Column(name = "linked_at", nullable = false)
     private LocalDateTime linkedAt;
 
     public static UserAuthAccount create(
