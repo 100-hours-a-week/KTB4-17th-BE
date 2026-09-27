@@ -1,6 +1,6 @@
 package com.team.dating_backend.aipractice.service;
 
-import com.team.dating_backend.aipractice.dto.event.AiPracticeTurnUpdatedEvent;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
 import com.team.dating_backend.aipractice.dto.request.AiPracticeGenerationCallbackRequest;
 import com.team.dating_backend.aipractice.entity.AiPracticeChat;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -28,15 +28,14 @@ public class AiPracticeGenerationCallbackService {
     public void receive(AiPracticeGenerationCallbackRequest request) {
         AiPracticeSession session = sessionRepository.findByIdForUpdate(request.practiceSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.AI_CALLBACK_INVALID));
-        attachAiSessionId(session, request.aiSessionId());
-
         AiPracticeChat chat = chatRepository.findByIdAndSession_Id(
             request.chatId(), request.practiceSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.AI_CALLBACK_INVALID));
-        if (chat.getGenerationAttempt() != request.attempt()) {
+        if (chat.getGenerationAttempt() != request.generationAttempt()) {
             endCommandQueue.enqueueIfReady(session);
             return;
         }
+        attachAiSessionId(session, request.aiSessionId());
         if (chat.getStatus() == AiPracticeChatStatus.COMPLETED) {
             return;
         }
@@ -53,7 +52,7 @@ public class AiPracticeGenerationCallbackService {
             chat.fail("AI_GENERATION_FAILED");
         }
 
-        eventPublisher.publishEvent(new AiPracticeTurnUpdatedEvent(
+        eventPublisher.publishEvent(new AiPracticeChatUpdatedEvent(
             session.getUserId(),
             session.getId(),
             chat.getId(),

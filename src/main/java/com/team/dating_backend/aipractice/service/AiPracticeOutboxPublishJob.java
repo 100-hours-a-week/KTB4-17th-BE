@@ -87,7 +87,6 @@ public class AiPracticeOutboxPublishJob {
                 throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
             }
             InitialGenerationRequest request = new InitialGenerationRequest(
-                outbox.getIdempotencyKey().toString(),
                 session.getId(),
                 chat.getId(),
                 session.getUserId(),
@@ -98,7 +97,6 @@ public class AiPracticeOutboxPublishJob {
                 request, outbox.getIdempotencyKey().toString());
         } else {
             ContinueGenerationRequest request = new ContinueGenerationRequest(
-                outbox.getIdempotencyKey().toString(),
                 session.getId(),
                 chat.getId(),
                 chat.getGenerationAttempt(),

@@ -63,17 +63,6 @@ public class AiPracticeController {
             sessionService.listSessions(principal.userId(), cursor, size));
     }
 
-    @GetMapping("/sessions/{sessionId}")
-    public SuccessResponse<AiPracticeChatPageResponse> getSessionHistory(
-        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable Long sessionId,
-        @RequestParam(required = false) @Min(1) Long cursor,
-        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return SuccessResponse.of(
-            "ai_practice_history_success",
-            historyService.getHistory(principal.userId(), sessionId, cursor, size));
-    }
-
     @GetMapping("/sessions/{sessionId}/chats")
     public SuccessResponse<AiPracticeChatPageResponse> getChats(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,

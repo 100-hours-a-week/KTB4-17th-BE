@@ -5,19 +5,17 @@ public final class AiPracticeAiPayloads {
     private AiPracticeAiPayloads() {}
 
     public record InitialGenerationRequest(
-        String requestId,
         Long practiceSessionId,
-        Long turnId,
+        Long chatId,
         Long userId,
         Long targetMemberId,
-        int attempt,
+        int generationAttempt,
         String userMessage) {}
 
     public record ContinueGenerationRequest(
-        String requestId,
         Long practiceSessionId,
-        Long turnId,
-        int attempt,
+        Long chatId,
+        int generationAttempt,
         String userMessage) {}
 
     public record GenerationAcceptedResponse(String aiSessionId) {}

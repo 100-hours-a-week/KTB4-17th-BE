@@ -96,11 +96,11 @@ class AiPracticeOutboxPublishJobTest {
         verify(aiClient).startGeneration(requestCaptor.capture(), anyString());
         InitialGenerationRequest request = requestCaptor.getValue();
         assertThat(request.practiceSessionId()).isEqualTo(SESSION_ID);
-        assertThat(request.turnId()).isEqualTo(CHAT_ID);
+        assertThat(request.chatId()).isEqualTo(CHAT_ID);
         assertThat(request.userId()).isEqualTo(USER_ID);
         assertThat(request.targetMemberId()).isEqualTo(TARGET_MEMBER_ID);
         assertThat(request.userMessage()).isEqualTo("연습 메시지");
-        assertThat(request.attempt()).isEqualTo(1);
+        assertThat(request.generationAttempt()).isEqualTo(1);
         verify(resultService).markGenerationSubmitted(OUTBOX_ID, "ai-session-42");
         verify(aiClient, never()).continueGeneration(anyString(),
             any(ContinueGenerationRequest.class), anyString());
@@ -118,8 +118,8 @@ class AiPracticeOutboxPublishJobTest {
             org.mockito.ArgumentMatchers.eq("ai-session-42"), requestCaptor.capture(), anyString());
         ContinueGenerationRequest request = requestCaptor.getValue();
         assertThat(request.practiceSessionId()).isEqualTo(SESSION_ID);
-        assertThat(request.turnId()).isEqualTo(CHAT_ID);
-        assertThat(request.attempt()).isEqualTo(1);
+        assertThat(request.chatId()).isEqualTo(CHAT_ID);
+        assertThat(request.generationAttempt()).isEqualTo(1);
         assertThat(request.userMessage()).isEqualTo("연습 메시지");
         verify(resultService).markGenerationSubmitted(OUTBOX_ID, "ai-session-42");
         verify(aiClient, never()).startGeneration(
