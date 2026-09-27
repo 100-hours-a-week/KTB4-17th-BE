@@ -55,7 +55,7 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void 프로필이_존재하지_않으면_다음_단계는_NICKNAME이다() {
+    void 프로필이_존재하지_않으면_다음_단계는_REGION이다() {
         givenOnboardingUser();
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
@@ -63,12 +63,12 @@ class OnboardingServiceTest {
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
         assertThat(response.userStatus()).isEqualTo(UserStatus.ONBOARDING);
-        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.NICKNAME);
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.REGION);
         assertThat(response.requirements()).isEqualTo(OnboardingRequirementsResponse.incomplete());
     }
 
     @Test
-    void 닉네임이_공백이면_다음_단계는_NICKNAME이다() {
+    void 닉네임이_공백이면_다음_단계는_PROFILE이다() {
         givenOnboardingUser();
         Profile profile = completeProfile();
         given(profile.getNickname()).willReturn("   ");
@@ -76,7 +76,7 @@ class OnboardingServiceTest {
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
-        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.NICKNAME);
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.PROFILE);
         assertThat(response.requirements().nicknameComplete()).isFalse();
         assertThat(response.requirements().regionComplete()).isTrue();
         assertThat(response.requirements().basicInfoComplete()).isTrue();
@@ -89,12 +89,14 @@ class OnboardingServiceTest {
         givenOnboardingUser();
         Profile profile = completeProfile();
         given(profile.getActivityRegion()).willReturn(null);
+        given(profile.getNickname()).willReturn(null);
         givenProfile(profile);
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
         assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.REGION);
         assertThat(response.requirements().regionComplete()).isFalse();
+        assertThat(response.requirements().nicknameComplete()).isFalse();
     }
 
     @Test
@@ -124,7 +126,7 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void MBTI가_없으면_다음_단계는_MBTI다() {
+    void MBTI가_없으면_다음_단계는_LIFESTYLE이다() {
         givenOnboardingUser();
         Profile profile = completeProfile();
         given(profile.getMbti()).willReturn(null);
@@ -132,7 +134,7 @@ class OnboardingServiceTest {
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
-        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.MBTI);
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.LIFESTYLE);
         assertThat(response.requirements().mbtiComplete()).isFalse();
     }
 

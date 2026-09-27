@@ -70,20 +70,14 @@ public class OnboardingService {
     }
 
     private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {
-        if (!requirements.nicknameComplete()) {
-            return OnboardingStep.NICKNAME;
-        }
         if (!requirements.regionComplete()) {
             return OnboardingStep.REGION;
         }
-        if (!requirements.basicInfoComplete()) {
+        if (!requirements.nicknameComplete() || !requirements.basicInfoComplete()) {
             return OnboardingStep.PROFILE;
         }
-        if (!requirements.lifestyleComplete()) {
+        if (!requirements.lifestyleComplete() || !requirements.mbtiComplete()) {
             return OnboardingStep.LIFESTYLE;
-        }
-        if (!requirements.mbtiComplete()) {
-            return OnboardingStep.MBTI;
         }
         if (!requirements.profileImageComplete()) {
             return OnboardingStep.PROFILE_IMAGE;
