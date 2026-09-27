@@ -2,6 +2,7 @@ package com.team.dating_backend.user.entity;
 
 import com.team.dating_backend.user.enums.FaceVerificationStatus;
 import com.team.dating_backend.user.enums.Gender;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -45,6 +46,10 @@ public class User {
     @Column(name = "face_verification_status", nullable = false)
     private FaceVerificationStatus faceVerificationStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "persona_onboarding_status", nullable = false, length = 20)
+    private PersonaOnboardingStatus personaOnboardingStatus;
+
     @Column(name = "last_accessed_at", nullable = false)
     private LocalDateTime lastAccessedAt;
 
@@ -64,6 +69,7 @@ public class User {
         user.birthDate = birthDate;
         user.gender = gender;
         user.faceVerificationStatus = FaceVerificationStatus.NOT_VERIFIED;
+        user.personaOnboardingStatus = PersonaOnboardingStatus.PENDING;
         user.lastAccessedAt = now;
         user.createdAt = now;
         user.updatedAt = now;
@@ -75,5 +81,17 @@ public class User {
             status = UserStatus.ACTIVE;
             updatedAt = now;
         }
+    }
+
+    public void confirmPersonaOnboarding(LocalDateTime now) {
+        if (personaOnboardingStatus != PersonaOnboardingStatus.CONFIRMED) {
+            personaOnboardingStatus = PersonaOnboardingStatus.CONFIRMED;
+            updatedAt = now;
+        }
+    }
+
+    public boolean isPersonaOnboardingComplete() {
+        return personaOnboardingStatus == PersonaOnboardingStatus.CONFIRMED
+            || personaOnboardingStatus == PersonaOnboardingStatus.BYPASSED;
     }
 }

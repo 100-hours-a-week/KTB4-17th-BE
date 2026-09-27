@@ -59,7 +59,7 @@ class OnboardingControllerTest {
     void 온보딩_진행_상태를_조회하면_200과_그에_대한_응답을_반환한다() throws Exception {
         OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true,
             false, false,
-            false, false);
+            false, false, false);
         given(onboardingService.getOnboardingStatus(USER_ID))
             .willReturn(
                 new OnboardingStatusResponse(
@@ -80,6 +80,7 @@ class OnboardingControllerTest {
             .andExpect(jsonPath("$.data.requirements.basicInfoComplete").value(false))
             .andExpect(jsonPath("$.data.requirements.lifestyleComplete").value(false))
             .andExpect(jsonPath("$.data.requirements.mbtiComplete").value(false))
+            .andExpect(jsonPath("$.data.requirements.personaComplete").value(false))
             .andExpect(jsonPath("$.data.requirements.profileImageComplete").value(false));
 
         verify(onboardingService).getOnboardingStatus(USER_ID);

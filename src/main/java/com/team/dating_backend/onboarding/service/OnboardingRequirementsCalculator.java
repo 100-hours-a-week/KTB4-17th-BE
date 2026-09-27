@@ -9,7 +9,7 @@ import org.springframework.util.StringUtils;
 public class OnboardingRequirementsCalculator {
 
     public OnboardingRequirementsResponse calculate(
-        Profile profile, boolean profileImageComplete) {
+        Profile profile, boolean personaComplete, boolean profileImageComplete) {
         boolean nicknameComplete = StringUtils.hasText(profile.getNickname());
         boolean regionComplete = profile.getActivityRegion() != null;
         boolean basicInfoComplete = profile.getHeight() != null
@@ -27,6 +27,7 @@ public class OnboardingRequirementsCalculator {
             basicInfoComplete,
             lifestyleComplete,
             mbtiComplete,
+            personaComplete,
             profileImageComplete);
     }
 }

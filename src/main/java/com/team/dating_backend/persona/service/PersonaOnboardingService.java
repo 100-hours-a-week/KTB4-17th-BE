@@ -11,8 +11,10 @@ import com.team.dating_backend.persona.dto.response.PersonaSegmentResponse;
 import com.team.dating_backend.persona.dto.response.PersonaSummaryResponse;
 import com.team.dating_backend.persona.enums.PersonaErrorCode;
 import com.team.dating_backend.persona.exception.PersonaBusinessException;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +43,7 @@ public class PersonaOnboardingService {
 
     private final ProfileRepository profileRepository;
     private final PersonaAiClient aiClient;
+    private final OnboardingCompletionService onboardingCompletionService;
 
     public PersonaConversationResponse start(Long userId) {
         Profile profile = requireProfile(userId);
@@ -88,6 +92,7 @@ public class PersonaOnboardingService {
         return build(sessionId);
     }
 
+    @Transactional
     public PersonaConfirmationResponse confirm(Long userId, String personaId) {
         Profile profile = requireProfile(userId);
         if (profile.getMbti() == null) {
@@ -103,6 +108,8 @@ public class PersonaOnboardingService {
                 profile.getMbti().name(),
                 confirmedAt));
         validateConfirmation(response, personaId, userId);
+        profile.getUser().confirmPersonaOnboarding(LocalDateTime.now());
+        onboardingCompletionService.activateIfCompleted(userId);
         return new PersonaConfirmationResponse(
             response.personaId(),
             true,

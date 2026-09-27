@@ -139,6 +139,18 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void 페르소나_온보딩이_완료되지_않으면_다음_단계는_PERSONA이다() {
+        User user = givenOnboardingUser();
+        given(user.isPersonaOnboardingComplete()).willReturn(false);
+        givenProfile(completeProfile());
+
+        OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
+
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.PERSONA);
+        assertThat(response.requirements().personaComplete()).isFalse();
+    }
+
+    @Test
     void 정면_프로필_사진이_없으면_다음_단계는_PROFILE_IMAGE이다() {
         givenOnboardingUser();
         givenProfile(completeProfile());
@@ -241,9 +253,10 @@ class OnboardingServiceTest {
             .isInstanceOf(UserNotFoundException.class);
     }
 
-    private void givenOnboardingUser() {
+    private User givenOnboardingUser() {
         User user = user(UserStatus.ONBOARDING);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        return user;
     }
 
     private void givenProfile(Profile profile) {
@@ -254,6 +267,7 @@ class OnboardingServiceTest {
     private User user(UserStatus status) {
         User user = mock(User.class);
         given(user.getStatus()).willReturn(status);
+        given(user.isPersonaOnboardingComplete()).willReturn(true);
         return user;
     }
 

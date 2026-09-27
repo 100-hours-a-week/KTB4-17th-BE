@@ -30,13 +30,14 @@ public class OnboardingCompletionService {
 
         profileRepository
             .findByUserIdAndDeletedAtIsNull(userId)
-            .filter(this::isCompleted)
+            .filter(profile -> isCompleted(user, profile))
             .ifPresent(profile -> user.activate(LocalDateTime.now()));
     }
 
-    private boolean isCompleted(Profile profile) {
+    private boolean isCompleted(User user, Profile profile) {
         boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
             profile.getId());
-        return requirementsCalculator.calculate(profile, profileImageComplete).isComplete();
+        return requirementsCalculator.calculate(
+            profile, user.isPersonaOnboardingComplete(), profileImageComplete).isComplete();
     }
 }
