@@ -33,36 +33,19 @@ public class ChatMessageOutbox {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "chat_message_id",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "chat_message_id", nullable = false, updatable = false)
     private Long chatMessageId;
 
-    @Column(
-        name = "created_at",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(
-        name = "next_attempt_at",
-        nullable = false
-    )
+    @Column(name = "next_attempt_at", nullable = false)
     private LocalDateTime nextAttemptAt;
 
-    @Column(
-        name = "failure_count",
-        nullable = false
-    )
+    @Column(name = "failure_count", nullable = false)
     private int failureCount;
 
-    @Column(
-        name = "last_failure_type",
-        length = 100
-    )
+    @Column(name = "last_failure_type", length = 100)
     private String lastFailureType;
 
     @Column(name = "published_at")

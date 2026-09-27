@@ -47,62 +47,33 @@ public class FileUploadIntent {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "owner_user_id",
-        nullable = false
-    )
+    @Column(name = "owner_user_id", nullable = false)
     private Long ownerUserId;
 
-    @Column(
-        name = "staging_key",
-        nullable = false,
-        length = 512
-    )
+    @Column(name = "staging_key", nullable = false, length = 512)
     private String stagingKey;
 
-    @Column(
-        name = "final_storage_key",
-        nullable = false,
-        length = 512
-    )
+    @Column(name = "final_storage_key", nullable = false, length = 512)
     private String finalStorageKey;
 
-    @Column(
-        name = "original_name",
-        nullable = false,
-        length = 255
-    )
+    @Column(name = "original_name", nullable = false, length = 255)
     private String originalName;
 
-    @Column(
-        name = "declared_content_type",
-        nullable = false,
-        length = 100
-    )
+    @Column(name = "declared_content_type", nullable = false, length = 100)
     private String declaredContentType;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        nullable = false,
-        length = 20
-    )
+    @Column(nullable = false, length = 20)
     private FileUploadIntentStatus status;
 
     @Column(name = "completed_file_id")
     private Long completedFileId;
 
     @CreationTimestamp
-    @Column(
-        name = "created_at",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(
-        name = "expires_at",
-        nullable = false
-    )
+    @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
     @Column(name = "staging_cleaned_at")

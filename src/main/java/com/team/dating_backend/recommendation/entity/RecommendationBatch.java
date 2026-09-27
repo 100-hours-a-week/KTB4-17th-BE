@@ -24,24 +24,14 @@ public class RecommendationBatch {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-        name = "user_id",
-        nullable = false
-    )
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(
-        name = "generation_type",
-        nullable = false,
-        length = 20
-    )
+    @Column(name = "generation_type", nullable = false, length = 20)
     private RecommendationGenerationType generationType;
 
-    @Column(
-        name = "created_at",
-        nullable = false
-    )
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "deleted_at")

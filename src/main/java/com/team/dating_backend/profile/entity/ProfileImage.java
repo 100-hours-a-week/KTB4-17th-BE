@@ -54,31 +54,18 @@ public class ProfileImage {
     )
     private Profile profile;
 
-    @Column(
-        name = "display_order",
-        nullable = false
-    )
+    @Column(name = "display_order", nullable = false)
     private short displayOrder;
 
-    @Column(
-        name = "is_frontal",
-        nullable = false
-    )
+    @Column(name = "is_frontal", nullable = false)
     private boolean frontal;
 
     @CreationTimestamp
-    @Column(
-        name = "created_at",
-        nullable = false,
-        updatable = false
-    )
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(
-        name = "updated_at",
-        nullable = false
-    )
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
