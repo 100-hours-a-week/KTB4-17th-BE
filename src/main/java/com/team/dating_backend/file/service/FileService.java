@@ -20,6 +20,7 @@ import com.team.dating_backend.file.storage.FileStorage;
 import com.team.dating_backend.file.storage.PresignedReadUrl;
 import com.team.dating_backend.file.storage.PresignedUploadUrl;
 import com.team.dating_backend.file.storage.StoredObjectInfo;
+import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -42,6 +43,7 @@ public class FileService {
 
     private final FileStorage fileStorage;
     private final FileRepository fileRepository;
+    private final ProfileImageRepository profileImageRepository;
     private final FileUploadIntentRepository uploadIntentRepository;
     private final FileProperties fileProperties;
     private final S3Properties s3Properties;
@@ -240,6 +242,11 @@ public class FileService {
 
     public void softDelete(Long ownerUserId, Long fileId) {
         File file = findOwnedActiveFile(ownerUserId, fileId);
+
+        if (profileImageRepository.existsByImageIdAndDeletedAtIsNull(fileId)) {
+            throw new FileBusinessException(FileErrorCode.FILE_IN_USE);
+        }
+
         try {
             file.markDeleted(LocalDateTime.now());
             fileRepository.saveAndFlush(file);
