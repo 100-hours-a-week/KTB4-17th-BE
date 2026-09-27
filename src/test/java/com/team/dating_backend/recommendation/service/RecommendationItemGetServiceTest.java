@@ -3,6 +3,7 @@ package com.team.dating_backend.recommendation.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -10,6 +11,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.profile.enums.Mbti;
+import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
 import com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow;
 import com.team.dating_backend.recommendation.entity.RecommendationBatch;
@@ -24,6 +27,7 @@ import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +39,7 @@ class RecommendationItemGetServiceTest {
     private UserRepository userRepository;
     private RecommendationBatchRepository recommendationBatchRepository;
     private RecommendationItemRepository recommendationItemRepository;
+    private ProfileImageGetService profileImageGetService;
     private RecommendationItemGetService service;
 
     @BeforeEach
@@ -42,8 +47,14 @@ class RecommendationItemGetServiceTest {
         userRepository = mock(UserRepository.class);
         recommendationBatchRepository = mock(RecommendationBatchRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
+        profileImageGetService = mock(ProfileImageGetService.class);
+        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+            .willReturn(Map.of());
         service = new RecommendationItemGetService(
-            userRepository, recommendationBatchRepository, recommendationItemRepository);
+            userRepository,
+            recommendationBatchRepository,
+            recommendationItemRepository,
+            profileImageGetService);
     }
 
     @Test
@@ -55,6 +66,15 @@ class RecommendationItemGetServiceTest {
         given(recommendationItemRepository.findEligibleItems(
             42L, 5L, null, null, PageRequest.of(0, 21)))
             .willReturn(rows);
+        given(profileImageGetService.getProfileImagesByMemberIds(
+            LongStream.rangeClosed(21L, 40L).boxed().toList()))
+            .willReturn(Map.of(
+                21L,
+                List.of(
+                    new ProfileImageAccessResult(
+                        701L, (short) 1, "https://example.com/701"),
+                    new ProfileImageAccessResult(
+                        704L, (short) 2, "https://example.com/704"))));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
 
@@ -68,6 +88,13 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items().getFirst().candidate().job()).isEqualTo("개발자");
         assertThat(response.items().getFirst().candidate().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.items().getFirst().candidate().mbti()).isEqualTo(Mbti.INFP);
+        assertThat(response.items().getFirst().candidate().images())
+            .extracting("fileId", "displayOrder", "imageUrl")
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(
+                    701L, (short) 1, "https://example.com/701"),
+                org.assertj.core.groups.Tuple.tuple(
+                    704L, (short) 2, "https://example.com/704"));
         assertThat(response.pageInfo().nextCursor()).isEqualTo(120L);
         assertThat(response.pageInfo().hasNext()).isTrue();
         assertThat(response.pageInfo().batchId()).isEqualTo(42L);
@@ -87,6 +114,7 @@ class RecommendationItemGetServiceTest {
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, 101L);
 
         assertThat(response.items()).extracting(item -> item.itemId()).containsExactly(102L);
+        assertThat(response.items().getFirst().candidate().images()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
     }
@@ -103,6 +131,7 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
+        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
     }
 
     @Test

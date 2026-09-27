@@ -17,6 +17,7 @@ import com.team.dating_backend.recommendation.dto.response.RecommendationCandida
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemPageInfo;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
+import com.team.dating_backend.recommendation.dto.response.RecommendationProfileImageResponse;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
@@ -144,7 +145,17 @@ class RecommendationBatchControllerTest {
     @Test
     void 추천_Item_목록은_후보_정보와_페이지_정보를_반환한다() throws Exception {
         RecommendationCandidateResponse candidate = new RecommendationCandidateResponse(
-            21L, "하리", 29, "개발자", "서울특별시 강남구", null);
+            21L,
+            "하리",
+            29,
+            "개발자",
+            "서울특별시 강남구",
+            null,
+            List.of(
+                new RecommendationProfileImageResponse(
+                    701L, (short) 1, "https://example.com/701"),
+                new RecommendationProfileImageResponse(
+                    704L, (short) 2, "https://example.com/704")));
         given(recommendationItemGetService.getRecommendationItems(5L, 42L, 100L))
             .willReturn(new RecommendationItemsGetResponse(
                 List.of(new RecommendationItemResponse(101L, candidate)),
@@ -161,6 +172,14 @@ class RecommendationBatchControllerTest {
             .andExpect(jsonPath("$.data.items[0].candidate.job").value("개발자"))
             .andExpect(jsonPath("$.data.items[0].candidate.region").value("서울특별시 강남구"))
             .andExpect(jsonPath("$.data.items[0].candidate.mbti").value(nullValue()))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[0].fileId").value(701))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[0].displayOrder").value(1))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[0].imageUrl")
+                .value("https://example.com/701"))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[1].fileId").value(704))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[1].displayOrder").value(2))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[1].imageUrl")
+                .value("https://example.com/704"))
             .andExpect(jsonPath("$.data.items[0].capabilities").doesNotExist())
             .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(101))
             .andExpect(jsonPath("$.data.pageInfo.hasNext").value(true))

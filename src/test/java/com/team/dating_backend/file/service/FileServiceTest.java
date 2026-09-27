@@ -168,6 +168,13 @@ class FileServiceTest {
         assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_NOT_FOUND);
         assertThat(exception.getMessage()).isNull();
 
+        FileBusinessException accessUrlException = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().createAccessUrl(99L, file.getId(), "inline"));
+
+        assertThat(accessUrlException.getErrorCode()).isEqualTo(FileErrorCode.FILE_NOT_FOUND);
+        assertThat(context.storage().readUrlStorageKey()).isNull();
+
         FileAccessUrlResult result = context.fileService()
             .createAccessUrl(USER_ID, file.getId(), "inline");
 
@@ -175,6 +182,19 @@ class FileServiceTest {
         assertThat(result.disposition()).isEqualTo("inline");
         assertThat(context.storage().readUrlStorageKey()).isEqualTo("files/private-key");
         assertThat(context.storage().readUrlDisposition()).contains("inline", "photo.png");
+    }
+
+    @Test
+    void 다운로드_방식을_지정하지_않으면_attachment_URL을_생성한다() {
+        TestContext context = newContext(10_000);
+        File file = context.files().saveAndFlush(
+            File.create(USER_ID, "files/private-key", "photo.png", PNG_MIME_TYPE, 32L));
+
+        FileAccessUrlResult result = context.fileService()
+            .createAccessUrl(USER_ID, file.getId(), null);
+
+        assertThat(result.disposition()).isEqualTo("attachment");
+        assertThat(context.storage().readUrlDisposition()).contains("attachment", "photo.png");
     }
 
     @Test
@@ -265,7 +285,8 @@ class FileServiceTest {
             intents,
             fileProperties,
             s3Properties,
-            new ImageSignatureValidator());
+            new ImageSignatureValidator(),
+            new FileAccessUrlCreateService(storage, s3Properties));
 
         return new TestContext(service, storage, files, intents, profileImages);
     }

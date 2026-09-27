@@ -17,7 +17,6 @@ import com.team.dating_backend.file.exception.FileStorageException;
 import com.team.dating_backend.file.repository.FileRepository;
 import com.team.dating_backend.file.repository.FileUploadIntentRepository;
 import com.team.dating_backend.file.storage.FileStorage;
-import com.team.dating_backend.file.storage.PresignedReadUrl;
 import com.team.dating_backend.file.storage.PresignedUploadUrl;
 import com.team.dating_backend.file.storage.StoredObjectInfo;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
@@ -48,6 +47,7 @@ public class FileService {
     private final FileProperties fileProperties;
     private final S3Properties s3Properties;
     private final ImageSignatureValidator imageSignatureValidator;
+    private final FileAccessUrlCreateService fileAccessUrlCreateService;
 
     public FileUploadIntentResult createUploadIntent(
         Long ownerUserId,
@@ -219,25 +219,7 @@ public class FileService {
 
     public FileAccessUrlResult createAccessUrl(Long ownerUserId, Long fileId, String disposition) {
         File file = findOwnedActiveFile(ownerUserId, fileId);
-        String normalizedDisposition = normalizeDisposition(disposition);
-
-        PresignedReadUrl readUrl;
-        try {
-            readUrl = fileStorage.createReadUrl(
-                file.getStorageKey(),
-                file.getMimeType(),
-                normalizedDisposition,
-                file.getOriginalName(),
-                s3Properties.getDownloadUrlExpiration());
-        } catch (FileStorageException exception) {
-            throw new FileBusinessException(exception.getErrorCode(), exception);
-        }
-
-        return new FileAccessUrlResult(
-            file.getId(),
-            readUrl.url(),
-            normalizedDisposition,
-            readUrl.expiresAt());
+        return fileAccessUrlCreateService.createPresignedAccessUrl(file, disposition);
     }
 
     public void softDelete(Long ownerUserId, Long fileId) {
@@ -289,19 +271,6 @@ public class FileService {
         validateId(fileId);
         return fileRepository.findActiveByIdAndOwner(fileId, ownerUserId)
             .orElseThrow(() -> new FileBusinessException(FileErrorCode.FILE_NOT_FOUND));
-    }
-
-    private String normalizeDisposition(String disposition) {
-        if (disposition == null || disposition.isBlank()) {
-            return "attachment";
-        }
-
-        String normalized = disposition.strip().toLowerCase(Locale.ROOT);
-        if (!normalized.equals("inline") && !normalized.equals("attachment")) {
-            throw new RequestValidationException();
-        }
-
-        return normalized;
     }
 
     private FileMetadataResult toMetadata(File file) {
