@@ -125,6 +125,7 @@ public class ProfileImageSaveService {
     }
 
     private RequestValidationException invalidImages(String reason) {
-        return new RequestValidationException(List.of(new FieldErrorResponse(IMAGES_FIELD, reason)));
+        return new RequestValidationException(
+            List.of(new FieldErrorResponse(IMAGES_FIELD, reason)));
     }
 }

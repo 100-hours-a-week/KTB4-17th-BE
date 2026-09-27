@@ -25,10 +25,14 @@ public class UserRegistrationController {
 
     @PutMapping("/identity")
     public ResponseEntity<Void> registerUser(
-        @CookieValue(value = PENDING_REGISTRATION_TOKEN_COOKIE, required = false) String pendingRegistrationToken,
+        @CookieValue(
+            value = PENDING_REGISTRATION_TOKEN_COOKIE,
+            required = false
+        ) String pendingRegistrationToken,
         @Valid @RequestBody UserRegistrationRequest request) {
 
-        String serviceToken = userRegistrationService.registerUser(pendingRegistrationToken, request);
+        String serviceToken = userRegistrationService.registerUser(pendingRegistrationToken,
+            request);
 
         return ResponseEntity.ok()
             .header(

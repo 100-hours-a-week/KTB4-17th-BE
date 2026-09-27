@@ -124,7 +124,8 @@ class RecommendationBatchCreateServiceTest {
         assertThatThrownBy(() -> service.createRecommendationBatch(5L))
             .isInstanceOf(IllegalStateException.class);
 
-        verify(recommendationBatchRepository, never()).markPreviousBatchesDeleted(any(), any(), any());
+        verify(recommendationBatchRepository, never()).markPreviousBatchesDeleted(any(), any(),
+            any());
     }
 
     @Test

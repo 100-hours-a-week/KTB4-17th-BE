@@ -48,7 +48,8 @@ class ProfileSaveServiceTest {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         activityRegionRepository = mock(ActivityRegionRepository.class);
-        profileSaveService = new ProfileSaveService(userRepository, profileRepository, activityRegionRepository);
+        profileSaveService = new ProfileSaveService(userRepository, profileRepository,
+            activityRegionRepository);
     }
 
     @Test
@@ -91,7 +92,8 @@ class ProfileSaveServiceTest {
             .willReturn(Optional.of(profile));
         given(profileRepository.saveAndFlush(profile)).willReturn(profile);
 
-        ProfileSaveResult result = profileSaveService.saveProfile(USER_ID, partialRequest(null, null));
+        ProfileSaveResult result = profileSaveService.saveProfile(USER_ID,
+            partialRequest(null, null));
 
         assertThat(result.created()).isFalse();
         assertThat(profile.getActivityRegion()).isNull();
@@ -162,7 +164,8 @@ class ProfileSaveServiceTest {
     @Test
     void 저장_중_다른_무결성_제약이_충돌하면_원래_예외가_발생한다() {
         User user = mock(User.class);
-        DataIntegrityViolationException exception = dataIntegrityViolationException("uk_profiles_user_id");
+        DataIntegrityViolationException exception = dataIntegrityViolationException(
+            "uk_profiles_user_id");
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());

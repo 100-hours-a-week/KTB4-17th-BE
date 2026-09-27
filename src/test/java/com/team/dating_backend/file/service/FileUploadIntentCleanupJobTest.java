@@ -38,7 +38,8 @@ class FileUploadIntentCleanupJobTest {
         FileProperties properties = new FileProperties();
         properties.setCleanupBatchSize(50);
         properties.setUploadIntentRetention(Duration.ofDays(30));
-        FileUploadIntentCleanupJob job = new FileUploadIntentCleanupJob(storage, repository, properties);
+        FileUploadIntentCleanupJob job = new FileUploadIntentCleanupJob(storage, repository,
+            properties);
 
         job.cleanExpiredObjects();
 
@@ -71,7 +72,8 @@ class FileUploadIntentCleanupJobTest {
         FileProperties properties = new FileProperties();
         properties.setCleanupBatchSize(50);
         properties.setUploadIntentRetention(Duration.ofDays(30));
-        FileUploadIntentCleanupJob job = new FileUploadIntentCleanupJob(storage, repository, properties);
+        FileUploadIntentCleanupJob job = new FileUploadIntentCleanupJob(storage, repository,
+            properties);
 
         job.cleanExpiredObjects();
 

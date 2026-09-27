@@ -41,10 +41,12 @@ class SocialLoginServiceTest {
             .willReturn(Optional.of(account));
 
         // when
-        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
+        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO,
+            KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.Authenticated authenticated = assertInstanceOf(SocialLoginResult.Authenticated.class, result);
+        SocialLoginResult.Authenticated authenticated = assertInstanceOf(
+            SocialLoginResult.Authenticated.class, result);
         assertEquals(1L, authenticated.userId());
         assertEquals(LoginDestination.SERVICE, authenticated.destination());
         verify(userAuthAccountRepository)
@@ -61,10 +63,12 @@ class SocialLoginServiceTest {
             .willReturn(Optional.of(account));
 
         // when
-        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
+        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO,
+            KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.Authenticated authenticated = assertInstanceOf(SocialLoginResult.Authenticated.class, result);
+        SocialLoginResult.Authenticated authenticated = assertInstanceOf(
+            SocialLoginResult.Authenticated.class, result);
         assertEquals(2L, authenticated.userId());
         assertEquals(LoginDestination.ONBOARDING, authenticated.destination());
     }
@@ -78,10 +82,12 @@ class SocialLoginServiceTest {
             .willReturn(Optional.empty());
 
         // when
-        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
+        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO,
+            KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.PendingRegistration pending = assertInstanceOf(SocialLoginResult.PendingRegistration.class,
+        SocialLoginResult.PendingRegistration pending = assertInstanceOf(
+            SocialLoginResult.PendingRegistration.class,
             result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());
@@ -97,10 +103,12 @@ class SocialLoginServiceTest {
             .willReturn(Optional.of(account));
 
         // when
-        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
+        SocialLoginResult result = socialLoginService.login(AuthProvider.KAKAO,
+            KAKAO_PROVIDER_USER_ID);
 
         // then
-        SocialLoginResult.PendingRegistration pending = assertInstanceOf(SocialLoginResult.PendingRegistration.class,
+        SocialLoginResult.PendingRegistration pending = assertInstanceOf(
+            SocialLoginResult.PendingRegistration.class,
             result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());

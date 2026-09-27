@@ -23,7 +23,8 @@ public class ActivityRegionController {
     @GetMapping
     public SuccessResponse<ActivityRegionSearchResponse> searchRegions(
         @Valid @ModelAttribute ActivityRegionSearchRequest request) {
-        List<ActivityRegionSearchItem> items = activityRegionSearchService.searchRegions(request.normalizedQuery())
+        List<ActivityRegionSearchItem> items = activityRegionSearchService
+            .searchRegions(request.normalizedQuery())
             .stream()
             .map(ActivityRegionSearchItem::from)
             .toList();

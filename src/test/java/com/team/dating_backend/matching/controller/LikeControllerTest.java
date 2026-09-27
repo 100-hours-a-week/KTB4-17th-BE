@@ -34,10 +34,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@WebMvcTest(controllers = LikeController.class, excludeAutoConfiguration = {
-    SecurityAutoConfiguration.class,
-    ServletWebSecurityAutoConfiguration.class
-})
+@WebMvcTest(
+    controllers = LikeController.class,
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        ServletWebSecurityAutoConfiguration.class
+    }
+)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(LikeControllerTest.TestAuthenticationPrincipalConfig.class)
 class LikeControllerTest {
@@ -125,7 +128,8 @@ class LikeControllerTest {
                 @Override
                 public boolean supportsParameter(MethodParameter parameter) {
                     return parameter.hasParameterAnnotation(AuthenticationPrincipal.class)
-                        && parameter.getParameterType().equals(ServiceAuthenticationPrincipal.class);
+                        && parameter.getParameterType()
+                            .equals(ServiceAuthenticationPrincipal.class);
                 }
 
                 @Override

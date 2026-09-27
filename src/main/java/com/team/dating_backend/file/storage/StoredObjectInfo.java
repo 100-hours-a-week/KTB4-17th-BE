@@ -9,7 +9,9 @@ public record StoredObjectInfo(
     byte[] signatureBytes) {
 
     public StoredObjectInfo {
-        signatureBytes = signatureBytes == null ? null : Arrays.copyOf(signatureBytes, signatureBytes.length);
+        signatureBytes = signatureBytes == null
+            ? null
+            : Arrays.copyOf(signatureBytes, signatureBytes.length);
     }
 
     @Override

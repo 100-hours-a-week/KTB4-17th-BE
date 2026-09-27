@@ -21,7 +21,9 @@ public record ProfileSaveProfileResponse(
     Smoking smoking) {
 
     public static ProfileSaveProfileResponse from(Profile profile) {
-        Long activityRegionId = profile.getActivityRegion() == null ? null : profile.getActivityRegion().getId();
+        Long activityRegionId = profile.getActivityRegion() == null
+            ? null
+            : profile.getActivityRegion().getId();
 
         return new ProfileSaveProfileResponse(
             activityRegionId,

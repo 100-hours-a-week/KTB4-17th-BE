@@ -57,7 +57,8 @@ class OnboardingControllerTest {
 
     @Test
     void 온보딩_진행_상태를_조회하면_200과_그에_대한_응답을_반환한다() throws Exception {
-        OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true, false, false,
+        OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true,
+            false, false,
             false);
         given(onboardingService.getOnboardingStatus(USER_ID))
             .willReturn(

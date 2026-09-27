@@ -49,7 +49,8 @@ public class ChatMessageSendService {
 
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
-        List<ChatParticipant> participants = chatParticipantRepository.findAllByChatRoomId(chatRoomId);
+        List<ChatParticipant> participants = chatParticipantRepository
+            .findAllByChatRoomId(chatRoomId);
         ChatParticipant sender = participants.stream()
             .filter(participant -> participant.getUserId().equals(senderUserId))
             .findFirst()

@@ -18,8 +18,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Getter
 @Entity
 @Table(name = "activity_regions")
-@Check(constraints = "representative_latitude BETWEEN -90 AND 90 "
-    + "AND representative_longitude BETWEEN -180 AND 180")
+@Check(
+    constraints = "representative_latitude BETWEEN -90 AND 90 "
+        + "AND representative_longitude BETWEEN -180 AND 180"
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ActivityRegion {
 
@@ -27,27 +29,57 @@ public class ActivityRegion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "region_code", nullable = false, unique = true, length = 30)
+    @Column(
+        name = "region_code",
+        nullable = false,
+        unique = true,
+        length = 30
+    )
     private String regionCode;
 
-    @Column(name = "province_name", nullable = false, length = 50)
+    @Column(
+        name = "province_name",
+        nullable = false,
+        length = 50
+    )
     private String provinceName;
 
-    @Column(name = "region_name", nullable = false, length = 50)
+    @Column(
+        name = "region_name",
+        nullable = false,
+        length = 50
+    )
     private String regionName;
 
-    @Column(name = "representative_latitude", nullable = false, precision = 9, scale = 6)
+    @Column(
+        name = "representative_latitude",
+        nullable = false,
+        precision = 9,
+        scale = 6
+    )
     private BigDecimal representativeLatitude;
 
-    @Column(name = "representative_longitude", nullable = false, precision = 9, scale = 6)
+    @Column(
+        name = "representative_longitude",
+        nullable = false,
+        precision = 9,
+        scale = 6
+    )
     private BigDecimal representativeLongitude;
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
+    @Column(
+        name = "updated_at",
+        nullable = false
+    )
     private LocalDateTime updatedAt;
 
     public ActivityRegion(

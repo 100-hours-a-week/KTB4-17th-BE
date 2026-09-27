@@ -43,7 +43,8 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
 
             ServiceAuthenticationPrincipal principal = new ServiceAuthenticationPrincipal(userId);
 
-            Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null,
+            Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal, null,
                 List.of());
 
             SecurityContext context = SecurityContextHolder.createEmptyContext();

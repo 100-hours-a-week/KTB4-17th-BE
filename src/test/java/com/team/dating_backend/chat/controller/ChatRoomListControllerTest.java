@@ -47,10 +47,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@WebMvcTest(controllers = ChatRoomListController.class, excludeAutoConfiguration = {
-    SecurityAutoConfiguration.class,
-    ServletWebSecurityAutoConfiguration.class
-})
+@WebMvcTest(
+    controllers = ChatRoomListController.class,
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        ServletWebSecurityAutoConfiguration.class
+    }
+)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(ChatRoomListControllerTest.TestAuthenticationPrincipalConfig.class)
 class ChatRoomListControllerTest {
@@ -209,7 +212,8 @@ class ChatRoomListControllerTest {
                 @Override
                 public boolean supportsParameter(MethodParameter parameter) {
                     return parameter.hasParameterAnnotation(AuthenticationPrincipal.class)
-                        && parameter.getParameterType().equals(ServiceAuthenticationPrincipal.class);
+                        && parameter.getParameterType()
+                            .equals(ServiceAuthenticationPrincipal.class);
                 }
 
                 @Override

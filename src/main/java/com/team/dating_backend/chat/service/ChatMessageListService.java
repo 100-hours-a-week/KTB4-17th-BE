@@ -38,7 +38,8 @@ public class ChatMessageListService {
 
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
-        List<ChatParticipant> participants = chatParticipantRepository.findAllByChatRoomId(chatRoomId);
+        List<ChatParticipant> participants = chatParticipantRepository
+            .findAllByChatRoomId(chatRoomId);
         ChatParticipant viewer = participants.stream()
             .filter(participant -> participant.getUserId().equals(viewerUserId))
             .findFirst()
@@ -60,12 +61,14 @@ public class ChatMessageListService {
             ? chatMessageRepository.findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
                 chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT,
                 PageRequest.of(0, size + 1))
-            : chatMessageRepository.findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT, cursor,
-                PageRequest.of(0, size + 1));
+            : chatMessageRepository
+                .findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
+                    chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT, cursor,
+                    PageRequest.of(0, size + 1));
 
         boolean hasNext = fetched.size() > size;
-        List<ChatMessage> page = new ArrayList<>(fetched.subList(0, Math.min(size, fetched.size())));
+        List<ChatMessage> page = new ArrayList<>(
+            fetched.subList(0, Math.min(size, fetched.size())));
         Long nextCursor = hasNext ? page.getLast().getId() : null;
         Collections.reverse(page);
 

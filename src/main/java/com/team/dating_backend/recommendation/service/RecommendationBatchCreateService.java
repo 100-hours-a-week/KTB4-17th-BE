@@ -29,7 +29,8 @@ public class RecommendationBatchCreateService {
     private final RecommendationItemRepository recommendationItemRepository;
 
     @Transactional
-    public Optional<RecommendationBatchCreateResponse> createRecommendationBatch(Long requesterUserId) {
+    public Optional<RecommendationBatchCreateResponse> createRecommendationBatch(
+        Long requesterUserId) {
         User requester = userRepository.findById(requesterUserId)
             .orElseThrow(
                 () -> new RecommendationBusinessException(
@@ -50,11 +51,13 @@ public class RecommendationBatchCreateService {
             .save(new RecommendationBatch(requesterUserId, now));
         List<RecommendationItem> items = new ArrayList<>(candidateUserIds.size());
         for (int index = 0; index < candidateUserIds.size(); index++) {
-            items.add(new RecommendationItem(batch.getId(), candidateUserIds.get(index), index + 1));
+            items
+                .add(new RecommendationItem(batch.getId(), candidateUserIds.get(index), index + 1));
         }
         recommendationItemRepository.saveAll(items);
         recommendationBatchRepository.markPreviousBatchesDeleted(
             requesterUserId, batch.getId(), now);
-        return Optional.of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
+        return Optional
+            .of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
     }
 }

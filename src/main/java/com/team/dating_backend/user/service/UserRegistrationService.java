@@ -24,7 +24,8 @@ public class UserRegistrationService {
 
     @Transactional
     public String registerUser(String pendingRegistrationToken, UserRegistrationRequest request) {
-        PendingRegistrationTokenPayload payload = jwtService.parsePendingRegistrationToken(pendingRegistrationToken);
+        PendingRegistrationTokenPayload payload = jwtService
+            .parsePendingRegistrationToken(pendingRegistrationToken);
 
         UserAuthAccount existingAccount = userAuthAccountRepository
             .findForUpdateByProviderAndProviderUserId(

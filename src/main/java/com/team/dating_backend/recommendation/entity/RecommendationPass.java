@@ -21,12 +21,21 @@ public class RecommendationPass {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "passer_user_id", nullable = false)
+    @Column(
+        name = "passer_user_id",
+        nullable = false
+    )
     private Long passerUserId;
 
-    @Column(name = "passed_user_id", nullable = false)
+    @Column(
+        name = "passed_user_id",
+        nullable = false
+    )
     private Long passedUserId;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(
+        name = "created_at",
+        nullable = false
+    )
     private LocalDateTime createdAt;
 }

@@ -101,7 +101,8 @@ class ServiceJwtAuthenticationFilterTest {
     @Test
     void Pending_토큰은_ACCESS_TOKEN으로_인증되지_않는다() throws Exception {
         // given
-        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
+        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO,
+            "kakao-123");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setCookies(new Cookie(AuthCookieFactory.ACCESS_TOKEN_COOKIE, pendingToken));
         MockHttpServletResponse response = new MockHttpServletResponse();

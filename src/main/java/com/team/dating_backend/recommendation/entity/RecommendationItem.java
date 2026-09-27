@@ -20,16 +20,26 @@ public class RecommendationItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "recommendation_batch_id", nullable = false)
+    @Column(
+        name = "recommendation_batch_id",
+        nullable = false
+    )
     private Long recommendationBatchId;
 
-    @Column(name = "candidate_user_id", nullable = false)
+    @Column(
+        name = "candidate_user_id",
+        nullable = false
+    )
     private Long candidateUserId;
 
-    @Column(name = "ranking_order", nullable = false)
+    @Column(
+        name = "ranking_order",
+        nullable = false
+    )
     private Integer rankingOrder;
 
-    public RecommendationItem(Long recommendationBatchId, Long candidateUserId, Integer rankingOrder) {
+    public RecommendationItem(Long recommendationBatchId, Long candidateUserId,
+        Integer rankingOrder) {
         this.recommendationBatchId = recommendationBatchId;
         this.candidateUserId = candidateUserId;
         this.rankingOrder = rankingOrder;

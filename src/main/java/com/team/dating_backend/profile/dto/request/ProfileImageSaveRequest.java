@@ -6,4 +6,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record ProfileImageSaveRequest(
-    @NotNull @Size(min = 1, max = 6) List<@NotNull @Valid ProfileImageSaveItemRequest> images) {}
+    @NotNull @Size(
+        min = 1,
+        max = 6
+    ) List<@NotNull @Valid ProfileImageSaveItemRequest> images) {}

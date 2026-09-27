@@ -93,7 +93,8 @@ class OAuthControllerTest {
         // given
         OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
         OAuthIdentity identity = new OAuthIdentity(AuthProvider.KAKAO, "kakao-123");
-        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L, LoginDestination.SERVICE);
+        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
+            LoginDestination.SERVICE);
         ResponseEntity<Void> loginResponse = ResponseEntity.status(HttpStatus.FOUND)
             .location(URI.create("https://frontend.example.com/service"))
             .build();

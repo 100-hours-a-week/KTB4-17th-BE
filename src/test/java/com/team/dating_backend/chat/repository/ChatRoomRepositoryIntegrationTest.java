@@ -65,10 +65,13 @@ class ChatRoomRepositoryIntegrationTest {
         insertParticipants(201L, VIEWER_USER_ID, "ACTIVE", 20L);
         Long viewerParticipantId = participantId(201L, VIEWER_USER_ID);
         Long otherParticipantId = participantId(201L, 20L);
-        insertMessage(1001L, 201L, viewerParticipantId, "TEXT", "old text", "SENT", BASE_TIME.plusMinutes(1), null,
+        insertMessage(1001L, 201L, viewerParticipantId, "TEXT", "old text", "SENT",
+            BASE_TIME.plusMinutes(1), null,
             null);
-        insertMessage(1002L, 201L, otherParticipantId, "IMAGE", null, "SENT", BASE_TIME.plusMinutes(2), null, null);
-        insertMessage(1003L, 201L, otherParticipantId, "TEXT", "failed text", "FAILED", BASE_TIME.plusMinutes(3), null,
+        insertMessage(1002L, 201L, otherParticipantId, "IMAGE", null, "SENT",
+            BASE_TIME.plusMinutes(2), null, null);
+        insertMessage(1003L, 201L, otherParticipantId, "TEXT", "failed text", "FAILED",
+            BASE_TIME.plusMinutes(3), null,
             null);
         insertMessage(
             1004L,
@@ -99,12 +102,14 @@ class ChatRoomRepositoryIntegrationTest {
         insertRoom(303L, "ACTIVE", BASE_TIME.plusMinutes(1));
         insertParticipants(303L, VIEWER_USER_ID, "ACTIVE", 22L);
         Long senderParticipantId = participantId(301L, 20L);
-        insertMessage(1101L, 301L, senderParticipantId, "TEXT", "message", "SENT", BASE_TIME.plusMinutes(3), null,
+        insertMessage(1101L, 301L, senderParticipantId, "TEXT", "message", "SENT",
+            BASE_TIME.plusMinutes(3), null,
             null);
 
         List<ChatRoomListRow> result = findRooms(null, null, 10);
 
-        assertThat(result).extracting(ChatRoomListRow::chatRoomId).containsExactly(301L, 302L, 303L);
+        assertThat(result).extracting(ChatRoomListRow::chatRoomId).containsExactly(301L, 302L,
+            303L);
         assertThat(result.get(1).lastMessageId()).isNull();
         assertThat(result.get(1).activityAt()).isEqualTo(BASE_TIME.plusMinutes(2));
     }
@@ -151,14 +156,17 @@ class ChatRoomRepositoryIntegrationTest {
             null,
             null);
 
-        List<ChatRoomListRow> secondPage = findRooms(cursorRow.activityAt(), cursorRow.chatRoomId(), 2);
+        List<ChatRoomListRow> secondPage = findRooms(cursorRow.activityAt(), cursorRow.chatRoomId(),
+            2);
         List<ChatRoomListRow> refreshedFirstPage = findRooms(null, null, 2);
 
         assertThat(secondPage).extracting(ChatRoomListRow::chatRoomId).containsExactly(504L);
-        assertThat(refreshedFirstPage).extracting(ChatRoomListRow::chatRoomId).containsExactly(503L, 501L);
+        assertThat(refreshedFirstPage).extracting(ChatRoomListRow::chatRoomId).containsExactly(503L,
+            501L);
     }
 
-    private List<ChatRoomListRow> findRooms(LocalDateTime cursorActivityAt, Long cursorRoomId, int size) {
+    private List<ChatRoomListRow> findRooms(LocalDateTime cursorActivityAt, Long cursorRoomId,
+        int size) {
         return chatRoomRepository.findVisibleRoomList(
             VIEWER_USER_ID, cursorActivityAt, cursorRoomId, PageRequest.of(0, size));
     }
@@ -172,7 +180,8 @@ class ChatRoomRepositoryIntegrationTest {
             Timestamp.valueOf(createdAt));
     }
 
-    private void insertParticipants(Long roomId, Long viewerUserId, String viewerStatus, Long otherUserId) {
+    private void insertParticipants(Long roomId, Long viewerUserId, String viewerStatus,
+        Long otherUserId) {
         jdbcTemplate.update(
             "insert into chat_participants (chat_room_id, user_id, status, is_chat_notification) values (?, ?, ?, ?)",
             roomId,
@@ -189,7 +198,8 @@ class ChatRoomRepositoryIntegrationTest {
 
     private Long participantId(Long roomId, Long userId) {
         return jdbcTemplate.queryForObject(
-            "select id from chat_participants where chat_room_id = ? and user_id = ?", Long.class, roomId, userId);
+            "select id from chat_participants where chat_room_id = ? and user_id = ?", Long.class,
+            roomId, userId);
     }
 
     private void insertMessage(

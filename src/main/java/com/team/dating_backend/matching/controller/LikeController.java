@@ -26,7 +26,8 @@ public class LikeController {
     public ResponseEntity<SuccessResponse<LikeCreateResponse>> sendLike(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @Valid @RequestBody LikeCreateRequest request) {
-        LikeCreateResponse response = likeSendService.sendLike(principal.userId(), request.receiverId());
+        LikeCreateResponse response = likeSendService.sendLike(principal.userId(),
+            request.receiverId());
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(SuccessResponse.of("like_create_success", response));
     }

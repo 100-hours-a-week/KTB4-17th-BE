@@ -44,10 +44,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@WebMvcTest(controllers = RecommendationBatchController.class, excludeAutoConfiguration = {
-    SecurityAutoConfiguration.class,
-    ServletWebSecurityAutoConfiguration.class
-})
+@WebMvcTest(
+    controllers = RecommendationBatchController.class,
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        ServletWebSecurityAutoConfiguration.class
+    }
+)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(RecommendationBatchControllerTest.TestAuthenticationPrincipalConfig.class)
 class RecommendationBatchControllerTest {
@@ -214,7 +217,8 @@ class RecommendationBatchControllerTest {
                 @Override
                 public boolean supportsParameter(MethodParameter parameter) {
                     return parameter.hasParameterAnnotation(AuthenticationPrincipal.class)
-                        && parameter.getParameterType().equals(ServiceAuthenticationPrincipal.class);
+                        && parameter.getParameterType()
+                            .equals(ServiceAuthenticationPrincipal.class);
                 }
 
                 @Override

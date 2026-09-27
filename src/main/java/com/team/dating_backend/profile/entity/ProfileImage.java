@@ -21,33 +21,64 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "profile_images", indexes = @Index(name = "idx_profile_images_profile_active_order", columnList = "profile_id, deleted_at, display_order"))
+@Table(
+    name = "profile_images",
+    indexes = @Index(
+        name = "idx_profile_images_profile_active_order",
+        columnList = "profile_id, deleted_at, display_order"
+    )
+)
 public class ProfileImage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "image_id", nullable = false)
+    @ManyToOne(
+        fetch = FetchType.LAZY,
+        optional = false
+    )
+    @JoinColumn(
+        name = "image_id",
+        nullable = false
+    )
     private File image;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "profile_id", nullable = false)
+    @ManyToOne(
+        fetch = FetchType.LAZY,
+        optional = false
+    )
+    @JoinColumn(
+        name = "profile_id",
+        nullable = false
+    )
     private Profile profile;
 
-    @Column(name = "display_order", nullable = false)
+    @Column(
+        name = "display_order",
+        nullable = false
+    )
     private short displayOrder;
 
-    @Column(name = "is_frontal", nullable = false)
+    @Column(
+        name = "is_frontal",
+        nullable = false
+    )
     private boolean frontal;
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
+    @Column(
+        name = "updated_at",
+        nullable = false
+    )
     private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")

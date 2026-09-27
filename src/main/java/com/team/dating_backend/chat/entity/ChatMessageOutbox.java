@@ -16,26 +16,53 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "chat_message_outbox", uniqueConstraints = @UniqueConstraint(name = "uk_chat_message_outbox_message", columnNames = "chat_message_id"), indexes = @Index(name = "idx_chat_message_outbox_due", columnList = "published_at,failed_at,next_attempt_at,id"))
+@Table(
+    name = "chat_message_outbox",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_chat_message_outbox_message",
+        columnNames = "chat_message_id"
+    ),
+    indexes = @Index(
+        name = "idx_chat_message_outbox_due",
+        columnList = "published_at,failed_at,next_attempt_at,id"
+    )
+)
 public class ChatMessageOutbox {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_message_id", nullable = false, updatable = false)
+    @Column(
+        name = "chat_message_id",
+        nullable = false,
+        updatable = false
+    )
     private Long chatMessageId;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
-    @Column(name = "next_attempt_at", nullable = false)
+    @Column(
+        name = "next_attempt_at",
+        nullable = false
+    )
     private LocalDateTime nextAttemptAt;
 
-    @Column(name = "failure_count", nullable = false)
+    @Column(
+        name = "failure_count",
+        nullable = false
+    )
     private int failureCount;
 
-    @Column(name = "last_failure_type", length = 100)
+    @Column(
+        name = "last_failure_type",
+        length = 100
+    )
     private String lastFailureType;
 
     @Column(name = "published_at")

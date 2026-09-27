@@ -21,13 +21,22 @@ public class UserBlock {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "blocker_user_id", nullable = false)
+    @Column(
+        name = "blocker_user_id",
+        nullable = false
+    )
     private Long blockerUserId;
 
-    @Column(name = "blocked_user_id", nullable = false)
+    @Column(
+        name = "blocked_user_id",
+        nullable = false
+    )
     private Long blockedUserId;
 
-    @Column(name = "blocked_at", nullable = false)
+    @Column(
+        name = "blocked_at",
+        nullable = false
+    )
     private LocalDateTime blockedAt;
 
     @Column(name = "unblocked_at")

@@ -51,7 +51,8 @@ public class FileController {
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @PathVariable Long uploadIntentId) {
         FileMetadataResult result = fileService.completeUpload(principal.userId(), uploadIntentId);
-        return SuccessResponse.of("file_upload_complete_success", FileMetadataResponse.from(result));
+        return SuccessResponse.of("file_upload_complete_success",
+            FileMetadataResponse.from(result));
     }
 
     @GetMapping("/{fileId}/metadata")
@@ -67,8 +68,10 @@ public class FileController {
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @PathVariable Long fileId,
         @RequestParam(defaultValue = "attachment") String disposition) {
-        FileAccessUrlResult result = fileService.createAccessUrl(principal.userId(), fileId, disposition);
-        return SuccessResponse.of("file_access_url_create_success", FileAccessUrlResponse.from(result));
+        FileAccessUrlResult result = fileService.createAccessUrl(principal.userId(), fileId,
+            disposition);
+        return SuccessResponse.of("file_access_url_create_success",
+            FileAccessUrlResponse.from(result));
     }
 
     @DeleteMapping("/{fileId}")

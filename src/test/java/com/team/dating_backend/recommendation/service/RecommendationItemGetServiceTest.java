@@ -169,7 +169,8 @@ class RecommendationItemGetServiceTest {
             .isInstanceOf(RequestValidationException.class);
         assertThatThrownBy(() -> service.getRecommendationItems(5L, 42L, -1L))
             .isInstanceOf(RequestValidationException.class);
-        verifyNoInteractions(userRepository, recommendationBatchRepository, recommendationItemRepository);
+        verifyNoInteractions(userRepository, recommendationBatchRepository,
+            recommendationItemRepository);
     }
 
     @Test
