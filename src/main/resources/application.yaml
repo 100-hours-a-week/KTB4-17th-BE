@@ -63,6 +63,9 @@ app:
     max-outbox-failures: ${AI_PRACTICE_OUTBOX_MAX_FAILURES:10}
     outbox-publish-delay-ms: ${AI_PRACTICE_OUTBOX_PUBLISH_DELAY_MS:1000}
 
+  persona-ai:
+    base-url: ${AI_PERSONA_BASE_URL:}
+
   file:
     max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}
     allowed-mime-types: ${APP_FILE_ALLOWED_MIME_TYPES}
