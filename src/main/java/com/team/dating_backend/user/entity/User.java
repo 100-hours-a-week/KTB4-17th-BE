@@ -28,30 +28,54 @@ public class User {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
+    @Column(
+        name = "status",
+        nullable = false
+    )
     private UserStatus status;
 
-    @Column(name = "name", nullable = false)
+    @Column(
+        name = "name",
+        nullable = false
+    )
     private String name;
 
-    @Column(name = "birth_date", nullable = false)
+    @Column(
+        name = "birth_date",
+        nullable = false
+    )
     private LocalDate birthDate;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "gender", nullable = false)
+    @Column(
+        name = "gender",
+        nullable = false
+    )
     private Gender gender;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "face_verification_status", nullable = false)
+    @Column(
+        name = "face_verification_status",
+        nullable = false
+    )
     private FaceVerificationStatus faceVerificationStatus;
 
-    @Column(name = "last_accessed_at", nullable = false)
+    @Column(
+        name = "last_accessed_at",
+        nullable = false
+    )
     private LocalDateTime lastAccessedAt;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(
+        name = "created_at",
+        nullable = false
+    )
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(
+        name = "updated_at",
+        nullable = false
+    )
     private LocalDateTime updatedAt;
 
     @Column(name = "withdrawn_at")

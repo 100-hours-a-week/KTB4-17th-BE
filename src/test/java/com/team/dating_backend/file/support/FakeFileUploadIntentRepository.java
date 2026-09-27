@@ -133,7 +133,8 @@ public final class FakeFileUploadIntentRepository implements FileUploadIntentRep
 
     private FileUploadIntent findForOwner(Long intentId, Long ownerUserId) {
         return findOwned(intentId, ownerUserId)
-            .orElseThrow(() -> new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_NOT_FOUND));
+            .orElseThrow(
+                () -> new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_NOT_FOUND));
     }
 
     private void assignId(FileUploadIntent intent, Long id) {

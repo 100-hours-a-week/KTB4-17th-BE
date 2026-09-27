@@ -62,7 +62,8 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     || command == StompCommand.SUBSCRIBE) {
                     if (!(accessor.getUser() instanceof Authentication authentication)
                         || !authentication.isAuthenticated()
-                        || !(authentication.getPrincipal() instanceof ServiceAuthenticationPrincipal)) {
+                        || !(authentication
+                            .getPrincipal() instanceof ServiceAuthenticationPrincipal)) {
                         return null;
                     }
                 }

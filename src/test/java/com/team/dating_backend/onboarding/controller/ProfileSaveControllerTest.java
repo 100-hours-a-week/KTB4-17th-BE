@@ -43,10 +43,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@WebMvcTest(controllers = ProfileSaveController.class, excludeAutoConfiguration = {
-    SecurityAutoConfiguration.class,
-    ServletWebSecurityAutoConfiguration.class
-})
+@WebMvcTest(
+    controllers = ProfileSaveController.class,
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        ServletWebSecurityAutoConfiguration.class
+    }
+)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(ProfileSaveControllerTest.TestAuthenticationPrincipalConfig.class)
 class ProfileSaveControllerTest {

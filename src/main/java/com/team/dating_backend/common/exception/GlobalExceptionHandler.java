@@ -54,11 +54,13 @@ public class GlobalExceptionHandler {
             .body(ErrorResponse.invalidRequest(errors));
     }
 
-    @ExceptionHandler({
-        HttpMessageNotReadableException.class,
-        MethodArgumentTypeMismatchException.class,
-        MissingServletRequestParameterException.class
-    })
+    @ExceptionHandler(
+        {
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class
+        }
+    )
     public ResponseEntity<ErrorResponse> handleInvalidRequest(Exception exception) {
         return error(CommonErrorCode.INVALID_REQUEST);
     }

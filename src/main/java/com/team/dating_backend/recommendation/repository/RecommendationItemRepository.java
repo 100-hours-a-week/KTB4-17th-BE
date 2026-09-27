@@ -10,7 +10,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface RecommendationItemRepository extends JpaRepository<RecommendationItem, Long> {
 
-    Optional<RecommendationItem> findByIdAndRecommendationBatchId(Long id, Long recommendationBatchId);
+    Optional<RecommendationItem> findByIdAndRecommendationBatchId(Long id,
+        Long recommendationBatchId);
 
     @Query("""
         SELECT new com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow(

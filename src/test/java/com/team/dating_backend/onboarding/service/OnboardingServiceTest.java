@@ -154,7 +154,10 @@ class OnboardingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = UserStatus.class, names = {"SUSPENDED", "WITHDRAWN"})
+    @EnumSource(
+        value = UserStatus.class,
+        names = {"SUSPENDED", "WITHDRAWN"}
+    )
     void SUSPENDED_또는_WITHDRAWN_회원이면_접근_예외가_발생한다(UserStatus userStatus) {
         User user = user(userStatus);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
@@ -174,7 +177,10 @@ class OnboardingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = UserStatus.class, names = {"ONBOARDING", "ACTIVE"})
+    @EnumSource(
+        value = UserStatus.class,
+        names = {"ONBOARDING", "ACTIVE"}
+    )
     void 온보딩_중이거나_활성_회원이면_기본_정보를_조회할_수_있다(UserStatus userStatus) {
         User user = user(userStatus);
         LocalDate birthDate = LocalDate.of(1990, 5, 21);
@@ -191,7 +197,10 @@ class OnboardingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = UserStatus.class, names = {"SUSPENDED", "WITHDRAWN"})
+    @EnumSource(
+        value = UserStatus.class,
+        names = {"SUSPENDED", "WITHDRAWN"}
+    )
     void 정지_또는_탈퇴_회원이면_기본_정보_조회_예외가_발생한다(UserStatus userStatus) {
         User user = user(userStatus);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));

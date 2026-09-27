@@ -55,8 +55,9 @@ public class LikeSendService {
             throw new LikeBusinessException(LikeErrorCode.DUPLICATE_PENDING_LIKE);
         }
 
-        Optional<Like> firstLike = likeRepository.findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(
-            receiverId, senderId, LikeStatus.PENDING);
+        Optional<Like> firstLike = likeRepository
+            .findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(
+                receiverId, senderId, LikeStatus.PENDING);
         Like like = likeRepository.save(new Like(senderId, receiverId, LocalDateTime.now()));
         if (firstLike.isPresent()) {
             Like earlierLike = firstLike.get();

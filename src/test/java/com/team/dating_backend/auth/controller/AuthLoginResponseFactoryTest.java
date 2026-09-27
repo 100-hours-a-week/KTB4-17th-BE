@@ -46,15 +46,18 @@ class AuthLoginResponseFactoryTest {
         jwtProperties.setServiceExpirationMinutes(60);
         jwtProperties.setPendingExpirationMinutes(10);
 
-        AuthCookieFactory authCookieFactory = new AuthCookieFactory(authWebProperties, jwtProperties);
-        authLoginResponseFactory = new AuthLoginResponseFactory(jwtService, authCookieFactory, authWebProperties);
+        AuthCookieFactory authCookieFactory = new AuthCookieFactory(authWebProperties,
+            jwtProperties);
+        authLoginResponseFactory = new AuthLoginResponseFactory(jwtService, authCookieFactory,
+            authWebProperties);
     }
 
     @Test
     void ACTIVE_회원은_ACCESS_TOKEN과_서비스_목적지로_리다이렉트된다() {
         // given
         given(jwtService.createServiceAuthToken(1L)).willReturn("service-token");
-        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L, LoginDestination.SERVICE);
+        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
+            LoginDestination.SERVICE);
 
         // when
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
@@ -80,7 +83,8 @@ class AuthLoginResponseFactoryTest {
         // given
         given(jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123"))
             .willReturn("pending-token");
-        SocialLoginResult loginResult = new SocialLoginResult.PendingRegistration(AuthProvider.KAKAO, "kakao-123");
+        SocialLoginResult loginResult = new SocialLoginResult.PendingRegistration(
+            AuthProvider.KAKAO, "kakao-123");
 
         // when
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
@@ -103,7 +107,8 @@ class AuthLoginResponseFactoryTest {
     void ONBOARDING_회원은_ACCESS_TOKEN으로_온보딩_목적지에_진입한다() {
         // given
         given(jwtService.createServiceAuthToken(2L)).willReturn("service-token");
-        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(2L, LoginDestination.ONBOARDING);
+        SocialLoginResult loginResult = new SocialLoginResult.Authenticated(2L,
+            LoginDestination.ONBOARDING);
 
         // when
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);

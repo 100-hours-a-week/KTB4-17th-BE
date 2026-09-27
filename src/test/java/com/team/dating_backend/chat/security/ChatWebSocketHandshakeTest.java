@@ -54,13 +54,17 @@ import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionSubscribeEvent;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
-@SpringBootTest(classes = ChatWebSocketHandshakeTest.TestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-    "spring.config.name=chat-websocket-test",
-    "server.address=127.0.0.1",
-    "app.security.allowed-origins=http://localhost:5173",
-    "jwt.secret=RsJrP89+FuXm/BZZiqI2p8tCi1PAvb0/rATGDAp0KX0=",
-    "jwt.service-expiration-minutes=60"
-})
+@SpringBootTest(
+    classes = ChatWebSocketHandshakeTest.TestApplication.class,
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "spring.config.name=chat-websocket-test",
+        "server.address=127.0.0.1",
+        "app.security.allowed-origins=http://localhost:5173",
+        "jwt.secret=RsJrP89+FuXm/BZZiqI2p8tCi1PAvb0/rATGDAp0KX0=",
+        "jwt.service-expiration-minutes=60"
+    }
+)
 class ChatWebSocketHandshakeTest {
 
     @LocalServerPort
@@ -233,22 +237,28 @@ class ChatWebSocketHandshakeTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableAutoConfiguration(exclude = {
-        DataSourceAutoConfiguration.class,
-        HibernateJpaAutoConfiguration.class
-    })
-    @EnableConfigurationProperties({
-        JwtProperties.class,
-        SecurityProperties.class
-    })
-    @Import({
-        SecurityConfig.class,
-        ChatWebSocketConfig.class,
-        JwtService.class,
-        ApiAuthenticationEntryPoint.class,
-        ApiAccessDeniedHandler.class,
-        ConnectEventTestConfiguration.class
-    })
+    @EnableAutoConfiguration(
+        exclude = {
+            DataSourceAutoConfiguration.class,
+            HibernateJpaAutoConfiguration.class
+        }
+    )
+    @EnableConfigurationProperties(
+        {
+            JwtProperties.class,
+            SecurityProperties.class
+        }
+    )
+    @Import(
+        {
+            SecurityConfig.class,
+            ChatWebSocketConfig.class,
+            JwtService.class,
+            ApiAuthenticationEntryPoint.class,
+            ApiAccessDeniedHandler.class,
+            ConnectEventTestConfiguration.class
+        }
+    )
     static class TestApplication {}
 
     @TestConfiguration(proxyBeanMethods = false)

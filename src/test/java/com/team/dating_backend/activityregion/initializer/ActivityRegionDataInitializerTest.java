@@ -92,7 +92,8 @@ class ActivityRegionDataInitializerTest {
 
     @Test
     void 동일한_개수라도_지역_코드가_CSV와_다르면_애플리케이션_시작에_실패한다() throws Exception {
-        List<ActivityRegion> persistedRegions = new ArrayList<>(toActivityRegions(readCsvActivityRegions()));
+        List<ActivityRegion> persistedRegions = new ArrayList<>(
+            toActivityRegions(readCsvActivityRegions()));
         persistedRegions.set(
             0,
             new ActivityRegion(

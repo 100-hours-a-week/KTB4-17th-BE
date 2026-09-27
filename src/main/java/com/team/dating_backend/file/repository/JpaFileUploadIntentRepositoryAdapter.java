@@ -100,9 +100,10 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
     @Override
     @Transactional(readOnly = true)
     public List<FileUploadIntent> findCleanupCandidates(LocalDateTime now, int limit) {
-        return uploadIntentJpaRepository.findByExpiresAtBeforeAndStagingCleanedAtIsNullOrderByExpiresAtAsc(
-            now,
-            PageRequest.of(0, limit));
+        return uploadIntentJpaRepository
+            .findByExpiresAtBeforeAndStagingCleanedAtIsNullOrderByExpiresAtAsc(
+                now,
+                PageRequest.of(0, limit));
     }
 
     @Override
@@ -118,9 +119,10 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
     @Override
     @Transactional(readOnly = true)
     public List<FileUploadIntent> findOldCleanedIntents(LocalDateTime expiresBefore, int limit) {
-        return uploadIntentJpaRepository.findByStagingCleanedAtIsNotNullAndExpiresAtBeforeOrderByExpiresAtAsc(
-            expiresBefore,
-            PageRequest.of(0, limit));
+        return uploadIntentJpaRepository
+            .findByStagingCleanedAtIsNotNullAndExpiresAtBeforeOrderByExpiresAtAsc(
+                expiresBefore,
+                PageRequest.of(0, limit));
     }
 
     @Override
@@ -131,6 +133,7 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
 
     private FileUploadIntent findForUpdate(Long intentId, Long ownerUserId) {
         return uploadIntentJpaRepository.findByIdAndOwnerUserIdForUpdate(intentId, ownerUserId)
-            .orElseThrow(() -> new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_NOT_FOUND));
+            .orElseThrow(
+                () -> new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_NOT_FOUND));
     }
 }

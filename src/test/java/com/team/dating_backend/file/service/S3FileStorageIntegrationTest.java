@@ -28,7 +28,10 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 
 @Tag("s3-integration")
-@SpringBootTest(classes = S3FileStorageIntegrationTest.S3StorageTestConfiguration.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(
+    classes = S3FileStorageIntegrationTest.S3StorageTestConfiguration.class,
+    webEnvironment = SpringBootTest.WebEnvironment.NONE
+)
 class S3FileStorageIntegrationTest {
 
     private static final String MIME_TYPE = "image/png";

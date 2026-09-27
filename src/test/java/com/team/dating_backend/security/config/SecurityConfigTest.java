@@ -31,12 +31,14 @@ import org.springframework.web.cors.CorsConfiguration;
 import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = SecurityConfigTest.SecurityProbeController.class)
-@Import({
-    SecurityConfig.class,
-    ApiAuthenticationEntryPoint.class,
-    ApiAccessDeniedHandler.class,
-    SecurityConfigTest.SecurityProbeController.class
-})
+@Import(
+    {
+        SecurityConfig.class,
+        ApiAuthenticationEntryPoint.class,
+        ApiAccessDeniedHandler.class,
+        SecurityConfigTest.SecurityProbeController.class
+    }
+)
 class SecurityConfigTest {
 
     @Autowired
@@ -91,7 +93,8 @@ class SecurityConfigTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/v1/security/protected");
 
-        CorsConfiguration configuration = securityConfig.corsConfigurationSource().getCorsConfiguration(request);
+        CorsConfiguration configuration = securityConfig.corsConfigurationSource()
+            .getCorsConfiguration(request);
 
         assertEquals(List.of("http://localhost:5173"), configuration.getAllowedOrigins());
         assertTrue(configuration.getAllowedMethods().contains("OPTIONS"));

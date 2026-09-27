@@ -52,7 +52,8 @@ class FileServiceTest {
         byte[] imageBytes = validPngBytes(32);
         context.storage().addUploadedObject(PNG_MIME_TYPE, imageBytes);
 
-        FileMetadataResult result = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
+        FileMetadataResult result = context.fileService().completeUpload(USER_ID,
+            uploadIntent.uploadIntentId());
 
         assertThat(result.fileId()).isNotNull();
         assertThat(result.originalName()).isEqualTo("sample.png");
@@ -65,7 +66,8 @@ class FileServiceTest {
             context.files().savedFile().getStorageKey());
         assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStatus())
             .isEqualTo(FileUploadIntentStatus.COMPLETED);
-        assertThat(context.intentRepository().intent(uploadIntent.uploadIntentId()).getStagingCleanedAt())
+        assertThat(
+            context.intentRepository().intent(uploadIntent.uploadIntentId()).getStagingCleanedAt())
             .isNull();
         assertThat(context.storage().deletedStorageKey()).startsWith("staging/");
     }
@@ -76,8 +78,10 @@ class FileServiceTest {
         FileUploadIntentResult uploadIntent = createIntent(context);
         context.storage().addUploadedObject(PNG_MIME_TYPE, validPngBytes(32));
 
-        FileMetadataResult first = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
-        FileMetadataResult second = context.fileService().completeUpload(USER_ID, uploadIntent.uploadIntentId());
+        FileMetadataResult first = context.fileService().completeUpload(USER_ID,
+            uploadIntent.uploadIntentId());
+        FileMetadataResult second = context.fileService().completeUpload(USER_ID,
+            uploadIntent.uploadIntentId());
 
         assertThat(second.fileId()).isEqualTo(first.fileId());
         assertThat(context.files().saveCount()).isEqualTo(1);

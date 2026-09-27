@@ -56,7 +56,8 @@ public class RecommendationItemGetService {
             RecommendationItem cursorItem = recommendationItemRepository
                 .findByIdAndRecommendationBatchId(cursor, batchId)
                 .orElseThrow(() -> new RequestValidationException(
-                    List.of(new FieldErrorResponse("cursor", "must reference an item in the batch"))));
+                    List.of(
+                        new FieldErrorResponse("cursor", "must reference an item in the batch"))));
             cursorRankingOrder = cursorItem.getRankingOrder();
         }
 

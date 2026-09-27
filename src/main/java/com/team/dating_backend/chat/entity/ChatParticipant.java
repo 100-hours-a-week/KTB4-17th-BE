@@ -19,26 +19,49 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "chat_participants", uniqueConstraints = @UniqueConstraint(name = "uk_chat_participant_room_user", columnNames = {
-    "chat_room_id",
-    "user_id"}), indexes = @Index(name = "idx_chat_participant_user_status_room", columnList = "user_id,status,chat_room_id"))
+@Table(
+    name = "chat_participants",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_chat_participant_room_user",
+        columnNames = {
+            "chat_room_id",
+            "user_id"}
+    ),
+    indexes = @Index(
+        name = "idx_chat_participant_user_status_room",
+        columnList = "user_id,status,chat_room_id"
+    )
+)
 public class ChatParticipant {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_room_id", nullable = false)
+    @Column(
+        name = "chat_room_id",
+        nullable = false
+    )
     private Long chatRoomId;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(
+        name = "user_id",
+        nullable = false
+    )
     private Long userId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(
+        name = "status",
+        nullable = false,
+        length = 20
+    )
     private ChatParticipantStatus status;
 
-    @Column(name = "is_chat_notification", nullable = false)
+    @Column(
+        name = "is_chat_notification",
+        nullable = false
+    )
     private boolean chatNotification;
 
     @Column(name = "left_at")

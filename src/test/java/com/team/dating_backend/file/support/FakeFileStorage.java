@@ -23,7 +23,8 @@ public final class FakeFileStorage implements FileStorage {
     private String deletedStorageKey;
 
     @Override
-    public PresignedUploadUrl createUploadUrl(String storageKey, String mimeType, Duration expiration) {
+    public PresignedUploadUrl createUploadUrl(String storageKey, String mimeType,
+        Duration expiration) {
         lastUploadKey = storageKey;
         return new PresignedUploadUrl(
             "https://example.com/presigned-put-url",
@@ -81,7 +82,8 @@ public final class FakeFileStorage implements FileStorage {
     public void addUploadedObject(String mimeType, byte[] content) {
         objects.put(
             lastUploadKey,
-            new StoredObjectInfo(content.length, mimeType, "etag-1", Arrays.copyOf(content, content.length)));
+            new StoredObjectInfo(content.length, mimeType, "etag-1",
+                Arrays.copyOf(content, content.length)));
     }
 
     public String lastUploadKey() {

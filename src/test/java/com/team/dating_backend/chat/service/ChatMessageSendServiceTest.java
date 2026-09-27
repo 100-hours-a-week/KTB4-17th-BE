@@ -105,7 +105,8 @@ class ChatMessageSendServiceTest {
             CHAT_ROOM_ID, SENDER_USER_ID, request);
 
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
-        ArgumentCaptor<ChatMessageOutbox> outboxCaptor = ArgumentCaptor.forClass(ChatMessageOutbox.class);
+        ArgumentCaptor<ChatMessageOutbox> outboxCaptor = ArgumentCaptor
+            .forClass(ChatMessageOutbox.class);
         verify(chatMessageRepository).save(messageCaptor.capture());
         verify(outboxRepository).save(outboxCaptor.capture());
 

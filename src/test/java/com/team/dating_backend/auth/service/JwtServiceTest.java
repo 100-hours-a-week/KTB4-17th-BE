@@ -44,7 +44,8 @@ class JwtServiceTest {
     @Test
     void Pending_토큰은_서비스_인증_토큰으로_인정하지_않는다() {
         // given
-        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
+        String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO,
+            "kakao-123");
 
         // when & then
         assertThrows(JwtException.class, () -> jwtService.parseServiceAuthToken(pendingToken));

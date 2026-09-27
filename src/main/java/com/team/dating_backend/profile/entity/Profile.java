@@ -30,7 +30,13 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 @Getter
 @Entity
-@Table(name = "profiles", uniqueConstraints = @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"))
+@Table(
+    name = "profiles",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_profiles_user_id",
+        columnNames = "user_id"
+    )
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Profile {
 
@@ -38,52 +44,86 @@ public class Profile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "nickname", length = 10)
+    @Column(
+        name = "nickname",
+        length = 10
+    )
     private String nickname;
 
     @Column(name = "height")
     private Short height;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "body_type", length = 30)
+    @Column(
+        name = "body_type",
+        length = 30
+    )
     private BodyType bodyType;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "education_level", length = 30)
+    @Column(
+        name = "education_level",
+        length = 30
+    )
     private EducationLevel educationLevel;
 
-    @Column(name = "job", length = 50)
+    @Column(
+        name = "job",
+        length = 50
+    )
     private String job;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "religion", length = 30)
+    @Column(
+        name = "religion",
+        length = 30
+    )
     private Religion religion;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "mbti", length = 4)
+    @Column(
+        name = "mbti",
+        length = 4
+    )
     private Mbti mbti;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "drinking", length = 30)
+    @Column(
+        name = "drinking",
+        length = 30
+    )
     private Drinking drinking;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "smoking", length = 30)
+    @Column(
+        name = "smoking",
+        length = 30
+    )
     private Smoking smoking;
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
+    @Column(
+        name = "updated_at",
+        nullable = false
+    )
     private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(
+        name = "user_id",
+        nullable = false
+    )
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)

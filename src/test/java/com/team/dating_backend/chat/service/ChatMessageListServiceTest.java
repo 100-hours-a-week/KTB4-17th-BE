@@ -68,7 +68,8 @@ class ChatMessageListServiceTest {
                 message(20L, VIEWER_PARTICIPANT_ID, "중간"),
                 message(10L, OTHER_PARTICIPANT_ID, "추가 조회")));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID, VIEWER_USER_ID, null, 2);
+        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+            VIEWER_USER_ID, null, 2);
 
         assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::messageId)
             .containsExactly(20L, 30L);
@@ -88,7 +89,8 @@ class ChatMessageListServiceTest {
                 20L, PageRequest.of(0, 3)))
             .willReturn(List.of(message(19L, OTHER_PARTICIPANT_ID, "이전 메시지")));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID, VIEWER_USER_ID, 20L, 2);
+        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+            VIEWER_USER_ID, 20L, 2);
 
         assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::messageId)
             .containsExactly(19L);
@@ -108,7 +110,8 @@ class ChatMessageListServiceTest {
             CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 2)))
             .willReturn(List.of(deletedMessage));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID, VIEWER_USER_ID, null, 1);
+        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+            VIEWER_USER_ID, null, 1);
 
         assertThat(result.messages().getFirst().textContent()).isEqualTo("삭제된 메시지입니다.");
     }

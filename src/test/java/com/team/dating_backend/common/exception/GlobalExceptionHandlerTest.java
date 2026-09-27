@@ -33,7 +33,8 @@ class GlobalExceptionHandlerTest {
             List.of(new FieldErrorResponse("image", "이미지를 선택해주세요.")));
 
         // When
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleRequestValidation(exception);
+        ResponseEntity<ErrorResponse> response = globalExceptionHandler
+            .handleRequestValidation(exception);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -49,7 +50,8 @@ class GlobalExceptionHandlerTest {
         RequestValidationException exception = new RequestValidationException("유효한 파일 ID가 필요합니다.");
 
         // When
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleRequestValidation(exception);
+        ResponseEntity<ErrorResponse> response = globalExceptionHandler
+            .handleRequestValidation(exception);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

@@ -38,7 +38,8 @@ public class ProfileSaveService {
         User user = userRepository
             .findById(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
-        Optional<Profile> existingProfile = profileRepository.findByUserIdAndDeletedAtIsNull(userId);
+        Optional<Profile> existingProfile = profileRepository
+            .findByUserIdAndDeletedAtIsNull(userId);
         boolean created = existingProfile.isEmpty();
         Profile profile = existingProfile.orElseGet(() -> new Profile(user));
 
@@ -58,7 +59,8 @@ public class ProfileSaveService {
             request.smoking());
 
         Profile savedProfile = saveAndFlush(profile);
-        ProfileSaveResponse response = new ProfileSaveResponse(ProfileSaveProfileResponse.from(savedProfile));
+        ProfileSaveResponse response = new ProfileSaveResponse(
+            ProfileSaveProfileResponse.from(savedProfile));
         return new ProfileSaveResult(created, response);
     }
 

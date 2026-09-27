@@ -50,8 +50,14 @@ public class OAuthController {
     @GetMapping("/{provider}/callback")
     public ResponseEntity<Void> handleCallback(
         @PathVariable("provider") String providerValue,
-        @RequestParam(value = "code", required = false) String code,
-        @RequestParam(value = "state", required = false) String state,
+        @RequestParam(
+            value = "code",
+            required = false
+        ) String code,
+        @RequestParam(
+            value = "state",
+            required = false
+        ) String state,
         HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
         validateCallbackParameters(code, state);
@@ -60,7 +66,8 @@ public class OAuthController {
         oauthStateService.validateAndConsumeState(provider, state, session);
 
         OAuthIdentity identity = providerClient.requestIdentity(code);
-        SocialLoginResult loginResult = socialLoginService.login(identity.provider(), identity.providerUserId());
+        SocialLoginResult loginResult = socialLoginService.login(identity.provider(),
+            identity.providerUserId());
 
         return authLoginResponseFactory.create(loginResult);
     }

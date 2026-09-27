@@ -347,7 +347,8 @@ public class FileService {
             uploadIntentRepository.releaseForRetry(intent.getId(), intent.getOwnerUserId());
         } catch (RuntimeException releaseException) {
             originalException.addSuppressed(releaseException);
-            log.error("업로드 요청을 재시도 가능 상태로 되돌리지 못했습니다. intentId={}", intent.getId(), releaseException);
+            log.error("업로드 요청을 재시도 가능 상태로 되돌리지 못했습니다. intentId={}", intent.getId(),
+                releaseException);
         }
     }
 }

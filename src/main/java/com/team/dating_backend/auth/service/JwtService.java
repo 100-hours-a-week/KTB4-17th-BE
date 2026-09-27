@@ -29,7 +29,8 @@ public class JwtService {
 
     public String createPendingRegistrationToken(AuthProvider provider, String providerUserId) {
         Instant issuedAt = Instant.now();
-        Instant expiresAt = issuedAt.plus(jwtProperties.getPendingExpirationMinutes(), ChronoUnit.MINUTES);
+        Instant expiresAt = issuedAt.plus(jwtProperties.getPendingExpirationMinutes(),
+            ChronoUnit.MINUTES);
 
         return Jwts.builder()
             .claim(PROVIDER_CLAIM, provider.name())
@@ -84,7 +85,8 @@ public class JwtService {
     public String createServiceAuthToken(Long userId) {
         Instant issuedAt = Instant.now();
 
-        Instant expiresAt = issuedAt.plus(jwtProperties.getServiceExpirationMinutes(), ChronoUnit.MINUTES);
+        Instant expiresAt = issuedAt.plus(jwtProperties.getServiceExpirationMinutes(),
+            ChronoUnit.MINUTES);
 
         return Jwts.builder()
             .subject(userId.toString())

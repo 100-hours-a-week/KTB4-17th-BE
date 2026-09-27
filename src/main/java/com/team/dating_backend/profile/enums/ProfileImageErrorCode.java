@@ -4,7 +4,9 @@ import com.team.dating_backend.common.enums.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum ProfileImageErrorCode implements ErrorCode {
-    FRONT_PHOTO_REQUIRED(HttpStatus.BAD_REQUEST), FILE_NOT_AVAILABLE(HttpStatus.NOT_FOUND), PROFILE_NOT_FOUND(
+    FRONT_PHOTO_REQUIRED(HttpStatus.BAD_REQUEST),
+    FILE_NOT_AVAILABLE(HttpStatus.NOT_FOUND),
+    PROFILE_NOT_FOUND(
         HttpStatus.NOT_FOUND);
 
     private final HttpStatus status;

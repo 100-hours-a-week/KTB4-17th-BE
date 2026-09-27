@@ -19,28 +19,48 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "chat_rooms", uniqueConstraints = @UniqueConstraint(name = "uk_chat_room_match", columnNames = "match_id"))
+@Table(
+    name = "chat_rooms",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_chat_room_match",
+        columnNames = "match_id"
+    )
+)
 public class ChatRoom {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "match_id", nullable = false)
+    @Column(
+        name = "match_id",
+        nullable = false
+    )
     private Long matchId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(
+        name = "status",
+        nullable = false,
+        length = 20
+    )
     private ChatRoomStatus status;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+        name = "created_at",
+        nullable = false,
+        updatable = false
+    )
     private LocalDateTime createdAt;
 
     @Column(name = "ended_at")
     private LocalDateTime endedAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "end_reason", length = 30)
+    @Column(
+        name = "end_reason",
+        length = 30
+    )
     private ChatRoomEndReason endReason;
 
     public ChatRoom(Long matchId, LocalDateTime createdAt) {
