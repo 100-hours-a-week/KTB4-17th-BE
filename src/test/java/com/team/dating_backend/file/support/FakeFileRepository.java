@@ -3,7 +3,9 @@ package com.team.dating_backend.file.support;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
 import java.lang.reflect.Field;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +35,17 @@ public final class FakeFileRepository implements FileRepository {
     @Override
     public Optional<File> findActiveByIdAndOwner(Long fileId, Long ownerUserId) {
         return findActiveById(fileId).filter(file -> file.getOwnerUserId().equals(ownerUserId));
+    }
+
+    @Override
+    public List<File> findAllActiveByIdsAndOwner(
+        Collection<Long> fileIds,
+        Long ownerUserId) {
+        return fileIds.stream()
+            .map(files::get)
+            .filter(file -> file != null && !file.isDeleted())
+            .filter(file -> file.getOwnerUserId().equals(ownerUserId))
+            .toList();
     }
 
     public File savedFile() {
