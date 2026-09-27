@@ -8,7 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.team.dating_backend.aipractice.dto.event.AiPracticeTurnUpdatedEvent;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
 import com.team.dating_backend.aipractice.dto.request.AiPracticeGenerationCallbackRequest;
 import com.team.dating_backend.aipractice.entity.AiPracticeChat;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -73,8 +73,8 @@ class AiPracticeGenerationCallbackServiceTest {
 
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
-        assertThat(eventCaptor.getValue()).isInstanceOf(AiPracticeTurnUpdatedEvent.class);
-        AiPracticeTurnUpdatedEvent event = (AiPracticeTurnUpdatedEvent) eventCaptor.getValue();
+        assertThat(eventCaptor.getValue()).isInstanceOf(AiPracticeChatUpdatedEvent.class);
+        AiPracticeChatUpdatedEvent event = (AiPracticeChatUpdatedEvent) eventCaptor.getValue();
         assertThat(event.userId()).isEqualTo(USER_ID);
         assertThat(event.sessionId()).isEqualTo(SESSION_ID);
         assertThat(event.chatId()).isEqualTo(CHAT_ID);
@@ -91,17 +91,18 @@ class AiPracticeGenerationCallbackServiceTest {
         assertThat(chat.getFailureCode()).isEqualTo("AI_GENERATION_FAILED");
         assertThat(chat.getAiResponse()).isNull();
         verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(
-            AiPracticeTurnUpdatedEvent.class));
+            AiPracticeChatUpdatedEvent.class));
     }
 
     @Test
-    void 오래된생성시도의콜백은현재턴상태를변경하지않는다() {
+    void 오래된생성시도의콜백은현재대화상태와AI세션ID를변경하지않는다() {
         chat.retry(AiPracticeTime.today());
 
         service.receive(callback(1, AiPracticeCallbackStatus.COMPLETED, "늦은 응답"));
 
         assertThat(chat.getStatus()).isEqualTo(AiPracticeChatStatus.GENERATING);
         assertThat(chat.getGenerationAttempt()).isEqualTo(2);
+        assertThat(session.getAiSessionId()).isNull();
         verifyNoInteractions(eventPublisher);
         verify(endCommandQueue).enqueueIfReady(session);
     }
@@ -131,8 +132,8 @@ class AiPracticeGenerationCallbackServiceTest {
     }
 
     private AiPracticeGenerationCallbackRequest callback(
-        int attempt, AiPracticeCallbackStatus status, String aiResponse) {
+        int generationAttempt, AiPracticeCallbackStatus status, String aiResponse) {
         return new AiPracticeGenerationCallbackRequest(
-            SESSION_ID, CHAT_ID, "ai-session-42", attempt, status, aiResponse);
+            SESSION_ID, CHAT_ID, "ai-session-42", generationAttempt, status, aiResponse);
     }
 }

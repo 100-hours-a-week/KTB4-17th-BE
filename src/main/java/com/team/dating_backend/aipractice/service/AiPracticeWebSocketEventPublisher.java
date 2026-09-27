@@ -1,6 +1,6 @@
 package com.team.dating_backend.aipractice.service;
 
-import com.team.dating_backend.aipractice.dto.event.AiPracticeTurnUpdatedEvent;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -18,7 +18,7 @@ public class AiPracticeWebSocketEventPublisher {
     private final SimpMessagingTemplate messagingTemplate;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void publish(AiPracticeTurnUpdatedEvent event) {
+    public void publish(AiPracticeChatUpdatedEvent event) {
         try {
             messagingTemplate.convertAndSendToUser(
                 event.userId().toString(), DESTINATION, event);

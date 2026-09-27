@@ -1,6 +1,6 @@
 package com.team.dating_backend.aipractice.service;
 
-import com.team.dating_backend.aipractice.dto.event.AiPracticeTurnUpdatedEvent;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
 import com.team.dating_backend.aipractice.entity.AiPracticeChat;
 import com.team.dating_backend.aipractice.entity.AiPracticeOutbox;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -80,7 +80,7 @@ public class AiPracticeOutboxResultService {
             && chat.getStatus() == AiPracticeChatStatus.GENERATING) {
             chat.fail("AI_SERVER_UNAVAILABLE");
             if (session != null) {
-                eventPublisher.publishEvent(new AiPracticeTurnUpdatedEvent(
+                eventPublisher.publishEvent(new AiPracticeChatUpdatedEvent(
                     session.getUserId(),
                     session.getId(),
                     chat.getId(),

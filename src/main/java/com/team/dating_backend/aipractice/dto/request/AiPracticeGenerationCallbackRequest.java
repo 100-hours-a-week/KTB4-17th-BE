@@ -9,6 +9,6 @@ public record AiPracticeGenerationCallbackRequest(
     @NotNull @Positive Long practiceSessionId,
     @NotNull @Positive Long chatId,
     @Size(max = 100) String aiSessionId,
-    @NotNull @Positive Integer attempt,
+    @NotNull @Positive Integer generationAttempt,
     @NotNull AiPracticeCallbackStatus status,
     @Size(max = 10000) String aiResponse) {}
