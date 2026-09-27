@@ -38,7 +38,12 @@ public class SecurityConfig {
 
         http.csrf(csrf -> csrf
             .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-            .ignoringRequestMatchers("/internal/v1/ai-practice/events"))
+            // Registration authenticates with its short-lived pending token before service
+            // auth
+            // is issued, so it must not depend on the service API's CSRF handshake.
+            .ignoringRequestMatchers(
+                "/api/v1/registration/identity",
+                "/internal/v1/ai-practice/events"))
             .cors(Customizer.withDefaults())
             .sessionManagement(
                 session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
