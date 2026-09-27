@@ -25,7 +25,8 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final Set<String> USER_SUBSCRIPTIONS = Set.of(
         "/user/queue/chat-messages",
-        "/user/queue/chat-room-updates");
+        "/user/queue/chat-room-updates",
+        "/user/queue/ai-practice");
 
     private final SecurityProperties securityProperties;
 
