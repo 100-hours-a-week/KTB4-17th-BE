@@ -7,4 +7,5 @@ public record ChatRoomSummary(
     Long otherUserId,
     boolean chatNotification,
     ChatRoomPreview preview,
+    long unreadCount,
     LocalDateTime activityAt) {}

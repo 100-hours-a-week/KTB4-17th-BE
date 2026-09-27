@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import com.team.dating_backend.chat.dto.read.ChatRoomCursor;
 import com.team.dating_backend.chat.dto.read.ChatRoomPage;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
+import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatRoomPreviewType;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
@@ -128,6 +129,33 @@ class ChatRoomListServiceTest {
     }
 
     @Test
+    void 이미지_미리보기와_방별_미읽음_수를_반환한다() {
+        ChatRoomListRow row = new ChatRoomListRow(
+            10L,
+            VIEWER_PARTICIPANT_ID,
+            true,
+            2L,
+            ChatRoomStatus.ACTIVE,
+            100L,
+            OTHER_PARTICIPANT_ID,
+            ChatMessageType.IMAGE,
+            null,
+            900L,
+            null,
+            null,
+            3L,
+            BASE_TIME);
+
+        ChatRoomPage result = listSingle(row);
+
+        assertThat(result.items().getFirst().preview().type())
+            .isEqualTo(ChatRoomPreviewType.IMAGE);
+        assertThat(result.items().getFirst().preview().text()).isEqualTo("사진");
+        assertThat(result.items().getFirst().preview().imageFileId()).isEqualTo(900L);
+        assertThat(result.items().getFirst().unreadCount()).isEqualTo(3L);
+    }
+
+    @Test
     void 발신자인_현재_사용자가_삭제한_메시지는_삭제_문구를_반환한다() {
         ChatRoomListRow row = messageRow(
             VIEWER_PARTICIPANT_ID, BASE_TIME, BASE_TIME.plusMinutes(1), null);
@@ -184,6 +212,9 @@ class ChatRoomListServiceTest {
             null,
             null,
             null,
+            null,
+            null,
+            0L,
             BASE_TIME);
     }
 
@@ -196,9 +227,12 @@ class ChatRoomListServiceTest {
             ChatRoomStatus.ACTIVE,
             100L,
             OTHER_PARTICIPANT_ID,
+            ChatMessageType.TEXT,
             text,
             null,
             null,
+            null,
+            0L,
             activityAt);
     }
 
@@ -215,9 +249,12 @@ class ChatRoomListServiceTest {
             ChatRoomStatus.ACTIVE,
             100L,
             senderParticipantId,
+            ChatMessageType.TEXT,
             "원문",
+            null,
             senderDeletedAt,
             receiverDeletedAt,
+            0L,
             activityAt);
     }
 

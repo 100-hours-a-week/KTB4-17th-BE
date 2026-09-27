@@ -76,11 +76,12 @@ class ChatRoomListControllerTest {
             100L,
             55L,
             true,
-            new ChatRoomPreview(ChatRoomPreviewType.TEXT, "안녕하세요!"),
+            new ChatRoomPreview(ChatRoomPreviewType.TEXT, "안녕하세요!", null),
+            2L,
             ACTIVITY_AT);
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
             .willReturn(new ChatRoomPage(
-                List.of(summary), new ChatRoomPageInfo(null, false)));
+                List.of(summary), 5L, new ChatRoomPageInfo(null, false)));
         given(participantDisplayService.findNicknames(List.of(55L)))
             .willReturn(Map.of(55L, "상대닉네임"));
 
@@ -99,7 +100,8 @@ class ChatRoomListControllerTest {
                 .value("2026-09-26T14:30:00"))
             .andExpect(jsonPath("$.data.items[0].otherUserId").doesNotExist())
             .andExpect(jsonPath("$.data.items[0].status").doesNotExist())
-            .andExpect(jsonPath("$.data.items[0].unreadCount").doesNotExist())
+            .andExpect(jsonPath("$.data.items[0].unreadCount").value(2))
+            .andExpect(jsonPath("$.data.totalUnreadCount").value(5))
             .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(nullValue()))
             .andExpect(jsonPath("$.data.pageInfo.hasNext").value(false));
         verify(chatRoomListService).listRooms(AUTHENTICATED_USER_ID, null, 20);
@@ -126,7 +128,7 @@ class ChatRoomListControllerTest {
         ChatRoomCursor cursor = new ChatRoomCursor(ACTIVITY_AT, 100L);
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 1))
             .willReturn(new ChatRoomPage(
-                List.of(), new ChatRoomPageInfo(cursor, true)));
+                List.of(), 0L, new ChatRoomPageInfo(cursor, true)));
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, cursor, 1))
             .willReturn(emptyPage());
         given(participantDisplayService.findNicknames(anyCollection()))
@@ -200,7 +202,7 @@ class ChatRoomListControllerTest {
     }
 
     private ChatRoomPage emptyPage() {
-        return new ChatRoomPage(List.of(), new ChatRoomPageInfo(null, false));
+        return new ChatRoomPage(List.of(), 0L, new ChatRoomPageInfo(null, false));
     }
 
     @TestConfiguration(proxyBeanMethods = false)

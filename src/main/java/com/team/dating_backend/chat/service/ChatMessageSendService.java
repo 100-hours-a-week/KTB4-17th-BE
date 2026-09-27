@@ -18,7 +18,10 @@ import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
+import com.team.dating_backend.file.entity.File;
+import com.team.dating_backend.file.repository.FileRepository;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -37,15 +40,22 @@ public class ChatMessageSendService {
     private final ChatMessageRateLimiter rateLimiter;
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
+    private final FileRepository fileRepository;
 
     @Transactional
     public ChatMessageCreateResponse sendTextMessage(
         Long chatRoomId, Long senderUserId, ChatMessageCreateRequest request) {
-        if (request == null || request.clientMessageId() == null) {
+        return sendMessage(chatRoomId, senderUserId, request);
+    }
+
+    @Transactional
+    public ChatMessageCreateResponse sendMessage(
+        Long chatRoomId, Long senderUserId, ChatMessageCreateRequest request) {
+        if (request == null || request.clientMessageId() == null || request.messageType() == null) {
             throw new RequestValidationException();
         }
 
-        ChatRoom room = chatRoomRepository.findById(chatRoomId)
+        ChatRoom room = chatRoomRepository.findWithLockById(chatRoomId)
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
         List<ChatParticipant> participants = room.getParticipants();
         ChatParticipant sender = participants.stream()
@@ -57,42 +67,70 @@ public class ChatMessageSendService {
             throw new ChatBusinessException(ChatErrorCode.CHAT_ACCESS_DENIED);
         }
 
-        ChatMessage existing = chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
+        ChatMessage existing = chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
             sender.getId(), request.clientMessageId()).orElse(null);
         if (existing != null) {
             if (sameRequest(existing, chatRoomId, request)) {
-                return new ChatMessageCreateResponse(existing.getId(), existing.getCreatedAt());
+                return new ChatMessageCreateResponse(
+                    existing.getId(), existing.getCreatedAt(), existing.getImageFileId());
             }
             throw new ChatBusinessException(ChatErrorCode.CLIENT_MESSAGE_ID_CONFLICT);
         }
 
-        validateTextRequest(request);
+        validateRequestShape(request);
         requireSendableRoom(room, participants, sender);
+
+        File imageFile = findImageFile(senderUserId, request);
         if (!rateLimiter.tryAcquire(senderUserId)) {
             throw new ChatBusinessException(ChatErrorCode.TOO_MANY_MESSAGE_REQUESTS);
         }
 
         LocalDateTime now = LocalDateTime.now();
-        ChatMessage message = chatMessageRepository.save(new ChatMessage(
-            room, sender, request.clientMessageId(), request.textContent(), now));
+        ChatMessage newMessage = request.messageType() == ChatMessageType.TEXT
+            ? new ChatMessage(room, sender, request.clientMessageId(), request.textContent(), now)
+            : ChatMessage.image(room, sender, request.clientMessageId(), imageFile, now);
+        ChatMessage message = chatMessageRepository.save(newMessage);
         outboxRepository.save(new ChatMessageOutbox(message.getId(), now));
 
-        return new ChatMessageCreateResponse(message.getId(), message.getCreatedAt());
+        return new ChatMessageCreateResponse(
+            message.getId(), message.getCreatedAt(), message.getImageFileId());
     }
 
     private boolean sameRequest(
         ChatMessage existing, Long chatRoomId, ChatMessageCreateRequest request) {
         return existing.getChatRoomId().equals(chatRoomId)
             && existing.getMessageType() == request.messageType()
-            && Objects.equals(existing.getTextContent(), request.textContent());
+            && Objects.equals(existing.getTextContent(), request.textContent())
+            && Objects.equals(existing.getImageFileId(), request.imageFileId());
     }
 
-    private void validateTextRequest(ChatMessageCreateRequest request) {
+    private void validateRequestShape(ChatMessageCreateRequest request) {
         String text = request.textContent();
-        if (request.messageType() != ChatMessageType.TEXT
-            || text == null || text.isBlank() || text.length() > MAX_TEXT_LENGTH) {
+        Long imageFileId = request.imageFileId();
+        if (request.messageType() == ChatMessageType.TEXT
+            && (text == null || text.isBlank() || text.length() > MAX_TEXT_LENGTH
+                || imageFileId != null)) {
             throw new RequestValidationException();
         }
+        if (request.messageType() == ChatMessageType.IMAGE
+            && (text != null || imageFileId == null || imageFileId <= 0)) {
+            throw new RequestValidationException();
+        }
+    }
+
+    private File findImageFile(Long senderUserId, ChatMessageCreateRequest request) {
+        if (request.messageType() != ChatMessageType.IMAGE) {
+            return null;
+        }
+
+        File imageFile = fileRepository.findActiveByIdAndOwner(
+            request.imageFileId(), senderUserId)
+            .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_IMAGE_NOT_FOUND));
+        if (imageFile.getMimeType() == null
+            || !imageFile.getMimeType().toLowerCase(Locale.ROOT).startsWith("image/")) {
+            throw new RequestValidationException();
+        }
+        return imageFile;
     }
 
     private void requireSendableRoom(

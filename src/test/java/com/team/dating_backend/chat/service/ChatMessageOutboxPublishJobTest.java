@@ -77,8 +77,9 @@ class ChatMessageOutboxPublishJobTest {
             .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
                 any(LocalDateTime.class), any(Pageable.class)))
             .willReturn(List.of(outbox));
-        given(chatMessageRepository.findById(100L)).willReturn(Optional.of(message));
-        given(chatParticipantRepository.findAllByChatRoom_Id(CHAT_ROOM_ID))
+        given(chatMessageRepository.findByIdWithImageFile(100L))
+            .willReturn(Optional.of(message));
+        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
             .willReturn(List.of(sender, receiver));
     }
 
@@ -105,7 +106,7 @@ class ChatMessageOutboxPublishJobTest {
 
     @Test
     void 원본_메시지가_없으면_재시도하지_않고_Outbox를_실패_격리한다() {
-        given(chatMessageRepository.findById(100L)).willReturn(Optional.empty());
+        given(chatMessageRepository.findByIdWithImageFile(100L)).willReturn(Optional.empty());
 
         job.publishDueMessages();
 
@@ -119,7 +120,7 @@ class ChatMessageOutboxPublishJobTest {
 
     @Test
     void 참여자_데이터가_유효하지_않으면_발행하지_않고_실패_격리한다() {
-        given(chatParticipantRepository.findAllByChatRoom_Id(CHAT_ROOM_ID))
+        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
             .willReturn(List.of(sender));
 
         job.publishDueMessages();

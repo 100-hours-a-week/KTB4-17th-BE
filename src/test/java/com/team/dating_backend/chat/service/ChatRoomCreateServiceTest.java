@@ -44,7 +44,7 @@ class ChatRoomCreateServiceTest {
     void Match로_채팅방을_생성하고_두_참여자를_등록한다() {
         LocalDateTime matchedAt = LocalDateTime.of(2026, 9, 26, 14, 30);
         Match match = match(30L, matchedAt);
-        given(chatRoomRepository.findByMatch_Id(30L)).willReturn(Optional.empty());
+        given(chatRoomRepository.findByMatchId(30L)).willReturn(Optional.empty());
         given(chatRoomRepository.save(org.mockito.ArgumentMatchers.any(ChatRoom.class)))
             .willAnswer(invocation -> {
                 ChatRoom chatRoom = invocation.getArgument(0);
@@ -70,7 +70,7 @@ class ChatRoomCreateServiceTest {
     void 동일한_Match의_채팅방이_있으면_기존_ID를_반환한다() {
         ChatRoom existingChatRoom = mock(ChatRoom.class);
         given(existingChatRoom.getId()).willReturn(40L);
-        given(chatRoomRepository.findByMatch_Id(30L))
+        given(chatRoomRepository.findByMatchId(30L))
             .willReturn(Optional.of(existingChatRoom));
 
         Long chatRoomId = service.createChatRoom(
@@ -88,7 +88,7 @@ class ChatRoomCreateServiceTest {
         LocalDateTime matchedAt = LocalDateTime.of(2026, 9, 26, 14, 30);
         Match match = match(30L, matchedAt);
         IllegalStateException failure = new IllegalStateException("participant save failed");
-        given(chatRoomRepository.findByMatch_Id(30L)).willReturn(Optional.empty());
+        given(chatRoomRepository.findByMatchId(30L)).willReturn(Optional.empty());
         given(chatRoomRepository.save(org.mockito.ArgumentMatchers.any(ChatRoom.class)))
             .willAnswer(invocation -> {
                 ChatRoom chatRoom = invocation.getArgument(0);

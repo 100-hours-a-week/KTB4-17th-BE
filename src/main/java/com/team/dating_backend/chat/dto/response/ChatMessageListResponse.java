@@ -24,6 +24,8 @@ public record ChatMessageListResponse(
         boolean mine,
         ChatMessageType messageType,
         String textContent,
+        Long imageFileId,
+        int unreadCount,
         ChatMessageStatus status,
         LocalDateTime createdAt) {}
 

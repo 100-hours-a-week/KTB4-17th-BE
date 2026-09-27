@@ -2,11 +2,13 @@ package com.team.dating_backend.chat.entity;
 
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
+import com.team.dating_backend.file.entity.File;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -33,10 +35,16 @@ import lombok.NoArgsConstructor;
             "sender_id",
             "client_message_id"}
     ),
-    indexes = @Index(
-        name = "idx_chat_message_room_status_id",
-        columnList = "chat_room_id,status,id"
-    )
+    indexes = {
+        @Index(
+            name = "idx_chat_message_room_status_id",
+            columnList = "chat_room_id,status,id"
+        ),
+        @Index(
+            name = "idx_chat_message_room_sender_status_id",
+            columnList = "chat_room_id,sender_id,status,id"
+        )
+    }
 )
 public class ChatMessage {
 
@@ -45,11 +53,19 @@ public class ChatMessage {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "chat_room_id", nullable = false)
+    @JoinColumn(
+        name = "chat_room_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_chat_message_room")
+    )
     private ChatRoom chatRoom;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "sender_id", nullable = false)
+    @JoinColumn(
+        name = "sender_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_chat_message_sender")
+    )
     private ChatParticipant senderParticipant;
 
     @Column(name = "client_message_id", nullable = false, updatable = false)
@@ -61,6 +77,13 @@ public class ChatMessage {
 
     @Column(name = "text_content", length = 1000)
     private String textContent;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "file_id",
+        foreignKey = @ForeignKey(name = "fk_chat_message_file")
+    )
+    private File imageFile;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -81,13 +104,56 @@ public class ChatMessage {
         UUID clientMessageId,
         String textContent,
         LocalDateTime createdAt) {
+        this(chatRoom, senderParticipant, clientMessageId,
+            ChatMessageType.TEXT, textContent, null, createdAt);
+    }
+
+    public static ChatMessage image(
+        ChatRoom chatRoom,
+        ChatParticipant senderParticipant,
+        UUID clientMessageId,
+        File imageFile,
+        LocalDateTime createdAt) {
+        return new ChatMessage(
+            chatRoom, senderParticipant, clientMessageId,
+            ChatMessageType.IMAGE, null, imageFile, createdAt);
+    }
+
+    private ChatMessage(
+        ChatRoom chatRoom,
+        ChatParticipant senderParticipant,
+        UUID clientMessageId,
+        ChatMessageType messageType,
+        String textContent,
+        File imageFile,
+        LocalDateTime createdAt) {
         this.chatRoom = Objects.requireNonNull(chatRoom);
         this.senderParticipant = Objects.requireNonNull(senderParticipant);
-        this.clientMessageId = clientMessageId;
-        this.messageType = ChatMessageType.TEXT;
+        this.clientMessageId = Objects.requireNonNull(clientMessageId);
+        if (!sameRoom(chatRoom, senderParticipant.getChatRoom())) {
+            throw new IllegalArgumentException(
+                "Sender participant must belong to the chat room.");
+        }
+        this.messageType = Objects.requireNonNull(messageType);
+        validateContent(messageType, textContent, imageFile);
         this.textContent = textContent;
+        this.imageFile = imageFile;
         this.status = ChatMessageStatus.SENT;
-        this.createdAt = createdAt;
+        this.createdAt = Objects.requireNonNull(createdAt);
+    }
+
+    private static boolean sameRoom(ChatRoom first, ChatRoom second) {
+        return first == second
+            || (first.getId() != null && first.getId().equals(second.getId()));
+    }
+
+    private static void validateContent(ChatMessageType type, String text, File image) {
+        if (type == ChatMessageType.TEXT && (text == null || text.isBlank() || image != null)) {
+            throw new IllegalArgumentException("Text messages require text content only.");
+        }
+        if (type == ChatMessageType.IMAGE && (image == null || text != null)) {
+            throw new IllegalArgumentException("Image messages require an image file only.");
+        }
     }
 
     public Long getChatRoomId() {
@@ -96,5 +162,9 @@ public class ChatMessage {
 
     public Long getSenderParticipantId() {
         return senderParticipant.getId();
+    }
+
+    public Long getImageFileId() {
+        return imageFile == null ? null : imageFile.getId();
     }
 }

@@ -66,6 +66,7 @@ public class ChatRoomListController {
             "chat_room_list_success",
             new ChatRoomListResponse(
                 items,
+                page.totalUnreadCount(),
                 new ChatRoomListResponse.PageInfo(nextCursor, page.pageInfo().hasNext())));
     }
 
@@ -78,7 +79,9 @@ public class ChatRoomListController {
             summary.chatNotification(),
             new ChatRoomListResponse.OtherParticipant(
                 nicknames.get(summary.otherUserId()), null),
-            new ChatRoomListResponse.Preview(preview.type(), preview.text()),
+            new ChatRoomListResponse.Preview(
+                preview.type(), preview.text(), preview.imageFileId()),
+            summary.unreadCount(),
             summary.activityAt());
     }
 

@@ -6,6 +6,7 @@ import com.team.dating_backend.chat.dto.read.ChatRoomPageInfo;
 import com.team.dating_backend.chat.dto.read.ChatRoomPreview;
 import com.team.dating_backend.chat.dto.read.ChatRoomSummary;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
+import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatRoomPreviewType;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
@@ -32,6 +33,8 @@ public class ChatRoomListService {
     public ChatRoomPage listRooms(Long viewerUserId, ChatRoomCursor cursor, int size) {
         validatePageSize(size);
 
+        long totalUnreadCount = chatRoomRepository.countVisibleUnreadMessages(viewerUserId);
+
         List<ChatRoomListRow> fetched = chatRoomRepository.findVisibleRoomList(
             viewerUserId,
             cursor == null ? null : cursor.activityAt(),
@@ -45,7 +48,8 @@ public class ChatRoomListService {
             ? new ChatRoomCursor(page.getLast().activityAt(), page.getLast().chatRoomId())
             : null;
 
-        return new ChatRoomPage(items, new ChatRoomPageInfo(nextCursor, hasNext));
+        return new ChatRoomPage(
+            items, totalUnreadCount, new ChatRoomPageInfo(nextCursor, hasNext));
     }
 
     private void validatePageSize(int size) {
@@ -60,6 +64,7 @@ public class ChatRoomListService {
             row.otherUserId(),
             row.chatNotification(),
             toPreview(row),
+            row.unreadCount() == null ? 0 : row.unreadCount(),
             row.activityAt());
     }
 
@@ -68,15 +73,21 @@ public class ChatRoomListService {
             String text = row.roomStatus() == ChatRoomStatus.ACTIVE
                 ? EMPTY_ACTIVE_PREVIEW
                 : EMPTY_ENDED_PREVIEW;
-            return new ChatRoomPreview(ChatRoomPreviewType.EMPTY, text);
+            return new ChatRoomPreview(ChatRoomPreviewType.EMPTY, text, null);
         }
 
         boolean mine = row.viewerParticipantId().equals(row.lastMessageSenderParticipantId());
         boolean deleted = mine
             ? row.lastMessageSenderDeletedAt() != null
             : row.lastMessageReceiverDeletedAt() != null;
-        return deleted
-            ? new ChatRoomPreview(ChatRoomPreviewType.DELETED, DELETED_PREVIEW)
-            : new ChatRoomPreview(ChatRoomPreviewType.TEXT, row.lastMessageTextContent());
+        if (deleted) {
+            return new ChatRoomPreview(ChatRoomPreviewType.DELETED, DELETED_PREVIEW, null);
+        }
+        if (row.lastMessageType() == ChatMessageType.IMAGE) {
+            return new ChatRoomPreview(
+                ChatRoomPreviewType.IMAGE, "사진", row.lastMessageImageFileId());
+        }
+        return new ChatRoomPreview(
+            ChatRoomPreviewType.TEXT, row.lastMessageTextContent(), null);
     }
 }

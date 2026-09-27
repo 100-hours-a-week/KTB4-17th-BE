@@ -76,7 +76,7 @@ public class ChatMessageOutboxPublishJob {
     }
 
     private void publish(ChatMessageOutbox outbox) {
-        ChatMessage message = chatMessageRepository.findById(outbox.getChatMessageId())
+        ChatMessage message = chatMessageRepository.findByIdWithImageFile(outbox.getChatMessageId())
             .orElse(null);
         if (message == null) {
             markFailed(outbox, ChatOutboxFailureCode.MESSAGE_NOT_FOUND);
@@ -84,10 +84,19 @@ public class ChatMessageOutboxPublishJob {
         }
 
         List<ChatParticipant> participants = chatParticipantRepository
-            .findAllByChatRoom_Id(message.getChatRoomId());
+            .findAllByChatRoomId(message.getChatRoomId());
         boolean senderIsParticipant = participants.stream()
             .anyMatch(participant -> participant.getId().equals(message.getSenderParticipantId()));
         if (participants.size() != 2 || !senderIsParticipant) {
+            markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
+            return;
+        }
+
+        ChatParticipant otherParticipant = participants.stream()
+            .filter(participant -> !participant.getId().equals(message.getSenderParticipantId()))
+            .findFirst()
+            .orElse(null);
+        if (otherParticipant == null) {
             markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
             return;
         }
@@ -97,13 +106,18 @@ public class ChatMessageOutboxPublishJob {
                 continue;
             }
 
+            boolean mine = participant.getId().equals(message.getSenderParticipantId());
+            boolean unreadByOther = otherParticipant.getLastReadMessageId() == null
+                || message.getId() > otherParticipant.getLastReadMessageId();
             ChatMessageCreatedEvent event = new ChatMessageCreatedEvent(
                 message.getChatRoomId(),
                 message.getId(),
                 message.getClientMessageId(),
-                participant.getId().equals(message.getSenderParticipantId()),
+                mine,
                 message.getMessageType(),
                 message.getTextContent(),
+                message.getImageFileId(),
+                mine && unreadByOther ? 1 : 0,
                 message.getCreatedAt());
 
             try {

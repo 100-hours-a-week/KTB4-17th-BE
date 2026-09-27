@@ -13,8 +13,10 @@ public enum ChatErrorCode implements ErrorCode {
     CHAT_ACCESS_DENIED(
         HttpStatus.FORBIDDEN),
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND),
+    CHAT_IMAGE_NOT_FOUND(HttpStatus.NOT_FOUND),
     CHAT_ROOM_NOT_ACTIVE(
         HttpStatus.CONFLICT),
+    INVALID_CHAT_MESSAGE_READ_CURSOR(HttpStatus.BAD_REQUEST),
     CLIENT_MESSAGE_ID_CONFLICT(HttpStatus.CONFLICT),
     TOO_MANY_MESSAGE_REQUESTS(
         HttpStatus.TOO_MANY_REQUESTS),

@@ -66,6 +66,8 @@ public class ChatMessageListController {
             message.mine(),
             message.messageType(),
             message.textContent(),
+            message.imageFileId(),
+            message.unreadCount(),
             message.status(),
             message.createdAt());
     }

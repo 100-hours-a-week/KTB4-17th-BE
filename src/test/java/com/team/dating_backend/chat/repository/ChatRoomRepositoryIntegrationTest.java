@@ -12,7 +12,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
@@ -92,6 +95,62 @@ class ChatRoomRepositoryIntegrationTest {
         assertThat(result.lastMessageTextContent()).isEqualTo("latest visible text");
         assertThat(result.lastMessageReceiverDeletedAt()).isEqualTo(BASE_TIME.plusMinutes(5));
         assertThat(result.activityAt()).isEqualTo(BASE_TIME.plusMinutes(4));
+    }
+
+    @Test
+    void 방별_및_전체_미읽음_수는_상대방의_SENT_메시지만_집계한다() {
+        insertRoom(601L, "ACTIVE", BASE_TIME);
+        insertParticipants(601L, VIEWER_USER_ID, "ACTIVE", 20L);
+        Long viewerInFirstRoom = participantId(601L, VIEWER_USER_ID);
+        Long otherInFirstRoom = participantId(601L, 20L);
+        insertMessage(1301L, 601L, otherInFirstRoom, "TEXT", "읽음", "SENT",
+            BASE_TIME.plusMinutes(1), null, null);
+        insertMessage(1302L, 601L, otherInFirstRoom, "TEXT", "미읽음", "SENT",
+            BASE_TIME.plusMinutes(2), null, null);
+        insertMessage(1303L, 601L, viewerInFirstRoom, "TEXT", "내 메시지", "SENT",
+            BASE_TIME.plusMinutes(3), null, null);
+        insertMessage(1304L, 601L, otherInFirstRoom, "TEXT", "전송 실패", "FAILED",
+            BASE_TIME.plusMinutes(4), null, null);
+        jdbcTemplate.update(
+            "update chat_participants set last_read_message_id = ? where id = ?",
+            1301L, viewerInFirstRoom);
+
+        insertRoom(602L, "ENDED", BASE_TIME.plusMinutes(5));
+        insertParticipants(602L, VIEWER_USER_ID, "ACTIVE", 21L);
+        Long otherInSecondRoom = participantId(602L, 21L);
+        insertMessage(1401L, 602L, otherInSecondRoom, "IMAGE", null, "SENT",
+            BASE_TIME.plusMinutes(6), null, null);
+        insertMessage(1402L, 602L, otherInSecondRoom, "TEXT", "두 번째 미읽음", "SENT",
+            BASE_TIME.plusMinutes(7), null, null);
+
+        List<ChatRoomListRow> rooms = findRooms(null, null, 10);
+
+        assertThat(rooms).filteredOn(row -> row.chatRoomId().equals(601L))
+            .singleElement()
+            .extracting(ChatRoomListRow::unreadCount)
+            .isEqualTo(1L);
+        assertThat(rooms).filteredOn(row -> row.chatRoomId().equals(602L))
+            .singleElement()
+            .extracting(ChatRoomListRow::unreadCount)
+            .isEqualTo(2L);
+        assertThat(chatRoomRepository.countVisibleUnreadMessages(VIEWER_USER_ID)).isEqualTo(3L);
+    }
+
+    @Test
+    void 채팅_연관관계_마이그레이션을_현재_엔티티_스키마에서_실행할_수_있다() {
+        jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource(
+                "db/manual/20260927_add_chat_message_image_and_relation_constraints.sql"));
+            return null;
+        });
+
+        Integer senderRoomForeignKeyCount = jdbcTemplate.queryForObject(
+            "select count(*) from information_schema.key_column_usage "
+                + "where table_schema = database() and table_name = 'chat_messages' "
+                + "and constraint_name = 'fk_chat_message_sender_room' "
+                + "and referenced_table_name = 'chat_participants'",
+            Integer.class);
+        assertThat(senderRoomForeignKeyCount).isEqualTo(2);
     }
 
     @Test
