@@ -80,4 +80,14 @@ public class ChatRoom {
     public List<ChatParticipant> getParticipants() {
         return Collections.unmodifiableList(participants);
     }
+
+    public void end(ChatRoomEndReason reason, LocalDateTime endedAt) {
+        Objects.requireNonNull(reason);
+        Objects.requireNonNull(endedAt);
+        if (status == ChatRoomStatus.ACTIVE) {
+            status = ChatRoomStatus.ENDED;
+            endReason = reason;
+            this.endedAt = endedAt;
+        }
+    }
 }

@@ -55,12 +55,12 @@ public class ChatMessageListService {
         }
 
         List<ChatMessage> fetched = cursor == null
-            ? chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT,
+            ? chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+                chatRoomId, ChatMessageStatus.SENT,
                 PageRequest.of(0, size + 1))
             : chatMessageRepository
-                .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
-                    chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT, cursor,
+                .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+                    chatRoomId, ChatMessageStatus.SENT, cursor,
                     PageRequest.of(0, size + 1));
 
         boolean hasNext = fetched.size() > size;
@@ -70,7 +70,8 @@ public class ChatMessageListService {
         Collections.reverse(page);
 
         List<MessageItem> messages = page.stream()
-            .map(message -> toMessageItem(message, viewer.getId()))
+            .map(message -> toMessageItem(
+                message, viewer.getId(), others.getFirst().getLastReadMessageId()))
             .toList();
 
         return new MessagePage(
@@ -87,7 +88,8 @@ public class ChatMessageListService {
         }
     }
 
-    private MessageItem toMessageItem(ChatMessage message, Long viewerParticipantId) {
+    private MessageItem toMessageItem(
+        ChatMessage message, Long viewerParticipantId, Long otherLastReadMessageId) {
         boolean mine = viewerParticipantId.equals(message.getSenderParticipantId());
         boolean deleted = mine
             ? message.getSenderDeletedAt() != null
@@ -96,6 +98,9 @@ public class ChatMessageListService {
         return new MessageItem(
             message.getId(), mine, message.getMessageType(),
             deleted ? DELETED_CONTENT : message.getTextContent(),
+            message.getImageFileId(),
+            mine && (otherLastReadMessageId == null
+                || message.getId() > otherLastReadMessageId) ? 1 : 0,
             message.getStatus(), message.getCreatedAt());
     }
 
@@ -113,6 +118,8 @@ public class ChatMessageListService {
         boolean mine,
         ChatMessageType messageType,
         String textContent,
+        Long imageFileId,
+        int unreadCount,
         ChatMessageStatus status,
         LocalDateTime createdAt) {}
 }

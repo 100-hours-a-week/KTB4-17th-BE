@@ -22,7 +22,7 @@ public class ChatRoomCreateService {
     @Transactional
     public Long createChatRoom(
         Match match, LocalDateTime createdAt) {
-        Optional<ChatRoom> existingChatRoom = chatRoomRepository.findByMatch_Id(match.getId());
+        Optional<ChatRoom> existingChatRoom = chatRoomRepository.findByMatchId(match.getId());
         if (existingChatRoom.isPresent()) {
             return existingChatRoom.get().getId();
         }

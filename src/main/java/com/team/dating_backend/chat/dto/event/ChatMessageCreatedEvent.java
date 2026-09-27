@@ -11,4 +11,6 @@ public record ChatMessageCreatedEvent(
     boolean mine,
     ChatMessageType messageType,
     String textContent,
+    Long imageFileId,
+    int unreadCount,
     LocalDateTime createdAt) {}
