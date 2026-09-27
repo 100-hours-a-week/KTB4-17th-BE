@@ -1,0 +1,39 @@
+name: Discord PR 알림
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+    branches: [dev]
+
+# 이 워크플로는 저장소에 아무것도 쓰지 않도록 토큰 권한을 모두 끕니다.
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REPO: ${{ github.event.repository.name }}
+          TITLE: ${{ github.event.pull_request.title }}
+          URL: ${{ github.event.pull_request.html_url }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL 시크릿이 없어 알림을 건너뜁니다."
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg repo "$REPO" --arg title "$TITLE" --arg url "$URL" \
+            --arg author "$AUTHOR" --arg head "$HEAD" --arg num "$NUMBER" \
+            '{embeds: [{
+                title: ("[" + $repo + "] #" + $num + " " + ($title | .[0:200])),
+                url: $url,
+                color: 5814783,
+                description: ("`" + $head + "` 에서 `dev` 로 PR이 올라왔어요."),
+                fields: [{name: "작성자", value: $author, inline: true}]
+            }]}')
+          curl -sS -f -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK_URL"
