@@ -11,13 +11,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
-    Optional<ChatMessage> findBySenderParticipantIdAndClientMessageId(
+    Optional<ChatMessage> findBySenderParticipant_IdAndClientMessageId(
         Long senderParticipantId, UUID clientMessageId);
 
-    List<ChatMessage> findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
+    List<ChatMessage> findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
         Long chatRoomId, ChatMessageStatus status, ChatMessageType messageType, Pageable pageable);
 
-    List<ChatMessage> findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
+    List<ChatMessage> findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
         Long chatRoomId,
         ChatMessageStatus status,
         ChatMessageType messageType,

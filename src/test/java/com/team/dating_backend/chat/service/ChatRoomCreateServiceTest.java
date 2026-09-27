@@ -16,6 +16,7 @@ import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.matching.entity.Match;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +43,8 @@ class ChatRoomCreateServiceTest {
     @Test
     void Match로_채팅방을_생성하고_두_참여자를_등록한다() {
         LocalDateTime matchedAt = LocalDateTime.of(2026, 9, 26, 14, 30);
-        given(chatRoomRepository.findByMatchId(30L)).willReturn(Optional.empty());
+        Match match = match(30L, matchedAt);
+        given(chatRoomRepository.findByMatch_Id(30L)).willReturn(Optional.empty());
         given(chatRoomRepository.save(org.mockito.ArgumentMatchers.any(ChatRoom.class)))
             .willAnswer(invocation -> {
                 ChatRoom chatRoom = invocation.getArgument(0);
@@ -51,27 +53,29 @@ class ChatRoomCreateServiceTest {
             });
         List<ChatParticipant> savedParticipants = captureSavedParticipants();
 
-        Long chatRoomId = service.createChatRoom(30L, 2L, 1L, matchedAt);
+        Long chatRoomId = service.createChatRoom(match, matchedAt);
 
         assertThat(chatRoomId).isEqualTo(40L);
         ArgumentCaptor<ChatRoom> chatRoomCaptor = ArgumentCaptor.forClass(ChatRoom.class);
         verify(chatRoomRepository).save(chatRoomCaptor.capture());
         ChatRoom chatRoom = chatRoomCaptor.getValue();
-        assertThat(chatRoom.getMatchId()).isEqualTo(30L);
+        assertThat(chatRoom.getMatch()).isSameAs(match);
+        assertThat(chatRoom.getMatch().getId()).isEqualTo(30L);
         assertThat(chatRoom.getStatus()).isEqualTo(ChatRoomStatus.ACTIVE);
         assertThat(chatRoom.getCreatedAt()).isEqualTo(matchedAt);
-        assertParticipants(savedParticipants);
+        assertParticipants(savedParticipants, chatRoom);
     }
 
     @Test
     void 동일한_Match의_채팅방이_있으면_기존_ID를_반환한다() {
         ChatRoom existingChatRoom = mock(ChatRoom.class);
         given(existingChatRoom.getId()).willReturn(40L);
-        given(chatRoomRepository.findByMatchId(30L))
+        given(chatRoomRepository.findByMatch_Id(30L))
             .willReturn(Optional.of(existingChatRoom));
 
         Long chatRoomId = service.createChatRoom(
-            30L, 2L, 1L, LocalDateTime.of(2026, 9, 26, 14, 30));
+            match(30L, LocalDateTime.of(2026, 9, 26, 14, 30)),
+            LocalDateTime.of(2026, 9, 26, 14, 30));
 
         assertThat(chatRoomId).isEqualTo(40L);
         verify(chatRoomRepository, never())
@@ -82,8 +86,9 @@ class ChatRoomCreateServiceTest {
     @Test
     void 참여자_등록_실패를_상위_호출로_전달한다() {
         LocalDateTime matchedAt = LocalDateTime.of(2026, 9, 26, 14, 30);
+        Match match = match(30L, matchedAt);
         IllegalStateException failure = new IllegalStateException("participant save failed");
-        given(chatRoomRepository.findByMatchId(30L)).willReturn(Optional.empty());
+        given(chatRoomRepository.findByMatch_Id(30L)).willReturn(Optional.empty());
         given(chatRoomRepository.save(org.mockito.ArgumentMatchers.any(ChatRoom.class)))
             .willAnswer(invocation -> {
                 ChatRoom chatRoom = invocation.getArgument(0);
@@ -92,8 +97,14 @@ class ChatRoomCreateServiceTest {
             });
         given(chatParticipantRepository.saveAll(any())).willThrow(failure);
 
-        assertThatThrownBy(() -> service.createChatRoom(30L, 2L, 1L, matchedAt))
+        assertThatThrownBy(() -> service.createChatRoom(match, matchedAt))
             .isSameAs(failure);
+    }
+
+    private Match match(Long matchId, LocalDateTime matchedAt) {
+        Match match = new Match(2L, 1L, matchedAt);
+        ReflectionTestUtils.setField(match, "id", matchId);
+        return match;
     }
 
     private List<ChatParticipant> captureSavedParticipants() {
@@ -106,8 +117,11 @@ class ChatRoomCreateServiceTest {
         return savedParticipants;
     }
 
-    private void assertParticipants(List<ChatParticipant> participants) {
+    private void assertParticipants(List<ChatParticipant> participants, ChatRoom chatRoom) {
         assertThat(participants).hasSize(2);
+        assertThat(participants)
+            .extracting(ChatParticipant::getChatRoom)
+            .containsOnly(chatRoom);
         assertThat(participants)
             .extracting(ChatParticipant::getChatRoomId)
             .containsOnly(40L);

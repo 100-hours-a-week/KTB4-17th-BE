@@ -4,6 +4,7 @@ import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.matching.entity.Match;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -20,15 +21,16 @@ public class ChatRoomCreateService {
 
     @Transactional
     public Long createChatRoom(
-        Long matchId, Long senderId, Long receiverId, LocalDateTime createdAt) {
-        Optional<ChatRoom> existingChatRoom = chatRoomRepository.findByMatchId(matchId);
+        Match match, LocalDateTime createdAt) {
+        Optional<ChatRoom> existingChatRoom = chatRoomRepository.findByMatch_Id(match.getId());
         if (existingChatRoom.isPresent()) {
             return existingChatRoom.get().getId();
         }
-        ChatRoom chatRoom = chatRoomRepository.save(new ChatRoom(matchId, createdAt));
-        chatParticipantRepository.saveAll(List.of(
-            new ChatParticipant(chatRoom.getId(), senderId),
-            new ChatParticipant(chatRoom.getId(), receiverId)));
+        ChatRoom chatRoom = chatRoomRepository.save(new ChatRoom(match, createdAt));
+        List<ChatParticipant> participants = List.of(
+            chatRoom.addParticipant(match.getSenderId()),
+            chatRoom.addParticipant(match.getReceiverId()));
+        chatParticipantRepository.saveAll(participants);
         return chatRoom.getId();
     }
 }

@@ -66,8 +66,7 @@ public class LikeSendService {
             like.resolveLike(LikeStatus.MATCHED, matchedAt);
             Match match = matchRepository.save(
                 new Match(earlierLike.getSenderId(), earlierLike.getReceiverId(), matchedAt));
-            chatRoomCreateService.createChatRoom(
-                match.getId(), match.getSenderId(), match.getReceiverId(), matchedAt);
+            chatRoomCreateService.createChatRoom(match, matchedAt);
         }
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }

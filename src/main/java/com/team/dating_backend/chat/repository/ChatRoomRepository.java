@@ -15,28 +15,28 @@ import org.springframework.data.repository.query.Param;
 
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
-    Optional<ChatRoom> findByMatchId(Long matchId);
+    Optional<ChatRoom> findByMatch_Id(Long matchId);
 
     @Query("""
         select new com.team.dating_backend.chat.repository.ChatRoomListRow(
             room.id, viewer.id, viewer.chatNotification, other.userId, room.status,
-            lastMessage.id, lastMessage.senderParticipantId, lastMessage.textContent,
+            lastMessage.id, lastMessage.senderParticipant.id, lastMessage.textContent,
             lastMessage.senderDeletedAt,
             lastMessage.receiverDeletedAt,
             coalesce(lastMessage.createdAt, room.createdAt)
         )
         from ChatRoom room
         join ChatParticipant viewer
-          on viewer.chatRoomId = room.id
+          on viewer.chatRoom.id = room.id
          and viewer.userId = :viewerUserId
          and viewer.status = :activeParticipantStatus
         join ChatParticipant other
-          on other.chatRoomId = room.id
+          on other.chatRoom.id = room.id
          and other.userId <> :viewerUserId
         left join ChatMessage lastMessage
           on lastMessage.id = (
               select max(message.id) from ChatMessage message
-              where message.chatRoomId = room.id
+              where message.chatRoom.id = room.id
                 and message.status = :sentMessageStatus
                 and message.messageType = :textMessageType
           )

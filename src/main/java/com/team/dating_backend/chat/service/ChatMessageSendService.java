@@ -13,7 +13,6 @@ import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -33,7 +32,6 @@ public class ChatMessageSendService {
     private static final int MAX_TEXT_LENGTH = 1000;
 
     private final ChatRoomRepository chatRoomRepository;
-    private final ChatParticipantRepository chatParticipantRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatMessageOutboxRepository outboxRepository;
     private final ChatMessageRateLimiter rateLimiter;
@@ -49,8 +47,7 @@ public class ChatMessageSendService {
 
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
-        List<ChatParticipant> participants = chatParticipantRepository
-            .findAllByChatRoomId(chatRoomId);
+        List<ChatParticipant> participants = room.getParticipants();
         ChatParticipant sender = participants.stream()
             .filter(participant -> participant.getUserId().equals(senderUserId))
             .findFirst()
@@ -60,7 +57,7 @@ public class ChatMessageSendService {
             throw new ChatBusinessException(ChatErrorCode.CHAT_ACCESS_DENIED);
         }
 
-        ChatMessage existing = chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+        ChatMessage existing = chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
             sender.getId(), request.clientMessageId()).orElse(null);
         if (existing != null) {
             if (sameRequest(existing, chatRoomId, request)) {
@@ -77,7 +74,7 @@ public class ChatMessageSendService {
 
         LocalDateTime now = LocalDateTime.now();
         ChatMessage message = chatMessageRepository.save(new ChatMessage(
-            chatRoomId, sender.getId(), request.clientMessageId(), request.textContent(), now));
+            room, sender, request.clientMessageId(), request.textContent(), now));
         outboxRepository.save(new ChatMessageOutbox(message.getId(), now));
 
         return new ChatMessageCreateResponse(message.getId(), message.getCreatedAt());

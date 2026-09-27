@@ -10,7 +10,6 @@ import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -29,7 +28,6 @@ public class ChatMessageListService {
     private static final String DELETED_CONTENT = "삭제된 메시지입니다.";
 
     private final ChatRoomRepository chatRoomRepository;
-    private final ChatParticipantRepository chatParticipantRepository;
     private final ChatMessageRepository chatMessageRepository;
 
     @Transactional(readOnly = true)
@@ -38,8 +36,7 @@ public class ChatMessageListService {
 
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
-        List<ChatParticipant> participants = chatParticipantRepository
-            .findAllByChatRoomId(chatRoomId);
+        List<ChatParticipant> participants = room.getParticipants();
         ChatParticipant viewer = participants.stream()
             .filter(participant -> participant.getUserId().equals(viewerUserId))
             .findFirst()
@@ -58,11 +55,11 @@ public class ChatMessageListService {
         }
 
         List<ChatMessage> fetched = cursor == null
-            ? chatMessageRepository.findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
+            ? chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
                 chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT,
                 PageRequest.of(0, size + 1))
             : chatMessageRepository
-                .findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
+                .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
                     chatRoomId, ChatMessageStatus.SENT, ChatMessageType.TEXT, cursor,
                     PageRequest.of(0, size + 1));
 
