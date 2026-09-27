@@ -5,13 +5,23 @@ public record OnboardingRequirementsResponse(
     boolean regionComplete,
     boolean basicInfoComplete,
     boolean lifestyleComplete,
-    boolean mbtiComplete) {
+    boolean mbtiComplete,
+    boolean profileImageComplete) {
 
     public static OnboardingRequirementsResponse complete() {
-        return new OnboardingRequirementsResponse(true, true, true, true, true);
+        return new OnboardingRequirementsResponse(true, true, true, true, true, true);
     }
 
     public static OnboardingRequirementsResponse incomplete() {
-        return new OnboardingRequirementsResponse(false, false, false, false, false);
+        return new OnboardingRequirementsResponse(false, false, false, false, false, false);
+    }
+
+    public boolean isComplete() {
+        return nicknameComplete
+            && regionComplete
+            && basicInfoComplete
+            && lifestyleComplete
+            && mbtiComplete
+            && profileImageComplete;
     }
 }

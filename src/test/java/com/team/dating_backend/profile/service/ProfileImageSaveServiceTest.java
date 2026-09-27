@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveItemRequest;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageSaveResponse;
@@ -34,6 +35,7 @@ class ProfileImageSaveServiceTest {
     private ProfileRepository profileRepository;
     private ProfileImageRepository profileImageRepository;
     private FileRepository fileRepository;
+    private OnboardingCompletionService onboardingCompletionService;
     private ProfileImageSaveService service;
 
     @BeforeEach
@@ -41,10 +43,12 @@ class ProfileImageSaveServiceTest {
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
         fileRepository = mock(FileRepository.class);
+        onboardingCompletionService = mock(OnboardingCompletionService.class);
         service = new ProfileImageSaveService(
             profileRepository,
             profileImageRepository,
-            fileRepository);
+            fileRepository,
+            onboardingCompletionService);
     }
 
     @Test
@@ -73,6 +77,7 @@ class ProfileImageSaveServiceTest {
         assertThat(response.images().get(1).displayOrder()).isEqualTo((short) 2);
         assertThat(response.images().get(1).isFrontal()).isTrue();
         verify(profileImageRepository).saveAll(any());
+        verify(onboardingCompletionService).activateIfCompleted(USER_ID);
     }
 
     @Test

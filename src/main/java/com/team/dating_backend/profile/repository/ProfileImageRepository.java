@@ -8,5 +8,7 @@ public interface ProfileImageRepository extends JpaRepository<ProfileImage, Long
 
     List<ProfileImage> findByProfileIdAndDeletedAtIsNull(Long profileId);
 
+    boolean existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(Long profileId);
+
     boolean existsByImageIdAndDeletedAtIsNull(Long imageId);
 }

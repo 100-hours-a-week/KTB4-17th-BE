@@ -32,6 +32,7 @@ public class ProfileSaveService {
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final ActivityRegionRepository activityRegionRepository;
+    private final OnboardingCompletionService onboardingCompletionService;
 
     @Transactional
     public ProfileSaveResult saveProfile(Long userId, ProfileSaveRequest request) {
@@ -59,6 +60,7 @@ public class ProfileSaveService {
             request.smoking());
 
         Profile savedProfile = saveAndFlush(profile);
+        onboardingCompletionService.activateIfCompleted(userId);
         ProfileSaveResponse response = new ProfileSaveResponse(
             ProfileSaveProfileResponse.from(savedProfile));
         return new ProfileSaveResult(created, response);

@@ -69,4 +69,11 @@ public class User {
         user.updatedAt = now;
         return user;
     }
+
+    public void activate(LocalDateTime now) {
+        if (status == UserStatus.ONBOARDING) {
+            status = UserStatus.ACTIVE;
+            updatedAt = now;
+        }
+    }
 }
