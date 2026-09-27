@@ -21,6 +21,7 @@ public enum FileErrorCode implements ErrorCode {
         HttpStatus.INTERNAL_SERVER_ERROR),
     FILE_READ_URL_FAILED(
         HttpStatus.INTERNAL_SERVER_ERROR),
+    FILE_IN_USE(HttpStatus.CONFLICT),
     FILE_DELETE_FAILED(
         HttpStatus.INTERNAL_SERVER_ERROR),
     FILE_INVALID_STATE(

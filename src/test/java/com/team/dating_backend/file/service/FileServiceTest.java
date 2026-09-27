@@ -2,6 +2,8 @@ package com.team.dating_backend.file.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 import com.team.dating_backend.file.config.FileProperties;
 import com.team.dating_backend.file.config.S3Properties;
@@ -18,6 +20,7 @@ import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.file.support.FakeFileRepository;
 import com.team.dating_backend.file.support.FakeFileStorage;
 import com.team.dating_backend.file.support.FakeFileUploadIntentRepository;
+import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -175,6 +178,37 @@ class FileServiceTest {
     }
 
     @Test
+    void 프로필_이미지로_사용_중인_파일은_삭제하지_않는다() {
+        TestContext context = newContext(10_000);
+        File file = context.files().saveAndFlush(
+            File.create(USER_ID, "files/profile-key", "profile.png", PNG_MIME_TYPE, 32L));
+        int saveCount = context.files().saveCount();
+        given(context.profileImages().existsByImageIdAndDeletedAtIsNull(file.getId()))
+            .willReturn(true);
+
+        FileBusinessException exception = assertThrows(
+            FileBusinessException.class,
+            () -> context.fileService().softDelete(USER_ID, file.getId()));
+
+        assertThat(exception.getErrorCode()).isEqualTo(FileErrorCode.FILE_IN_USE);
+        assertThat(file.isDeleted()).isFalse();
+        assertThat(context.files().saveCount()).isEqualTo(saveCount);
+    }
+
+    @Test
+    void 프로필_이미지로_사용하지_않는_파일은_논리_삭제한다() {
+        TestContext context = newContext(10_000);
+        File file = context.files().saveAndFlush(
+            File.create(USER_ID, "files/profile-key", "profile.png", PNG_MIME_TYPE, 32L));
+        int saveCount = context.files().saveCount();
+
+        context.fileService().softDelete(USER_ID, file.getId());
+
+        assertThat(file.isDeleted()).isTrue();
+        assertThat(context.files().saveCount()).isEqualTo(saveCount + 1);
+    }
+
+    @Test
     void 다른_사용자의_uploadIntent는_완료할_수_없다() {
         TestContext context = newContext(10_000);
         FileUploadIntentResult uploadIntent = context.fileService().createUploadIntent(
@@ -209,6 +243,7 @@ class FileServiceTest {
     private TestContext newContext(long maxSizeBytes) {
         FakeFileStorage storage = new FakeFileStorage();
         FakeFileRepository files = new FakeFileRepository();
+        ProfileImageRepository profileImages = mock(ProfileImageRepository.class);
         FakeFileUploadIntentRepository intents = new FakeFileUploadIntentRepository(files);
 
         FileProperties fileProperties = new FileProperties();
@@ -226,12 +261,13 @@ class FileServiceTest {
         FileService service = new FileService(
             storage,
             files,
+            profileImages,
             intents,
             fileProperties,
             s3Properties,
             new ImageSignatureValidator());
 
-        return new TestContext(service, storage, files, intents);
+        return new TestContext(service, storage, files, intents, profileImages);
     }
 
     private byte[] validPngBytes(int size) {
@@ -245,5 +281,6 @@ class FileServiceTest {
         FileService fileService,
         FakeFileStorage storage,
         FakeFileRepository files,
-        FakeFileUploadIntentRepository intentRepository) {}
+        FakeFileUploadIntentRepository intentRepository,
+        ProfileImageRepository profileImages) {}
 }

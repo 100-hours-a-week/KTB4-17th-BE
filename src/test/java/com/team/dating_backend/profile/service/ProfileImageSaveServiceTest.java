@@ -119,7 +119,7 @@ class ProfileImageSaveServiceTest {
             USER_ID,
             request(new ProfileImageSaveItemRequest(701L, true)));
 
-        verify(profileImageRepository).saveAll(List.of(existing));
+        verify(profileImageRepository).saveAll(List.of());
         assertThat(existing.getDeletedAt()).isNull();
     }
 
