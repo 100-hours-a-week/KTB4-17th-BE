@@ -21,6 +21,7 @@ import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -38,13 +39,19 @@ class OnboardingServiceTest {
 
     private UserRepository userRepository;
     private ProfileRepository profileRepository;
+    private ProfileImageRepository profileImageRepository;
     private OnboardingService onboardingService;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
-        onboardingService = new OnboardingService(userRepository, profileRepository);
+        profileImageRepository = mock(ProfileImageRepository.class);
+        onboardingService = new OnboardingService(
+            userRepository,
+            profileRepository,
+            profileImageRepository,
+            new OnboardingRequirementsCalculator());
     }
 
     @Test
@@ -130,9 +137,24 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void 모든_온보딩_정보가_있으면_다음_단계는_COMPLETE이다() {
+    void 정면_프로필_사진이_없으면_다음_단계는_PROFILE_IMAGE이다() {
         givenOnboardingUser();
         givenProfile(completeProfile());
+
+        OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
+
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.PROFILE_IMAGE);
+        assertThat(response.requirements().profileImageComplete()).isFalse();
+    }
+
+    @Test
+    void 모든_온보딩_정보와_정면_프로필_사진이_있으면_다음_단계는_COMPLETE이다() {
+        givenOnboardingUser();
+        Profile profile = completeProfile();
+        given(profile.getId()).willReturn(10L);
+        givenProfile(profile);
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(10L))
+            .willReturn(true);
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
@@ -150,7 +172,7 @@ class OnboardingServiceTest {
         assertThat(response.userStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.COMPLETE);
         assertThat(response.requirements()).isEqualTo(OnboardingRequirementsResponse.complete());
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(profileRepository, profileImageRepository);
     }
 
     @ParameterizedTest
@@ -165,7 +187,7 @@ class OnboardingServiceTest {
         assertThatThrownBy(() -> onboardingService.getOnboardingStatus(USER_ID))
             .isInstanceOf(OnboardingAccessNotAllowedException.class);
 
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(profileRepository, profileImageRepository);
     }
 
     @Test
@@ -246,6 +268,7 @@ class OnboardingServiceTest {
         given(profile.getDrinking()).willReturn(Drinking.SOCIAL);
         given(profile.getSmoking()).willReturn(Smoking.NON_SMOKER);
         given(profile.getMbti()).willReturn(Mbti.INTJ);
+        given(profile.getId()).willReturn(10L);
         return profile;
     }
 }

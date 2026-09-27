@@ -41,6 +41,7 @@ class ProfileSaveServiceTest {
     private UserRepository userRepository;
     private ProfileRepository profileRepository;
     private ActivityRegionRepository activityRegionRepository;
+    private OnboardingCompletionService onboardingCompletionService;
     private ProfileSaveService profileSaveService;
 
     @BeforeEach
@@ -48,8 +49,9 @@ class ProfileSaveServiceTest {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         activityRegionRepository = mock(ActivityRegionRepository.class);
+        onboardingCompletionService = mock(OnboardingCompletionService.class);
         profileSaveService = new ProfileSaveService(userRepository, profileRepository,
-            activityRegionRepository);
+            activityRegionRepository, onboardingCompletionService);
     }
 
     @Test
@@ -81,6 +83,7 @@ class ProfileSaveServiceTest {
         assertThat(result.response().profile().mbti()).isNull();
         assertThat(result.response().profile().drinking()).isNull();
         assertThat(result.response().profile().smoking()).isNull();
+        verify(onboardingCompletionService).activateIfCompleted(USER_ID);
     }
 
     @Test
@@ -107,6 +110,7 @@ class ProfileSaveServiceTest {
         assertThat(profile.getDrinking()).isNull();
         assertThat(profile.getSmoking()).isNull();
         assertThat(result.response().profile().nickname()).isNull();
+        verify(onboardingCompletionService).activateIfCompleted(USER_ID);
     }
 
     @Test

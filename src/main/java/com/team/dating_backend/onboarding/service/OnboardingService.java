@@ -7,6 +7,7 @@ import com.team.dating_backend.onboarding.enums.OnboardingStep;
 import com.team.dating_backend.onboarding.exception.OnboardingAccessNotAllowedException;
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -14,7 +15,6 @@ import com.team.dating_backend.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +22,8 @@ public class OnboardingService {
 
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
+    private final ProfileImageRepository profileImageRepository;
+    private final OnboardingRequirementsCalculator requirementsCalculator;
 
     @Transactional(readOnly = true)
     public OnboardingStatusResponse getOnboardingStatus(Long userId) {
@@ -62,23 +64,9 @@ public class OnboardingService {
     }
 
     private OnboardingRequirementsResponse calculateRequirements(Profile profile) {
-        boolean nicknameComplete = StringUtils.hasText(profile.getNickname());
-        boolean regionComplete = profile.getActivityRegion() != null;
-        boolean basicInfoComplete = profile.getHeight() != null
-            && profile.getBodyType() != null
-            && profile.getEducationLevel() != null
-            && StringUtils.hasText(profile.getJob());
-        boolean lifestyleComplete = profile.getReligion() != null
-            && profile.getDrinking() != null
-            && profile.getSmoking() != null;
-        boolean mbtiComplete = profile.getMbti() != null;
-
-        return new OnboardingRequirementsResponse(
-            nicknameComplete,
-            regionComplete,
-            basicInfoComplete,
-            lifestyleComplete,
-            mbtiComplete);
+        boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
+            profile.getId());
+        return requirementsCalculator.calculate(profile, profileImageComplete);
     }
 
     private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {
@@ -96,6 +84,9 @@ public class OnboardingService {
         }
         if (!requirements.mbtiComplete()) {
             return OnboardingStep.MBTI;
+        }
+        if (!requirements.profileImageComplete()) {
+            return OnboardingStep.PROFILE_IMAGE;
         }
         return OnboardingStep.COMPLETE;
     }

@@ -4,6 +4,7 @@ import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveItemRequest;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageResponse;
@@ -33,6 +34,7 @@ public class ProfileImageSaveService {
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final FileRepository fileRepository;
+    private final OnboardingCompletionService onboardingCompletionService;
 
     @Transactional
     public ProfileImageSaveResponse saveProfileImages(
@@ -81,6 +83,7 @@ public class ProfileImageSaveService {
             .forEach(image -> image.markDeleted(deletedAt));
 
         profileImageRepository.saveAll(newImages);
+        onboardingCompletionService.activateIfCompleted(userId);
 
         List<ProfileImageResponse> responseImages = orderedProfileImages.stream()
             .map(profileImage -> new ProfileImageResponse(
