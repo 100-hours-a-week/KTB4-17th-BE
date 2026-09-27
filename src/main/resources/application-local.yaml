@@ -6,6 +6,10 @@ spring:
       hibernate:
         format_sql: true
 
+app:
+  ai-practice:
+    base-url: ${AI_PRACTICE_BASE_URL:http://localhost:8000}
+
 logging:
   level:
     org.hibernate.SQL: debug              # 실행되는 SQL 출력

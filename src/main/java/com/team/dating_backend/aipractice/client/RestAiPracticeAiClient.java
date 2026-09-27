@@ -1,13 +1,17 @@
 package com.team.dating_backend.aipractice.client;
 
 import com.team.dating_backend.aipractice.config.AiPracticeProperties;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.ContinueGenerationRequest;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.GenerationAcceptedResponse;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.InitialGenerationRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.GenerationReplyResponse;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.MessageRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.StartSessionRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.StartSessionResponse;
 import com.team.dating_backend.aipractice.enums.AiPracticeErrorCode;
 import com.team.dating_backend.aipractice.exception.AiPracticeBusinessException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -20,43 +24,70 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
 
     public RestAiPracticeAiClient(RestClient.Builder restClientBuilder,
         AiPracticeProperties properties) {
-        this.restClient = restClientBuilder.build();
+        HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMs()))
+            .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofMillis(properties.getReadTimeoutMs()));
+        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
         this.properties = properties;
     }
 
     @Override
-    public String startGeneration(InitialGenerationRequest request, String idempotencyKey) {
-        GenerationAcceptedResponse response = request()
+    public String startSession(Long partnerMemberId) {
+        StartSessionResponse response = request()
             .uri(uri(properties.getInitialSessionPath()))
-            .header("Idempotency-Key", idempotencyKey)
-            .body(request)
+            .body(new StartSessionRequest(
+                partnerMemberId == null ? null : partnerMemberId.toString(),
+                null,
+                null))
             .retrieve()
-            .body(GenerationAcceptedResponse.class);
-        if (response == null || response.aiSessionId() == null
-            || response.aiSessionId().isBlank() || response.aiSessionId().length() > 100) {
+            .body(StartSessionResponse.class);
+        if (response == null || response.sessionId() == null
+            || response.sessionId().isBlank() || response.sessionId().length() > 100) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.AI_SERVER_RESPONSE_INVALID);
         }
-        return response.aiSessionId();
+        return response.sessionId();
     }
 
     @Override
-    public void continueGeneration(
-        String aiSessionId, ContinueGenerationRequest request, String idempotencyKey) {
-        request()
+    public GenerationReplyResponse sendMessage(String aiSessionId, String userMessage) {
+        GenerationReplyResponse response = request()
             .uri(uri(properties.getMessagePath(), aiSessionId))
-            .header("Idempotency-Key", idempotencyKey)
-            .body(request)
+            .body(new MessageRequest(userMessage))
             .retrieve()
-            .toBodilessEntity();
+            .body(GenerationReplyResponse.class);
+        return validateReply(response, aiSessionId);
     }
 
     @Override
-    public void endSession(String aiSessionId, String idempotencyKey) {
+    public GenerationReplyResponse retryMessage(String aiSessionId) {
+        GenerationReplyResponse response = request()
+            .uri(uri(properties.getRetryPath(), aiSessionId))
+            .retrieve()
+            .body(GenerationReplyResponse.class);
+        return validateReply(response, aiSessionId);
+    }
+
+    @Override
+    public void endSession(String aiSessionId) {
         request()
             .uri(uri(properties.getEndSessionPath(), aiSessionId))
-            .header("Idempotency-Key", idempotencyKey)
             .retrieve()
             .toBodilessEntity();
+    }
+
+    private GenerationReplyResponse validateReply(
+        GenerationReplyResponse response, String expectedAiSessionId) {
+        if (response == null || response.sessionId() == null
+            || !response.sessionId().equals(expectedAiSessionId)
+            || response.content() == null || response.content().isBlank()
+            || response.content().length() > 10_000
+            || response.messageIndex() == null || response.messageIndex() < 0
+            || !"llm".equals(response.source()) && !"fallback".equals(response.source())) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.AI_SERVER_RESPONSE_INVALID);
+        }
+        return response;
     }
 
     private RestClient.RequestBodyUriSpec request() {
@@ -80,6 +111,9 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     private URI uri(String path, String aiSessionId) {
+        if (path == null || path.isBlank()) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.AI_SERVER_NOT_CONFIGURED);
+        }
         String baseUrl = properties.getBaseUrl().replaceAll("/$", "");
         String pathTemplate = path.replace("%s", "{aiSessionId}");
         String relativePath = pathTemplate.startsWith("/") ? pathTemplate : "/" + pathTemplate;
