@@ -2,6 +2,7 @@ package com.team.dating_backend.matching.controller;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,10 +19,12 @@ import com.team.dating_backend.matching.dto.response.SentLikeItemResponse;
 import com.team.dating_backend.matching.dto.response.SentLikePageInfo;
 import com.team.dating_backend.matching.dto.response.SentLikeReceiverResponse;
 import com.team.dating_backend.matching.dto.response.SentLikesGetResponse;
+import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.matching.enums.LikeErrorCode;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.service.LikeSendService;
+import com.team.dating_backend.matching.service.LikeRejectService;
 import com.team.dating_backend.matching.service.ReceivedLikeGetService;
 import com.team.dating_backend.matching.service.SentLikeGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -65,6 +68,9 @@ class LikeControllerTest {
 
     @MockitoBean
     private LikeSendService likeSendService;
+
+    @MockitoBean
+    private LikeRejectService likeRejectService;
 
     @MockitoBean
     private SentLikeGetService sentLikeGetService;
@@ -130,6 +136,33 @@ class LikeControllerTest {
         mockMvc.perform(authenticatedPost("{\"receiverId\":1}"))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.errorCode").value("SELF_LIKE_NOT_ALLOWED"));
+    }
+
+    @Test
+    void 받은_좋아요를_거절하면_204를_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/likes/10"))
+            .andExpect(status().isNoContent());
+
+        verify(likeRejectService).rejectLike(1L, 10L);
+    }
+
+    @Test
+    void 좋아요_ID의_타입이_잘못되면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/v1/likes/invalid"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(likeRejectService);
+    }
+
+    @Test
+    void 좋아요_ID가_양수가_아니면_400을_반환한다() throws Exception {
+        willThrow(new RequestValidationException())
+            .given(likeRejectService).rejectLike(1L, 0L);
+
+        mockMvc.perform(post("/api/v1/likes/0"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
     }
 
     @Test
