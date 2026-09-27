@@ -15,6 +15,7 @@ import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatMessageOutbox;
 import com.team.dating_backend.chat.entity.ChatParticipant;
+import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatOutboxFailureCode;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
@@ -46,6 +47,7 @@ class ChatMessageOutboxPublishJobTest {
     private SimpMessagingTemplate messagingTemplate;
     private ChatMessageOutboxPublishJob job;
     private ChatMessageOutbox outbox;
+    private ChatRoom room;
     private ChatMessage message;
     private ChatParticipant sender;
     private ChatParticipant receiver;
@@ -63,19 +65,20 @@ class ChatMessageOutboxPublishJobTest {
             messagingTemplate);
 
         outbox = new ChatMessageOutbox(100L, CREATED_AT);
-        message = new ChatMessage(
-            CHAT_ROOM_ID, SENDER_PARTICIPANT_ID, UUID.randomUUID(), "안녕하세요", CREATED_AT);
-        ReflectionTestUtils.setField(message, "id", 100L);
-
+        room = org.mockito.Mockito.mock(ChatRoom.class);
+        given(room.getId()).willReturn(CHAT_ROOM_ID);
         sender = participant(SENDER_PARTICIPANT_ID, 1L, ChatParticipantStatus.ACTIVE);
         receiver = participant(RECEIVER_PARTICIPANT_ID, 2L, ChatParticipantStatus.ACTIVE);
+        message = new ChatMessage(
+            room, sender, UUID.randomUUID(), "안녕하세요", CREATED_AT);
+        ReflectionTestUtils.setField(message, "id", 100L);
 
         given(outboxRepository
             .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
                 any(LocalDateTime.class), any(Pageable.class)))
             .willReturn(List.of(outbox));
         given(chatMessageRepository.findById(100L)).willReturn(Optional.of(message));
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
+        given(chatParticipantRepository.findAllByChatRoom_Id(CHAT_ROOM_ID))
             .willReturn(List.of(sender, receiver));
     }
 
@@ -116,7 +119,7 @@ class ChatMessageOutboxPublishJobTest {
 
     @Test
     void 참여자_데이터가_유효하지_않으면_발행하지_않고_실패_격리한다() {
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
+        given(chatParticipantRepository.findAllByChatRoom_Id(CHAT_ROOM_ID))
             .willReturn(List.of(sender));
 
         job.publishDueMessages();
@@ -181,7 +184,7 @@ class ChatMessageOutboxPublishJobTest {
 
     private ChatParticipant participant(
         Long participantId, Long userId, ChatParticipantStatus status) {
-        ChatParticipant participant = new ChatParticipant(CHAT_ROOM_ID, userId);
+        ChatParticipant participant = new ChatParticipant(room, userId);
         ReflectionTestUtils.setField(participant, "id", participantId);
         ReflectionTestUtils.setField(participant, "status", status);
         return participant;

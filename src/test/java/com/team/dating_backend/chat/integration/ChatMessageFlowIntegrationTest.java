@@ -116,6 +116,7 @@ class ChatMessageFlowIntegrationTest {
         jdbcTemplate.update("delete from chat_messages");
         jdbcTemplate.update("delete from chat_participants");
         jdbcTemplate.update("delete from chat_rooms");
+        jdbcTemplate.update("delete from matches where id = ?", 83021L);
         jdbcTemplate.update("delete from profiles where user_id in (?, ?)",
             SENDER_USER_ID, RECEIVER_USER_ID);
         jdbcTemplate.update("delete from users where id in (?, ?)",
@@ -124,6 +125,10 @@ class ChatMessageFlowIntegrationTest {
         insertUser(SENDER_USER_ID, "sender", "보내는사람");
         insertUser(RECEIVER_USER_ID, "receiver", "받는사람");
 
+        jdbcTemplate.update(
+            "insert into matches (id, sender_id, receiver_id, status, matched_at) "
+                + "values (?, ?, ?, ?, ?)",
+            83021L, SENDER_USER_ID, RECEIVER_USER_ID, "ACTIVE", Timestamp.valueOf(BASE_TIME));
         jdbcTemplate.update(
             "insert into chat_rooms (id, match_id, status, created_at) values (?, ?, ?, ?)",
             CHAT_ROOM_ID, 83021L, "ACTIVE", Timestamp.valueOf(BASE_TIME));

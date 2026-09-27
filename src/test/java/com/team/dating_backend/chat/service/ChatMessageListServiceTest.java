@@ -15,8 +15,8 @@ import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.matching.entity.Match;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +35,6 @@ class ChatMessageListServiceTest {
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
 
     private ChatRoomRepository chatRoomRepository;
-    private ChatParticipantRepository chatParticipantRepository;
     private ChatMessageRepository chatMessageRepository;
     private ChatMessageListService service;
     private ChatRoom room;
@@ -45,24 +44,23 @@ class ChatMessageListServiceTest {
     @BeforeEach
     void setUp() {
         chatRoomRepository = mock(ChatRoomRepository.class);
-        chatParticipantRepository = mock(ChatParticipantRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
         service = new ChatMessageListService(
-            chatRoomRepository, chatParticipantRepository, chatMessageRepository);
+            chatRoomRepository, chatMessageRepository);
 
-        room = new ChatRoom(70L, BASE_TIME.minusDays(1));
+        Match match = new Match(VIEWER_USER_ID, 2L, BASE_TIME.minusDays(1));
+        ReflectionTestUtils.setField(match, "id", 70L);
+        room = new ChatRoom(match, BASE_TIME.minusDays(1));
         ReflectionTestUtils.setField(room, "id", CHAT_ROOM_ID);
         viewer = participant(VIEWER_PARTICIPANT_ID, VIEWER_USER_ID);
         other = participant(OTHER_PARTICIPANT_ID, 2L);
 
         given(chatRoomRepository.findById(CHAT_ROOM_ID)).willReturn(Optional.of(room));
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
-            .willReturn(List.of(viewer, other));
     }
 
     @Test
     void 첫_페이지는_요청_크기보다_하나_더_조회하고_화면에는_시간순으로_반환한다() {
-        given(chatMessageRepository.findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
+        given(chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 3)))
             .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "최신"),
                 message(20L, VIEWER_PARTICIPANT_ID, "중간"),
@@ -77,14 +75,14 @@ class ChatMessageListServiceTest {
             .containsExactly("중간", "최신");
         assertThat(result.hasNext()).isTrue();
         assertThat(result.nextCursor()).isEqualTo(20L);
-        verify(chatMessageRepository).findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
+        verify(chatMessageRepository).findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 3));
     }
 
     @Test
     void 과거_페이지는_커서보다_작은_ID만_요청한다() {
         given(chatMessageRepository
-            .findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
+            .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
                 CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT,
                 20L, PageRequest.of(0, 3)))
             .willReturn(List.of(message(19L, OTHER_PARTICIPANT_ID, "이전 메시지")));
@@ -97,7 +95,7 @@ class ChatMessageListServiceTest {
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
         verify(chatMessageRepository)
-            .findByChatRoomIdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
+            .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
                 CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT,
                 20L, PageRequest.of(0, 3));
     }
@@ -106,7 +104,7 @@ class ChatMessageListServiceTest {
     void 현재_사용자가_삭제한_메시지는_삭제_문구로_반환한다() {
         ChatMessage deletedMessage = message(10L, VIEWER_PARTICIPANT_ID, "원문");
         ReflectionTestUtils.setField(deletedMessage, "senderDeletedAt", BASE_TIME);
-        given(chatMessageRepository.findByChatRoomIdAndStatusAndMessageTypeOrderByIdDesc(
+        given(chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 2)))
             .willReturn(List.of(deletedMessage));
 
@@ -124,7 +122,7 @@ class ChatMessageListServiceTest {
                 ((ChatBusinessException) exception).getErrorCode())
                 .isEqualTo(ChatErrorCode.INVALID_CHAT_MESSAGE_PAGE_SIZE));
 
-        verifyNoInteractions(chatRoomRepository, chatParticipantRepository, chatMessageRepository);
+        verifyNoInteractions(chatRoomRepository, chatMessageRepository);
     }
 
     @Test
@@ -139,14 +137,17 @@ class ChatMessageListServiceTest {
     }
 
     private ChatParticipant participant(Long participantId, Long userId) {
-        ChatParticipant participant = new ChatParticipant(CHAT_ROOM_ID, userId);
+        ChatParticipant participant = room.addParticipant(userId);
         ReflectionTestUtils.setField(participant, "id", participantId);
         return participant;
     }
 
     private ChatMessage message(Long id, Long senderParticipantId, String content) {
+        ChatParticipant sender = senderParticipantId.equals(VIEWER_PARTICIPANT_ID)
+            ? viewer
+            : other;
         ChatMessage message = new ChatMessage(
-            CHAT_ROOM_ID, senderParticipantId, UUID.randomUUID(), content, BASE_TIME);
+            room, sender, UUID.randomUUID(), content, BASE_TIME);
         ReflectionTestUtils.setField(message, "id", id);
         return message;
     }

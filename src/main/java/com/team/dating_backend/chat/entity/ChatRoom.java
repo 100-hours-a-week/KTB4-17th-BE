@@ -2,16 +2,25 @@ package com.team.dating_backend.chat.entity;
 
 import com.team.dating_backend.chat.enums.ChatRoomEndReason;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
+import com.team.dating_backend.matching.entity.Match;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,21 +28,28 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(
-    name = "chat_rooms",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_chat_room_match",
-        columnNames = "match_id"
-    )
-)
+@Table(name = "chat_rooms")
 public class ChatRoom {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "match_id", nullable = false)
-    private Long matchId;
+    @OneToOne(
+        fetch = FetchType.LAZY,
+        optional = false
+    )
+    @JoinColumn(
+        name = "match_id",
+        nullable = false,
+        unique = true,
+        foreignKey = @ForeignKey(name = "fk_chat_room_match")
+    )
+    private Match match;
+
+    @OneToMany(mappedBy = "chatRoom", fetch = FetchType.LAZY)
+    @Getter(AccessLevel.NONE)
+    private List<ChatParticipant> participants = new ArrayList<>();
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -49,9 +65,19 @@ public class ChatRoom {
     @Column(name = "end_reason", length = 30)
     private ChatRoomEndReason endReason;
 
-    public ChatRoom(Long matchId, LocalDateTime createdAt) {
-        this.matchId = matchId;
+    public ChatRoom(Match match, LocalDateTime createdAt) {
+        this.match = Objects.requireNonNull(match);
         this.status = ChatRoomStatus.ACTIVE;
         this.createdAt = createdAt;
+    }
+
+    public ChatParticipant addParticipant(Long userId) {
+        ChatParticipant participant = new ChatParticipant(this, userId);
+        participants.add(participant);
+        return participant;
+    }
+
+    public List<ChatParticipant> getParticipants() {
+        return Collections.unmodifiableList(participants);
     }
 }

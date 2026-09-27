@@ -5,13 +5,17 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -38,8 +42,9 @@ public class ChatParticipant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_room_id", nullable = false)
-    private Long chatRoomId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "chat_room_id", nullable = false)
+    private ChatRoom chatRoom;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
@@ -57,10 +62,14 @@ public class ChatParticipant {
     @Column(name = "last_read_message_id")
     private Long lastReadMessageId;
 
-    public ChatParticipant(Long chatRoomId, Long userId) {
-        this.chatRoomId = chatRoomId;
+    public ChatParticipant(ChatRoom chatRoom, Long userId) {
+        this.chatRoom = Objects.requireNonNull(chatRoom);
         this.userId = userId;
         this.status = ChatParticipantStatus.ACTIVE;
         this.chatNotification = true;
+    }
+
+    public Long getChatRoomId() {
+        return chatRoom.getId();
     }
 }

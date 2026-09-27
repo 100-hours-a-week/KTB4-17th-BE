@@ -84,7 +84,7 @@ public class ChatMessageOutboxPublishJob {
         }
 
         List<ChatParticipant> participants = chatParticipantRepository
-            .findAllByChatRoomId(message.getChatRoomId());
+            .findAllByChatRoom_Id(message.getChatRoomId());
         boolean senderIsParticipant = participants.stream()
             .anyMatch(participant -> participant.getId().equals(message.getSenderParticipantId()));
         if (participants.size() != 2 || !senderIsParticipant) {

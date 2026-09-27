@@ -6,13 +6,17 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -40,11 +44,13 @@ public class ChatMessage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_room_id", nullable = false)
-    private Long chatRoomId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "chat_room_id", nullable = false)
+    private ChatRoom chatRoom;
 
-    @Column(name = "sender_id", nullable = false)
-    private Long senderParticipantId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "sender_id", nullable = false)
+    private ChatParticipant senderParticipant;
 
     @Column(name = "client_message_id", nullable = false, updatable = false)
     private UUID clientMessageId;
@@ -70,17 +76,25 @@ public class ChatMessage {
     private LocalDateTime receiverDeletedAt;
 
     public ChatMessage(
-        Long chatRoomId,
-        Long senderParticipantId,
+        ChatRoom chatRoom,
+        ChatParticipant senderParticipant,
         UUID clientMessageId,
         String textContent,
         LocalDateTime createdAt) {
-        this.chatRoomId = chatRoomId;
-        this.senderParticipantId = senderParticipantId;
+        this.chatRoom = Objects.requireNonNull(chatRoom);
+        this.senderParticipant = Objects.requireNonNull(senderParticipant);
         this.clientMessageId = clientMessageId;
         this.messageType = ChatMessageType.TEXT;
         this.textContent = textContent;
         this.status = ChatMessageStatus.SENT;
         this.createdAt = createdAt;
+    }
+
+    public Long getChatRoomId() {
+        return chatRoom.getId();
+    }
+
+    public Long getSenderParticipantId() {
+        return senderParticipant.getId();
     }
 }

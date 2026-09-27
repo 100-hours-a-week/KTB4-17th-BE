@@ -77,7 +77,8 @@ class LikeSendServiceTest {
         assertThat(likeCaptor.getValue().getReceiverId()).isEqualTo(1L);
         assertThat(likeCaptor.getValue().getResolvedAt()).isNull();
         verify(matchRepository, never()).save(any(Match.class));
-        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
+        verify(chatRoomCreateService, never())
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
     }
 
     @Test
@@ -117,8 +118,7 @@ class LikeSendServiceTest {
         assertThat(match.getReceiverId()).isEqualTo(1L);
         assertThat(match.getStatus()).isEqualTo(MatchStatus.ACTIVE);
         assertThat(match.getMatchedAt()).isEqualTo(earlierLike.getResolvedAt());
-        verify(chatRoomCreateService).createChatRoom(
-            30L, 2L, 1L, match.getMatchedAt());
+        verify(chatRoomCreateService).createChatRoom(match, match.getMatchedAt());
     }
 
     @Test
@@ -133,7 +133,8 @@ class LikeSendServiceTest {
         verify(likeRepository)
             .findFirstBySenderIdAndReceiverIdAndStatusOrderByIdAsc(2L, 1L, LikeStatus.PENDING);
         verify(matchRepository, never()).save(any(Match.class));
-        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
+        verify(chatRoomCreateService, never())
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
     }
 
     @Test
@@ -152,7 +153,7 @@ class LikeSendServiceTest {
         IllegalStateException failure = new IllegalStateException("chat room creation failed");
         org.mockito.Mockito.doThrow(failure)
             .when(chatRoomCreateService)
-            .createChatRoom(any(), any(), any(), any());
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
 
         assertThatThrownBy(() -> service.sendLike(1L, 2L)).isSameAs(failure);
     }
@@ -214,7 +215,8 @@ class LikeSendServiceTest {
         assertError(1L, 2L, LikeErrorCode.MATCH_ALREADY_EXISTS);
         verify(likeRepository, never()).save(any());
         verify(matchRepository, never()).save(any(Match.class));
-        verify(chatRoomCreateService, never()).createChatRoom(any(), any(), any(), any());
+        verify(chatRoomCreateService, never())
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
     }
 
     private void assertError(Long senderId, Long receiverId, LikeErrorCode errorCode) {

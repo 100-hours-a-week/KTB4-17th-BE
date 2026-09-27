@@ -39,6 +39,7 @@ class ChatRoomRepositoryIntegrationTest {
         jdbcTemplate.update("delete from chat_messages");
         jdbcTemplate.update("delete from chat_participants");
         jdbcTemplate.update("delete from chat_rooms");
+        jdbcTemplate.update("delete from matches");
     }
 
     @Test
@@ -172,10 +173,19 @@ class ChatRoomRepositoryIntegrationTest {
     }
 
     private void insertRoom(Long roomId, String status, LocalDateTime createdAt) {
+        Long matchId = roomId + 10000;
+        jdbcTemplate.update(
+            "insert into matches (id, sender_id, receiver_id, status, matched_at) "
+                + "values (?, ?, ?, ?, ?)",
+            matchId,
+            VIEWER_USER_ID,
+            roomId + 20000,
+            "ACTIVE",
+            Timestamp.valueOf(createdAt));
         jdbcTemplate.update(
             "insert into chat_rooms (id, match_id, status, created_at) values (?, ?, ?, ?)",
             roomId,
-            roomId + 10000,
+            matchId,
             status,
             Timestamp.valueOf(createdAt));
     }

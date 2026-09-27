@@ -21,14 +21,13 @@ import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +45,6 @@ class ChatMessageSendServiceTest {
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 26, 14, 30);
 
     private ChatRoomRepository chatRoomRepository;
-    private ChatParticipantRepository chatParticipantRepository;
     private ChatMessageRepository chatMessageRepository;
     private ChatMessageOutboxRepository outboxRepository;
     private ChatMessageRateLimiter rateLimiter;
@@ -54,11 +52,12 @@ class ChatMessageSendServiceTest {
     private UserBlockRepository userBlockRepository;
     private ChatMessageSendService service;
     private ChatMessageCreateRequest request;
+    private ChatRoom room;
+    private ChatParticipant sender;
 
     @BeforeEach
     void setUp() {
         chatRoomRepository = mock(ChatRoomRepository.class);
-        chatParticipantRepository = mock(ChatParticipantRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
         outboxRepository = mock(ChatMessageOutboxRepository.class);
         rateLimiter = mock(ChatMessageRateLimiter.class);
@@ -66,7 +65,6 @@ class ChatMessageSendServiceTest {
         userBlockRepository = mock(UserBlockRepository.class);
         service = new ChatMessageSendService(
             chatRoomRepository,
-            chatParticipantRepository,
             chatMessageRepository,
             outboxRepository,
             rateLimiter,
@@ -75,13 +73,13 @@ class ChatMessageSendServiceTest {
 
         request = new ChatMessageCreateRequest(
             UUID.randomUUID(), ChatMessageType.TEXT, "안녕하세요");
+        room = activeRoom();
         given(chatRoomRepository.findById(CHAT_ROOM_ID))
-            .willReturn(Optional.of(activeRoom()));
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
-            .willReturn(List.of(participant(
-                SENDER_PARTICIPANT_ID, SENDER_USER_ID, ChatParticipantStatus.ACTIVE),
-                participant(RECEIVER_PARTICIPANT_ID, RECEIVER_USER_ID,
-                    ChatParticipantStatus.ACTIVE)));
+            .willReturn(Optional.of(room));
+        sender = participant(
+            SENDER_PARTICIPANT_ID, SENDER_USER_ID, ChatParticipantStatus.ACTIVE);
+        participant(RECEIVER_PARTICIPANT_ID, RECEIVER_USER_ID,
+            ChatParticipantStatus.ACTIVE);
         User senderUser = activeUser();
         User receiverUser = activeUser();
         given(userRepository.findById(SENDER_USER_ID)).willReturn(Optional.of(senderUser));
@@ -89,7 +87,7 @@ class ChatMessageSendServiceTest {
         given(userBlockRepository.existsActiveBlockBetween(SENDER_USER_ID, RECEIVER_USER_ID))
             .willReturn(false);
         given(rateLimiter.tryAcquire(SENDER_USER_ID)).willReturn(true);
-        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.empty());
         given(chatMessageRepository.save(any(ChatMessage.class))).willAnswer(invocation -> {
@@ -114,6 +112,8 @@ class ChatMessageSendServiceTest {
         ChatMessageOutbox savedOutbox = outboxCaptor.getValue();
         assertThat(response.messageId()).isEqualTo(500L);
         assertThat(response.createdAt()).isEqualTo(savedMessage.getCreatedAt());
+        assertThat(savedMessage.getChatRoom()).isSameAs(room);
+        assertThat(savedMessage.getSenderParticipant()).isSameAs(sender);
         assertThat(savedMessage.getChatRoomId()).isEqualTo(CHAT_ROOM_ID);
         assertThat(savedMessage.getSenderParticipantId()).isEqualTo(SENDER_PARTICIPANT_ID);
         assertThat(savedMessage.getClientMessageId()).isEqualTo(request.clientMessageId());
@@ -125,10 +125,10 @@ class ChatMessageSendServiceTest {
     @Test
     void 같은_ID와_같은_요청의_재시도는_기존_메시지를_반환하고_다시_저장하지_않는다() {
         ChatMessage existing = new ChatMessage(
-            CHAT_ROOM_ID, SENDER_PARTICIPANT_ID, request.clientMessageId(),
+            room, sender, request.clientMessageId(),
             request.textContent(), CREATED_AT.minusMinutes(1));
         ReflectionTestUtils.setField(existing, "id", 499L);
-        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.of(existing));
 
@@ -145,10 +145,10 @@ class ChatMessageSendServiceTest {
     @Test
     void 같은_ID를_다른_내용으로_재사용하면_충돌_오류를_반환한다() {
         ChatMessage existing = new ChatMessage(
-            CHAT_ROOM_ID, SENDER_PARTICIPANT_ID, request.clientMessageId(),
+            room, sender, request.clientMessageId(),
             "다른 내용", CREATED_AT.minusMinutes(1));
         ReflectionTestUtils.setField(existing, "id", 499L);
-        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.of(existing));
 
@@ -178,9 +178,7 @@ class ChatMessageSendServiceTest {
 
     @Test
     void 종료된_채팅방에는_메시지를_저장하지_않는다() {
-        ChatRoom endedRoom = activeRoom();
-        ReflectionTestUtils.setField(endedRoom, "status", ChatRoomStatus.ENDED);
-        given(chatRoomRepository.findById(CHAT_ROOM_ID)).willReturn(Optional.of(endedRoom));
+        ReflectionTestUtils.setField(room, "status", ChatRoomStatus.ENDED);
 
         assertThatThrownBy(() -> service.sendTextMessage(CHAT_ROOM_ID, SENDER_USER_ID, request))
             .isInstanceOf(ChatBusinessException.class)
@@ -193,14 +191,16 @@ class ChatMessageSendServiceTest {
     }
 
     private ChatRoom activeRoom() {
-        ChatRoom room = new ChatRoom(70L, CREATED_AT);
+        Match match = new Match(SENDER_USER_ID, RECEIVER_USER_ID, CREATED_AT);
+        ReflectionTestUtils.setField(match, "id", 70L);
+        ChatRoom room = new ChatRoom(match, CREATED_AT);
         ReflectionTestUtils.setField(room, "id", CHAT_ROOM_ID);
         return room;
     }
 
     private ChatParticipant participant(
         Long participantId, Long userId, ChatParticipantStatus status) {
-        ChatParticipant participant = new ChatParticipant(CHAT_ROOM_ID, userId);
+        ChatParticipant participant = room.addParticipant(userId);
         ReflectionTestUtils.setField(participant, "id", participantId);
         ReflectionTestUtils.setField(participant, "status", status);
         return participant;
