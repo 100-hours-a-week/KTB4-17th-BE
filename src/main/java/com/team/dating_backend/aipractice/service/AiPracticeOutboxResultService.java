@@ -28,19 +28,69 @@ public class AiPracticeOutboxResultService {
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
-    public void markGenerationSubmitted(Long outboxId, String aiSessionId) {
+    public void attachAiSessionId(Long outboxId, String aiSessionId) {
         AiPracticeOutbox outbox = requireOutbox(outboxId);
         AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
-        if (aiSessionId != null && !aiSessionId.isBlank()) {
-            try {
-                session.attachAiSessionId(aiSessionId);
-            } catch (IllegalStateException exception) {
-                throw new AiPracticeBusinessException(
-                    AiPracticeErrorCode.AI_SESSION_ID_CONFLICT, exception);
-            }
+        attachAiSessionId(session, aiSessionId);
+    }
+
+    @Transactional
+    public void markGenerationCompleted(Long outboxId, String aiSessionId, String aiResponse) {
+        AiPracticeOutbox outbox = requireOutbox(outboxId);
+        AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
+            .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
+        attachAiSessionId(session, aiSessionId);
+
+        AiPracticeChat chat = outbox.getChatId() == null
+            ? null
+            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+                .orElse(null);
+        if (chat != null
+            && chat.getGenerationAttempt() == outbox.getGenerationAttempt()
+            && chat.getStatus() == AiPracticeChatStatus.GENERATING) {
+            chat.complete(aiResponse, AiPracticeTime.now());
+            eventPublisher.publishEvent(new AiPracticeChatUpdatedEvent(
+                session.getUserId(),
+                session.getId(),
+                chat.getId(),
+                chat.getStatus(),
+                chat.getAiResponse(),
+                null,
+                chat.getCompletedAt()));
         }
+
         outbox.markPublished(AiPracticeTime.now());
+        endCommandQueue.enqueueIfReady(session);
+    }
+
+    @Transactional
+    public void markGenerationFailed(Long outboxId, String failureCode) {
+        AiPracticeOutbox outbox = requireOutbox(outboxId);
+        AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
+            .orElse(null);
+        outbox.markFailed(AiPracticeTime.now(), failureCode);
+        if (session == null) {
+            return;
+        }
+
+        AiPracticeChat chat = outbox.getChatId() == null
+            ? null
+            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+                .orElse(null);
+        if (chat != null
+            && chat.getGenerationAttempt() == outbox.getGenerationAttempt()
+            && chat.getStatus() == AiPracticeChatStatus.GENERATING) {
+            chat.fail(failureCode);
+            eventPublisher.publishEvent(new AiPracticeChatUpdatedEvent(
+                session.getUserId(),
+                session.getId(),
+                chat.getId(),
+                chat.getStatus(),
+                null,
+                chat.getFailureCode(),
+                null));
+        }
         endCommandQueue.enqueueIfReady(session);
     }
 
@@ -96,5 +146,17 @@ public class AiPracticeOutboxResultService {
     private AiPracticeOutbox requireOutbox(Long outboxId) {
         return outboxRepository.findById(outboxId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
+    }
+
+    private void attachAiSessionId(AiPracticeSession session, String aiSessionId) {
+        if (aiSessionId == null || aiSessionId.isBlank()) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.AI_SERVER_RESPONSE_INVALID);
+        }
+        try {
+            session.attachAiSessionId(aiSessionId);
+        } catch (IllegalStateException exception) {
+            throw new AiPracticeBusinessException(
+                AiPracticeErrorCode.AI_SESSION_ID_CONFLICT, exception);
+        }
     }
 }

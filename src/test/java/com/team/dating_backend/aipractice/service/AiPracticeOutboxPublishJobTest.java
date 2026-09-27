@@ -11,8 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.aipractice.client.AiPracticeAiClient;
 import com.team.dating_backend.aipractice.config.AiPracticeProperties;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.ContinueGenerationRequest;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.InitialGenerationRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.GenerationReplyResponse;
 import com.team.dating_backend.aipractice.entity.AiPracticeChat;
 import com.team.dating_backend.aipractice.entity.AiPracticeOutbox;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -85,45 +84,30 @@ class AiPracticeOutboxPublishJobTest {
     }
 
     @Test
-    void 최초생성요청에사용자와상대정보를담고AI세션ID를수신처리에전달한다() {
-        given(aiClient.startGeneration(any(InitialGenerationRequest.class), anyString()))
-            .willReturn("ai-session-42");
+    void 최초생성은AI세션을만든뒤메시지를보내고답변을저장한다() {
+        given(aiClient.startSession(TARGET_MEMBER_ID)).willReturn("ai-session-42");
+        given(aiClient.sendMessage(anyString(), anyString()))
+            .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
 
         job.publishDueCommands();
 
-        ArgumentCaptor<InitialGenerationRequest> requestCaptor = ArgumentCaptor
-            .forClass(InitialGenerationRequest.class);
-        verify(aiClient).startGeneration(requestCaptor.capture(), anyString());
-        InitialGenerationRequest request = requestCaptor.getValue();
-        assertThat(request.practiceSessionId()).isEqualTo(SESSION_ID);
-        assertThat(request.chatId()).isEqualTo(CHAT_ID);
-        assertThat(request.userId()).isEqualTo(USER_ID);
-        assertThat(request.targetMemberId()).isEqualTo(TARGET_MEMBER_ID);
-        assertThat(request.userMessage()).isEqualTo("연습 메시지");
-        assertThat(request.generationAttempt()).isEqualTo(1);
-        verify(resultService).markGenerationSubmitted(OUTBOX_ID, "ai-session-42");
-        verify(aiClient, never()).continueGeneration(anyString(),
-            any(ContinueGenerationRequest.class), anyString());
+        verify(aiClient).startSession(TARGET_MEMBER_ID);
+        verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
+        verify(resultService).attachAiSessionId(OUTBOX_ID, "ai-session-42");
+        verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
     }
 
     @Test
     void 기존AI세션이있으면세션ID와메시지로후속생성을요청한다() {
         session.attachAiSessionId("ai-session-42");
+        given(aiClient.sendMessage(anyString(), anyString()))
+            .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
 
         job.publishDueCommands();
 
-        ArgumentCaptor<ContinueGenerationRequest> requestCaptor = ArgumentCaptor
-            .forClass(ContinueGenerationRequest.class);
-        verify(aiClient).continueGeneration(
-            org.mockito.ArgumentMatchers.eq("ai-session-42"), requestCaptor.capture(), anyString());
-        ContinueGenerationRequest request = requestCaptor.getValue();
-        assertThat(request.practiceSessionId()).isEqualTo(SESSION_ID);
-        assertThat(request.chatId()).isEqualTo(CHAT_ID);
-        assertThat(request.generationAttempt()).isEqualTo(1);
-        assertThat(request.userMessage()).isEqualTo("연습 메시지");
-        verify(resultService).markGenerationSubmitted(OUTBOX_ID, "ai-session-42");
-        verify(aiClient, never()).startGeneration(
-            any(InitialGenerationRequest.class), anyString());
+        verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
+        verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
+        verify(aiClient, never()).startSession(any());
     }
 
     @Test
@@ -139,7 +123,7 @@ class AiPracticeOutboxPublishJobTest {
     @Test
     void AI서버요청실패는정해진횟수와재시도시각을기록한다() {
         org.mockito.BDDMockito.willThrow(new RestClientException("request failed"))
-            .given(aiClient).startGeneration(any(InitialGenerationRequest.class), anyString());
+            .given(aiClient).startSession(TARGET_MEMBER_ID);
 
         job.publishDueCommands();
 
@@ -155,6 +139,7 @@ class AiPracticeOutboxPublishJobTest {
         assertThat(failureTypeCaptor.getValue()).isEqualTo("AI_SERVER_REQUEST_FAILED");
         assertThat(maxFailuresCaptor.getValue()).isEqualTo(10);
         assertThat(retryAtCaptor.getValue()).isAfter(AiPracticeTime.now());
-        verify(resultService, never()).markGenerationSubmitted(OUTBOX_ID, "ai-session-42");
+        verify(resultService, never()).markGenerationCompleted(
+            OUTBOX_ID, "ai-session-42", "AI 답변");
     }
 }

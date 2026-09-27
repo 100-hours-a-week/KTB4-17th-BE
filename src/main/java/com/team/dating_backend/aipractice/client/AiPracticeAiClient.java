@@ -1,14 +1,14 @@
 package com.team.dating_backend.aipractice.client;
 
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.ContinueGenerationRequest;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.InitialGenerationRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.GenerationReplyResponse;
 
 public interface AiPracticeAiClient {
 
-    String startGeneration(InitialGenerationRequest request, String idempotencyKey);
+    String startSession(Long partnerMemberId);
 
-    void continueGeneration(
-        String aiSessionId, ContinueGenerationRequest request, String idempotencyKey);
+    GenerationReplyResponse sendMessage(String aiSessionId, String userMessage);
 
-    void endSession(String aiSessionId, String idempotencyKey);
+    GenerationReplyResponse retryMessage(String aiSessionId);
+
+    void endSession(String aiSessionId);
 }

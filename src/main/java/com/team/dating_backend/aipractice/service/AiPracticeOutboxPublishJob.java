@@ -2,8 +2,7 @@ package com.team.dating_backend.aipractice.service;
 
 import com.team.dating_backend.aipractice.client.AiPracticeAiClient;
 import com.team.dating_backend.aipractice.config.AiPracticeProperties;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.ContinueGenerationRequest;
-import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.InitialGenerationRequest;
+import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.GenerationReplyResponse;
 import com.team.dating_backend.aipractice.entity.AiPracticeChat;
 import com.team.dating_backend.aipractice.entity.AiPracticeOutbox;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -23,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Slf4j
 @Component
@@ -65,7 +65,7 @@ public class AiPracticeOutboxPublishJob {
                 resultService.markSkipped(outbox.getId());
                 return;
             }
-            aiClient.endSession(session.getAiSessionId(), outbox.getIdempotencyKey().toString());
+            aiClient.endSession(session.getAiSessionId());
             resultService.markEndSubmitted(outbox.getId());
             return;
         }
@@ -81,31 +81,39 @@ public class AiPracticeOutboxPublishJob {
             return;
         }
 
-        String aiSessionId;
-        if (session.getAiSessionId() == null) {
-            if (session.getTargetMemberId() == null) {
-                throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
+        boolean retryExistingAiMessage = chat.isRetry() && session.getAiSessionId() != null;
+        try {
+            String aiSessionId = session.getAiSessionId();
+            if (aiSessionId == null) {
+                if (session.getTargetMemberId() == null) {
+                    throw new AiPracticeBusinessException(
+                        AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
+                }
+                aiSessionId = aiClient.startSession(session.getTargetMemberId());
+                resultService.attachAiSessionId(outbox.getId(), aiSessionId);
             }
-            InitialGenerationRequest request = new InitialGenerationRequest(
-                session.getId(),
-                chat.getId(),
-                session.getUserId(),
-                session.getTargetMemberId(),
-                chat.getGenerationAttempt(),
-                chat.getUserMessage());
-            aiSessionId = aiClient.startGeneration(
-                request, outbox.getIdempotencyKey().toString());
-        } else {
-            ContinueGenerationRequest request = new ContinueGenerationRequest(
-                session.getId(),
-                chat.getId(),
-                chat.getGenerationAttempt(),
-                chat.getUserMessage());
-            aiClient.continueGeneration(
-                session.getAiSessionId(), request, outbox.getIdempotencyKey().toString());
-            aiSessionId = session.getAiSessionId();
+
+            GenerationReplyResponse response;
+            if (retryExistingAiMessage) {
+                response = aiClient.retryMessage(aiSessionId);
+            } else {
+                response = aiClient.sendMessage(aiSessionId, chat.getUserMessage());
+            }
+            resultService.markGenerationCompleted(outbox.getId(), aiSessionId, response.content());
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (status == 503 || status >= 400 && status < 500) {
+                resultService.markGenerationFailed(outbox.getId(), getPermanentFailureCode(status));
+                return;
+            }
+            throw exception;
+        } catch (AiPracticeBusinessException exception) {
+            String failureCode = getImmediateFailureCode(exception);
+            if (failureCode == null) {
+                throw exception;
+            }
+            resultService.markGenerationFailed(outbox.getId(), failureCode);
         }
-        resultService.markGenerationSubmitted(outbox.getId(), aiSessionId);
     }
 
     private void recordFailure(AiPracticeOutbox outbox, RuntimeException exception) {
@@ -134,5 +142,25 @@ public class AiPracticeOutboxPublishJob {
             return "AI_SERVER_REQUEST_FAILED";
         }
         return "AI_PRACTICE_DISPATCH_FAILED";
+    }
+
+    private String getPermanentFailureCode(int status) {
+        return switch (status) {
+            case 404 -> "AI_PERSONA_OR_SESSION_NOT_FOUND";
+            case 409 -> "AI_SESSION_CONFLICT";
+            case 422 -> "AI_REQUEST_REJECTED";
+            case 503 -> "AI_GENERATION_FAILED";
+            default -> "AI_SERVER_HTTP_" + status;
+        };
+    }
+
+    private String getImmediateFailureCode(AiPracticeBusinessException exception) {
+        return switch (exception.getErrorCode().name()) {
+            case "AI_SERVER_NOT_CONFIGURED",
+                "AI_SERVER_RESPONSE_INVALID",
+                "AI_SESSION_ID_CONFLICT",
+                "TARGET_MEMBER_UNAVAILABLE" -> exception.getErrorCode().name();
+            default -> null;
+        };
     }
 }

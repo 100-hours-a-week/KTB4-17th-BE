@@ -51,11 +51,14 @@ app:
 
   ai-practice:
     base-url: ${AI_PRACTICE_BASE_URL:}
-    initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/api/v1/practice/sessions}
-    message-path: ${AI_PRACTICE_MESSAGE_PATH:/api/v1/practice/sessions/%s/messages}
-    end-session-path: ${AI_PRACTICE_END_SESSION_PATH:/api/v1/practice/sessions/%s/end}
+    initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/ai/api/v1/practice/start}
+    message-path: ${AI_PRACTICE_MESSAGE_PATH:/ai/api/v1/practice/%s/messages}
+    retry-path: ${AI_PRACTICE_RETRY_PATH:/ai/api/v1/practice/%s/retry}
+    end-session-path: ${AI_PRACTICE_END_SESSION_PATH:/ai/api/v1/practice/%s/end}
     api-key: ${AI_PRACTICE_API_KEY:}
     callback-secret: ${AI_PRACTICE_CALLBACK_SECRET:}
+    connect-timeout-ms: ${AI_PRACTICE_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_PRACTICE_READ_TIMEOUT_MS:120000}
     daily-limit: ${AI_PRACTICE_DAILY_LIMIT:30}
     max-outbox-failures: ${AI_PRACTICE_OUTBOX_MAX_FAILURES:10}
     outbox-publish-delay-ms: ${AI_PRACTICE_OUTBOX_PUBLISH_DELAY_MS:1000}
