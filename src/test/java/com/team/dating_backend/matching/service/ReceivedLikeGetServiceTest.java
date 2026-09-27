@@ -1,0 +1,173 @@
+package com.team.dating_backend.matching.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.matching.dto.response.ReceivedLikesGetResponse;
+import com.team.dating_backend.matching.enums.LikeErrorCode;
+import com.team.dating_backend.matching.enums.LikeStatus;
+import com.team.dating_backend.matching.exception.LikeBusinessException;
+import com.team.dating_backend.matching.repository.LikeRepository;
+import com.team.dating_backend.matching.repository.ReceivedLikeItem;
+import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.service.ProfileImageGetService;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.LongStream;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
+
+class ReceivedLikeGetServiceTest {
+
+    private static final Long RECEIVER_ID = 1L;
+
+    private UserRepository userRepository;
+    private LikeRepository likeRepository;
+    private ProfileImageGetService profileImageGetService;
+    private ReceivedLikeGetService service;
+
+    @BeforeEach
+    void setUp() {
+        userRepository = mock(UserRepository.class);
+        likeRepository = mock(LikeRepository.class);
+        profileImageGetService = mock(ProfileImageGetService.class);
+        service = new ReceivedLikeGetService(
+            userRepository, likeRepository, profileImageGetService);
+        given(profileImageGetService.getProfileImagesByMemberIds(
+            org.mockito.ArgumentMatchers.anyCollection()))
+            .willReturn(Map.of());
+    }
+
+    @Test
+    void 최근에_받은_좋아요_20개와_다음_커서를_반환한다() {
+        givenActiveReceiver();
+        List<ReceivedLikeItem> rows = LongStream.rangeClosed(0, 20)
+            .mapToObj(index -> row(121L - index, 201L + index))
+            .toList();
+        given(likeRepository.findReceivedPendingLikes(
+            RECEIVER_ID, null, PageRequest.of(0, 21)))
+            .willReturn(rows);
+
+        ReceivedLikesGetResponse response = service.getReceivedLikes(RECEIVER_ID, null);
+
+        assertThat(response.items()).hasSize(20);
+        assertThat(response.items().getFirst().likeId()).isEqualTo(121L);
+        assertThat(response.items().getLast().likeId()).isEqualTo(102L);
+        assertThat(response.pageInfo().nextCursor()).isEqualTo(102L);
+        assertThat(response.pageInfo().hasNext()).isTrue();
+        verify(profileImageGetService).getProfileImagesByMemberIds(
+            LongStream.rangeClosed(201L, 220L).boxed().toList());
+    }
+
+    @Test
+    void 상대_정보와_대표사진을_응답으로_변환한다() {
+        givenActiveReceiver();
+        LocalDate birthDate = LocalDate.now().minusYears(30).plusDays(1);
+        ReceivedLikeItem row = new ReceivedLikeItem(
+            101L,
+            20L,
+            birthDate,
+            "하리",
+            "개발자",
+            "서울특별시",
+            "강남구",
+            LikeStatus.PENDING,
+            LocalDateTime.of(2026, 9, 27, 12, 30));
+        given(likeRepository.findReceivedPendingLikes(
+            RECEIVER_ID, 120L, PageRequest.of(0, 21)))
+            .willReturn(List.of(row));
+        given(profileImageGetService.getProfileImagesByMemberIds(List.of(20L)))
+            .willReturn(Map.of(
+                20L,
+                List.of(
+                    new ProfileImageAccessResult(
+                        702L, (short) 2, "https://example.com/second"),
+                    new ProfileImageAccessResult(
+                        701L, (short) 1, "https://example.com/representative"))));
+
+        ReceivedLikesGetResponse response = service.getReceivedLikes(RECEIVER_ID, 120L);
+
+        var item = response.items().getFirst();
+        assertThat(item.likeId()).isEqualTo(101L);
+        assertThat(item.status()).isEqualTo(LikeStatus.PENDING);
+        assertThat(item.createdAt()).isEqualTo(LocalDateTime.of(2026, 9, 27, 12, 30));
+        assertThat(item.sender().memberId()).isEqualTo(20L);
+        assertThat(item.sender().nickname()).isEqualTo("하리");
+        assertThat(item.sender().profileImageUrl())
+            .isEqualTo("https://example.com/representative");
+        assertThat(item.sender().age()).isEqualTo(29);
+        assertThat(item.sender().job()).isEqualTo("개발자");
+        assertThat(item.sender().region()).isEqualTo("서울특별시 강남구");
+        assertThat(response.pageInfo().nextCursor()).isNull();
+        assertThat(response.pageInfo().hasNext()).isFalse();
+    }
+
+    @Test
+    void 받은_좋아요가_없으면_빈_목록을_반환한다() {
+        givenActiveReceiver();
+        given(likeRepository.findReceivedPendingLikes(
+            RECEIVER_ID, null, PageRequest.of(0, 21)))
+            .willReturn(List.of());
+
+        ReceivedLikesGetResponse response = service.getReceivedLikes(RECEIVER_ID, null);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.pageInfo().nextCursor()).isNull();
+        assertThat(response.pageInfo().hasNext()).isFalse();
+        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
+    }
+
+    @Test
+    void 비활성_사용자는_받은_좋아요를_조회할_수_없다() {
+        User receiver = mock(User.class);
+        given(receiver.getStatus()).willReturn(UserStatus.SUSPENDED);
+        given(userRepository.findById(RECEIVER_ID)).willReturn(Optional.of(receiver));
+
+        assertThatThrownBy(() -> service.getReceivedLikes(RECEIVER_ID, null))
+            .isInstanceOf(LikeBusinessException.class)
+            .satisfies(exception -> assertThat(
+                ((LikeBusinessException) exception).getErrorCode())
+                .isEqualTo(LikeErrorCode.RECEIVER_NOT_ACTIVE));
+        verifyNoInteractions(likeRepository, profileImageGetService);
+    }
+
+    @Test
+    void 양수가_아닌_커서는_거부한다() {
+        assertThatThrownBy(() -> service.getReceivedLikes(RECEIVER_ID, 0L))
+            .isInstanceOf(RequestValidationException.class);
+        assertThatThrownBy(() -> service.getReceivedLikes(RECEIVER_ID, -1L))
+            .isInstanceOf(RequestValidationException.class);
+        verifyNoInteractions(userRepository, likeRepository, profileImageGetService);
+    }
+
+    private void givenActiveReceiver() {
+        User receiver = mock(User.class);
+        given(receiver.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(userRepository.findById(RECEIVER_ID)).willReturn(Optional.of(receiver));
+    }
+
+    private ReceivedLikeItem row(Long likeId, Long memberId) {
+        return new ReceivedLikeItem(
+            likeId,
+            memberId,
+            LocalDate.of(1999, 1, 1),
+            "하리",
+            "개발자",
+            "서울특별시",
+            "강남구",
+            LikeStatus.PENDING,
+            LocalDateTime.of(2026, 9, 27, 12, 30));
+    }
+}
