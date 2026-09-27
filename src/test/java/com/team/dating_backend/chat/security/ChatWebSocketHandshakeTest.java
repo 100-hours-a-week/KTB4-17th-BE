@@ -149,6 +149,8 @@ class ChatWebSocketHandshakeTest {
             false,
             ChatMessageType.TEXT,
             "안녕하세요",
+            null,
+            0,
             LocalDateTime.of(2026, 9, 27, 10, 0));
         try {
             session = client.connectAsync(

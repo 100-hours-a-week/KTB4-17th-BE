@@ -12,7 +12,6 @@ import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
-import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
@@ -60,8 +59,8 @@ class ChatMessageListServiceTest {
 
     @Test
     void 첫_페이지는_요청_크기보다_하나_더_조회하고_화면에는_시간순으로_반환한다() {
-        given(chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 3)))
+        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3)))
             .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "최신"),
                 message(20L, VIEWER_PARTICIPANT_ID, "중간"),
                 message(10L, OTHER_PARTICIPANT_ID, "추가 조회")));
@@ -73,17 +72,34 @@ class ChatMessageListServiceTest {
             .containsExactly(20L, 30L);
         assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::textContent)
             .containsExactly("중간", "최신");
+        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::unreadCount)
+            .containsExactly(1, 0);
         assertThat(result.hasNext()).isTrue();
         assertThat(result.nextCursor()).isEqualTo(20L);
-        verify(chatMessageRepository).findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 3));
+        verify(chatMessageRepository).findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3));
+    }
+
+    @Test
+    void 상대방의_읽음_커서보다_이전인_내_메시지에는_미읽음_표시를_하지_않는다() {
+        ReflectionTestUtils.setField(other, "lastReadMessageId", 30L);
+        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3)))
+            .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "받은 메시지"),
+                message(20L, VIEWER_PARTICIPANT_ID, "내 메시지")));
+
+        ChatMessageListService.MessagePage result = service.listMessages(
+            CHAT_ROOM_ID, VIEWER_USER_ID, null, 2);
+
+        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::unreadCount)
+            .containsExactly(0, 0);
     }
 
     @Test
     void 과거_페이지는_커서보다_작은_ID만_요청한다() {
         given(chatMessageRepository
-            .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
-                CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT,
+            .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+                CHAT_ROOM_ID, ChatMessageStatus.SENT,
                 20L, PageRequest.of(0, 3)))
             .willReturn(List.of(message(19L, OTHER_PARTICIPANT_ID, "이전 메시지")));
 
@@ -95,8 +111,8 @@ class ChatMessageListServiceTest {
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
         verify(chatMessageRepository)
-            .findByChatRoom_IdAndStatusAndMessageTypeAndIdLessThanOrderByIdDesc(
-                CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT,
+            .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+                CHAT_ROOM_ID, ChatMessageStatus.SENT,
                 20L, PageRequest.of(0, 3));
     }
 
@@ -104,8 +120,8 @@ class ChatMessageListServiceTest {
     void 현재_사용자가_삭제한_메시지는_삭제_문구로_반환한다() {
         ChatMessage deletedMessage = message(10L, VIEWER_PARTICIPANT_ID, "원문");
         ReflectionTestUtils.setField(deletedMessage, "senderDeletedAt", BASE_TIME);
-        given(chatMessageRepository.findByChatRoom_IdAndStatusAndMessageTypeOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, ChatMessageType.TEXT, PageRequest.of(0, 2)))
+        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 2)))
             .willReturn(List.of(deletedMessage));
 
         ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,

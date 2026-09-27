@@ -13,12 +13,17 @@ import com.team.dating_backend.chat.controller.ChatExceptionHandler;
 import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
+import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
+import com.team.dating_backend.chat.controller.ChatMessageReadController;
 import com.team.dating_backend.chat.service.ChatMessageListService;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
+import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
+import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageRateLimiter;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
+import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.config.SecurityConfig;
@@ -85,6 +90,7 @@ class ChatMessageFlowIntegrationTest {
     private static final Long RECEIVER_USER_ID = 83012L;
     private static final String CSRF_TOKEN = "chat-integration-csrf-token";
     private static final String MESSAGE_DESTINATION = "/user/queue/chat-messages";
+    private static final String READ_RECEIPT_DESTINATION = "/user/queue/chat-read-receipts";
     private static final String MESSAGE_TEXT = "실제 DB 통합 테스트 메시지";
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
     private static final SecureRandom CSRF_RANDOM = new SecureRandom();
@@ -114,6 +120,7 @@ class ChatMessageFlowIntegrationTest {
     void setUpDatabase() {
         jdbcTemplate.update("delete from chat_message_outbox");
         jdbcTemplate.update("delete from chat_messages");
+        jdbcTemplate.update("delete from files");
         jdbcTemplate.update("delete from chat_participants");
         jdbcTemplate.update("delete from chat_rooms");
         jdbcTemplate.update("delete from matches where id = ?", 83021L);
@@ -149,6 +156,7 @@ class ChatMessageFlowIntegrationTest {
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
         BlockingQueue<ChatMessageCreatedEvent> senderEvents = new LinkedBlockingQueue<>();
         BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
+        BlockingQueue<ChatMessageReadReceiptEvent> readReceiptEvents = new LinkedBlockingQueue<>();
         WebSocketStompClient stompClient = new WebSocketStompClient(
             new StandardWebSocketClient());
         stompClient.setMessageConverter(new JacksonJsonMessageConverter());
@@ -160,9 +168,12 @@ class ChatMessageFlowIntegrationTest {
                 stompClient, senderToken, senderEvents);
             receiverSession = connectAndSubscribe(
                 stompClient, receiverToken, receiverEvents);
+            subscribeToReadReceipts(senderSession, readReceiptEvents);
 
             assertTrue(awaitUserSubscription(SENDER_USER_ID.toString(), MESSAGE_DESTINATION));
             assertTrue(awaitUserSubscription(RECEIVER_USER_ID.toString(), MESSAGE_DESTINATION));
+            assertTrue(awaitUserSubscription(
+                SENDER_USER_ID.toString(), READ_RECEIPT_DESTINATION));
 
             HttpResponse<String> sent = postMessage(senderToken, clientMessageId, MESSAGE_TEXT);
             assertEquals(201, sent.statusCode(), sent.body());
@@ -199,11 +210,26 @@ class ChatMessageFlowIntegrationTest {
             assertThat(senderEvent.clientMessageId()).isEqualTo(clientMessageId);
             assertThat(senderEvent.mine()).isTrue();
             assertThat(senderEvent.textContent()).isEqualTo(MESSAGE_TEXT);
+            assertThat(senderEvent.unreadCount()).isEqualTo(1);
             assertThat(receiverEvent.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
             assertThat(receiverEvent.messageId()).isEqualTo(messageId);
             assertThat(receiverEvent.mine()).isFalse();
             assertThat(receiverEvent.textContent()).isEqualTo(MESSAGE_TEXT);
+            assertThat(receiverEvent.unreadCount()).isZero();
             assertEquals(1, countPublishedOutboxes());
+
+            HttpResponse<String> senderHistoryBeforeRead = getMessageHistory(senderToken);
+            assertThat(senderHistoryBeforeRead.body()).contains("\"unreadCount\":1");
+
+            HttpResponse<String> read = postRead(receiverToken, messageId);
+            assertEquals(200, read.statusCode(), read.body());
+            assertThat(read.body()).contains("\"lastReadMessageId\":" + messageId);
+
+            ChatMessageReadReceiptEvent readReceipt = readReceiptEvents.poll(5, TimeUnit.SECONDS);
+            assertNotNull(readReceipt);
+            assertThat(readReceipt.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
+            assertThat(readReceipt.readerUserId()).isEqualTo(RECEIVER_USER_ID);
+            assertThat(readReceipt.lastReadMessageId()).isEqualTo(messageId);
 
             HttpResponse<String> senderHistory = getMessageHistory(senderToken);
             HttpResponse<String> receiverHistory = getMessageHistory(receiverToken);
@@ -215,7 +241,8 @@ class ChatMessageFlowIntegrationTest {
                 .contains("\"messageId\":" + messageId)
                 .contains("\"mine\":true")
                 .contains("\"messageType\":\"TEXT\"")
-                .contains("\"textContent\":\"" + MESSAGE_TEXT + "\"");
+                .contains("\"textContent\":\"" + MESSAGE_TEXT + "\"")
+                .contains("\"unreadCount\":0");
             assertThat(receiverHistory.body())
                 .contains("\"nickname\":\"보내는사람\"")
                 .contains("\"messageId\":" + messageId)
@@ -223,6 +250,51 @@ class ChatMessageFlowIntegrationTest {
                 .contains("\"textContent\":\"" + MESSAGE_TEXT + "\"");
         } finally {
             disconnect(senderSession);
+            disconnect(receiverSession);
+            stompClient.stop();
+        }
+    }
+
+    @Test
+    void 이미지_메시지는_소유한_파일만_연결하고_WebSocket과_이력에_fileId를_전달한다()
+        throws Exception {
+        Long fileId = 83031L;
+        insertImageFile(fileId);
+        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
+        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
+        BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
+        WebSocketStompClient stompClient = new WebSocketStompClient(
+            new StandardWebSocketClient());
+        stompClient.setMessageConverter(new JacksonJsonMessageConverter());
+        StompSession receiverSession = null;
+
+        try {
+            receiverSession = connectAndSubscribe(stompClient, receiverToken, receiverEvents);
+            assertTrue(awaitUserSubscription(RECEIVER_USER_ID.toString(), MESSAGE_DESTINATION));
+
+            HttpResponse<String> sent = postImageMessage(
+                senderToken, UUID.randomUUID(), fileId);
+            assertEquals(201, sent.statusCode(), sent.body());
+            Long messageId = jdbcTemplate.queryForObject(
+                "select id from chat_messages where chat_room_id = ? and file_id = ?",
+                Long.class, CHAT_ROOM_ID, fileId);
+            assertNotNull(messageId);
+            assertEquals("IMAGE", jdbcTemplate.queryForObject(
+                "select message_type from chat_messages where id = ?", String.class, messageId));
+
+            outboxPublishJob.publishDueMessages();
+            ChatMessageCreatedEvent event = receiverEvents.poll(5, TimeUnit.SECONDS);
+            assertNotNull(event);
+            assertThat(event.messageType()).isEqualTo(ChatMessageType.IMAGE);
+            assertThat(event.imageFileId()).isEqualTo(fileId);
+            assertThat(event.unreadCount()).isZero();
+
+            HttpResponse<String> history = getMessageHistory(receiverToken);
+            assertEquals(200, history.statusCode());
+            assertThat(history.body())
+                .contains("\"messageType\":\"IMAGE\"")
+                .contains("\"imageFileId\":" + fileId);
+        } finally {
             disconnect(receiverSession);
             stompClient.stop();
         }
@@ -257,6 +329,22 @@ class ChatMessageFlowIntegrationTest {
         return session;
     }
 
+    private void subscribeToReadReceipts(
+        StompSession session,
+        BlockingQueue<ChatMessageReadReceiptEvent> receivedEvents) {
+        session.subscribe(READ_RECEIPT_DESTINATION, new StompFrameHandler() {
+            @Override
+            public java.lang.reflect.Type getPayloadType(StompHeaders stompHeaders) {
+                return ChatMessageReadReceiptEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders stompHeaders, Object payload) {
+                receivedEvents.add((ChatMessageReadReceiptEvent) payload);
+            }
+        });
+    }
+
     private HttpResponse<String> postMessage(
         String accessToken, UUID clientMessageId, String textContent) throws Exception {
         String body = "{\"clientMessageId\":\"" + clientMessageId
@@ -271,11 +359,38 @@ class ChatMessageFlowIntegrationTest {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> postImageMessage(
+        String accessToken, UUID clientMessageId, Long imageFileId) throws Exception {
+        String body = "{\"clientMessageId\":\"" + clientMessageId
+            + "\",\"messageType\":\"IMAGE\",\"textContent\":null,\"imageFileId\":"
+            + imageFileId + "}";
+        HttpRequest request = HttpRequest.newBuilder(messageUri())
+            .header(HttpHeaders.CONTENT_TYPE, "application/json")
+            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, true))
+            .header("X-XSRF-TOKEN", maskedCsrfToken())
+            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+            .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> getMessageHistory(String accessToken) throws Exception {
         URI uri = URI.create(messageUri() + "?size=20");
         HttpRequest request = HttpRequest.newBuilder(uri)
             .header(HttpHeaders.COOKIE, cookieHeader(accessToken, false))
             .GET()
+            .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postRead(String accessToken, Long lastReadMessageId)
+        throws Exception {
+        String body = "{\"lastReadMessageId\":" + lastReadMessageId + "}";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(
+            "http://127.0.0.1:" + port + "/api/v1/chat-rooms/" + CHAT_ROOM_ID + "/read"))
+            .header(HttpHeaders.CONTENT_TYPE, "application/json")
+            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, true))
+            .header("X-XSRF-TOKEN", maskedCsrfToken())
+            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
             .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
@@ -352,6 +467,14 @@ class ChatMessageFlowIntegrationTest {
             userId, nickname, Timestamp.valueOf(BASE_TIME), Timestamp.valueOf(BASE_TIME));
     }
 
+    private void insertImageFile(Long fileId) {
+        jdbcTemplate.update(
+            "insert into files (id, owner_user_id, storage_key, original_name, mime_type, "
+                + "file_size, created_at, deleted_at) values (?, ?, ?, ?, ?, ?, ?, null)",
+            fileId, SENDER_USER_ID, "files/chat-image.jpg", "chat-image.jpg", "image/jpeg",
+            1024L, Timestamp.valueOf(BASE_TIME));
+    }
+
     private void disconnect(StompSession session) {
         if (session != null && session.isConnected()) {
             session.disconnect();
@@ -364,7 +487,8 @@ class ChatMessageFlowIntegrationTest {
     @EnableJpaRepositories(
         basePackages = {
             "com.team.dating_backend.chat.repository",
-            "com.team.dating_backend.user.repository"
+            "com.team.dating_backend.user.repository",
+            "com.team.dating_backend.file.repository"
         }
     )
     @EnableConfigurationProperties({JwtProperties.class, SecurityProperties.class})
@@ -374,10 +498,14 @@ class ChatMessageFlowIntegrationTest {
             ChatWebSocketConfig.class,
             ChatMessageSendController.class,
             ChatMessageListController.class,
+            ChatMessageReadController.class,
             ChatExceptionHandler.class,
             ChatMessageSendService.class,
             ChatMessageListService.class,
+            ChatMessageReadService.class,
+            ChatMessageReadReceiptPublisher.class,
             ChatRoomParticipantDisplayService.class,
+            JpaFileRepositoryAdapter.class,
             ChatMessageRateLimiter.class,
             ChatMessageOutboxPublishJob.class,
             JwtService.class,

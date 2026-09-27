@@ -23,6 +23,8 @@ import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
+import com.team.dating_backend.file.repository.FileRepository;
+import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -50,6 +52,7 @@ class ChatMessageSendServiceTest {
     private ChatMessageRateLimiter rateLimiter;
     private UserRepository userRepository;
     private UserBlockRepository userBlockRepository;
+    private FileRepository fileRepository;
     private ChatMessageSendService service;
     private ChatMessageCreateRequest request;
     private ChatRoom room;
@@ -63,18 +66,20 @@ class ChatMessageSendServiceTest {
         rateLimiter = mock(ChatMessageRateLimiter.class);
         userRepository = mock(UserRepository.class);
         userBlockRepository = mock(UserBlockRepository.class);
+        fileRepository = mock(FileRepository.class);
         service = new ChatMessageSendService(
             chatRoomRepository,
             chatMessageRepository,
             outboxRepository,
             rateLimiter,
             userRepository,
-            userBlockRepository);
+            userBlockRepository,
+            fileRepository);
 
         request = new ChatMessageCreateRequest(
-            UUID.randomUUID(), ChatMessageType.TEXT, "안녕하세요");
+            UUID.randomUUID(), ChatMessageType.TEXT, "안녕하세요", null);
         room = activeRoom();
-        given(chatRoomRepository.findById(CHAT_ROOM_ID))
+        given(chatRoomRepository.findWithLockById(CHAT_ROOM_ID))
             .willReturn(Optional.of(room));
         sender = participant(
             SENDER_PARTICIPANT_ID, SENDER_USER_ID, ChatParticipantStatus.ACTIVE);
@@ -87,7 +92,7 @@ class ChatMessageSendServiceTest {
         given(userBlockRepository.existsActiveBlockBetween(SENDER_USER_ID, RECEIVER_USER_ID))
             .willReturn(false);
         given(rateLimiter.tryAcquire(SENDER_USER_ID)).willReturn(true);
-        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.empty());
         given(chatMessageRepository.save(any(ChatMessage.class))).willAnswer(invocation -> {
@@ -123,12 +128,70 @@ class ChatMessageSendServiceTest {
     }
 
     @Test
+    void IMAGE_메시지는_발신자_소유의_이미지_파일을_연결해_저장한다() {
+        Long fileId = 900L;
+        File imageFile = File.create(
+            SENDER_USER_ID, "files/image.jpg", "image.jpg", "image/jpeg", 1024L);
+        ReflectionTestUtils.setField(imageFile, "id", fileId);
+        request = new ChatMessageCreateRequest(
+            UUID.randomUUID(), ChatMessageType.IMAGE, null, fileId);
+        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+            SENDER_PARTICIPANT_ID, request.clientMessageId()))
+            .willReturn(Optional.empty());
+        given(fileRepository.findActiveByIdAndOwner(fileId, SENDER_USER_ID))
+            .willReturn(Optional.of(imageFile));
+
+        ChatMessageCreateResponse response = service.sendMessage(
+            CHAT_ROOM_ID, SENDER_USER_ID, request);
+
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository).save(messageCaptor.capture());
+        ChatMessage savedMessage = messageCaptor.getValue();
+        assertThat(response.imageFileId()).isEqualTo(fileId);
+        assertThat(savedMessage.getMessageType()).isEqualTo(ChatMessageType.IMAGE);
+        assertThat(savedMessage.getTextContent()).isNull();
+        assertThat(savedMessage.getImageFile()).isSameAs(imageFile);
+    }
+
+    @Test
+    void 다른_사용자_파일은_IMAGE_메시지로_전송할_수_없다() {
+        request = new ChatMessageCreateRequest(
+            UUID.randomUUID(), ChatMessageType.IMAGE, null, 900L);
+        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
+            SENDER_PARTICIPANT_ID, request.clientMessageId()))
+            .willReturn(Optional.empty());
+        given(fileRepository.findActiveByIdAndOwner(900L, SENDER_USER_ID))
+            .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.sendMessage(CHAT_ROOM_ID, SENDER_USER_ID, request))
+            .isInstanceOf(ChatBusinessException.class)
+            .satisfies(exception -> assertThat(
+                ((ChatBusinessException) exception).getErrorCode())
+                .isEqualTo(ChatErrorCode.CHAT_IMAGE_NOT_FOUND));
+
+        verify(chatMessageRepository, never()).save(any(ChatMessage.class));
+        verify(outboxRepository, never()).save(any(ChatMessageOutbox.class));
+    }
+
+    @Test
+    void 다른_채팅방의_참여자를_발신자로_메시지를_생성할_수_없다() {
+        Match otherMatch = new Match(SENDER_USER_ID, RECEIVER_USER_ID, CREATED_AT);
+        ReflectionTestUtils.setField(otherMatch, "id", 71L);
+        ChatRoom otherRoom = new ChatRoom(otherMatch, CREATED_AT);
+
+        assertThatThrownBy(() -> new ChatMessage(
+            otherRoom, sender, UUID.randomUUID(), "잘못된 연결", CREATED_AT))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Sender participant must belong to the chat room.");
+    }
+
+    @Test
     void 같은_ID와_같은_요청의_재시도는_기존_메시지를_반환하고_다시_저장하지_않는다() {
         ChatMessage existing = new ChatMessage(
             room, sender, request.clientMessageId(),
             request.textContent(), CREATED_AT.minusMinutes(1));
         ReflectionTestUtils.setField(existing, "id", 499L);
-        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.of(existing));
 
@@ -148,7 +211,7 @@ class ChatMessageSendServiceTest {
             room, sender, request.clientMessageId(),
             "다른 내용", CREATED_AT.minusMinutes(1));
         ReflectionTestUtils.setField(existing, "id", 499L);
-        given(chatMessageRepository.findBySenderParticipant_IdAndClientMessageId(
+        given(chatMessageRepository.findBySenderParticipantIdAndClientMessageId(
             SENDER_PARTICIPANT_ID, request.clientMessageId()))
             .willReturn(Optional.of(existing));
 
