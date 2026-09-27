@@ -10,6 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
+import com.team.dating_backend.matching.dto.response.ReceivedLikeItemResponse;
+import com.team.dating_backend.matching.dto.response.ReceivedLikePageInfo;
+import com.team.dating_backend.matching.dto.response.ReceivedLikeSenderResponse;
+import com.team.dating_backend.matching.dto.response.ReceivedLikesGetResponse;
 import com.team.dating_backend.matching.dto.response.SentLikeItemResponse;
 import com.team.dating_backend.matching.dto.response.SentLikePageInfo;
 import com.team.dating_backend.matching.dto.response.SentLikeReceiverResponse;
@@ -18,6 +22,7 @@ import com.team.dating_backend.matching.enums.LikeErrorCode;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.service.LikeSendService;
+import com.team.dating_backend.matching.service.ReceivedLikeGetService;
 import com.team.dating_backend.matching.service.SentLikeGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
@@ -63,6 +68,9 @@ class LikeControllerTest {
 
     @MockitoBean
     private SentLikeGetService sentLikeGetService;
+
+    @MockitoBean
+    private ReceivedLikeGetService receivedLikeGetService;
 
     @Test
     void 로그인한_사용자가_좋아요를_전송하면_201과_PENDING을_반환한다() throws Exception {
@@ -179,6 +187,63 @@ class LikeControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
         verifyNoInteractions(sentLikeGetService);
+    }
+
+    @Test
+    void 받은_좋아요를_조회하면_200과_상대_정보를_반환한다() throws Exception {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 9, 27, 12, 30);
+        ReceivedLikeSenderResponse sender = new ReceivedLikeSenderResponse(
+            20L,
+            "하리",
+            "https://example.com/profile",
+            27,
+            "개발자",
+            "서울특별시 강남구");
+        given(receivedLikeGetService.getReceivedLikes(1L, 120L))
+            .willReturn(new ReceivedLikesGetResponse(
+                List.of(new ReceivedLikeItemResponse(
+                    101L, sender, LikeStatus.PENDING, createdAt)),
+                new ReceivedLikePageInfo(101L, true)));
+
+        mockMvc.perform(get("/api/v1/likes/received").param("cursor", "120"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("received_like_get_success"))
+            .andExpect(jsonPath("$.data.items[0].likeId").value(101))
+            .andExpect(jsonPath("$.data.items[0].sender.memberId").value(20))
+            .andExpect(jsonPath("$.data.items[0].sender.nickname").value("하리"))
+            .andExpect(jsonPath("$.data.items[0].sender.profileImageUrl")
+                .value("https://example.com/profile"))
+            .andExpect(jsonPath("$.data.items[0].sender.age").value(27))
+            .andExpect(jsonPath("$.data.items[0].sender.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].sender.region")
+                .value("서울특별시 강남구"))
+            .andExpect(jsonPath("$.data.items[0].status").value("PENDING"))
+            .andExpect(jsonPath("$.data.items[0].createdAt")
+                .value("2026-09-27T12:30:00"))
+            .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(101))
+            .andExpect(jsonPath("$.data.pageInfo.hasNext").value(true));
+        verify(receivedLikeGetService).getReceivedLikes(1L, 120L);
+    }
+
+    @Test
+    void 받은_좋아요가_없으면_200과_빈_목록을_반환한다() throws Exception {
+        given(receivedLikeGetService.getReceivedLikes(1L, null))
+            .willReturn(new ReceivedLikesGetResponse(
+                List.of(), new ReceivedLikePageInfo(null, false)));
+
+        mockMvc.perform(get("/api/v1/likes/received"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items").isEmpty())
+            .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(nullValue()))
+            .andExpect(jsonPath("$.data.pageInfo.hasNext").value(false));
+    }
+
+    @Test
+    void 받은_좋아요_조회_커서의_타입이_잘못되면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/v1/likes/received").param("cursor", "invalid"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
+        verifyNoInteractions(receivedLikeGetService);
     }
 
     private MockHttpServletRequestBuilder authenticatedPost(String body) {

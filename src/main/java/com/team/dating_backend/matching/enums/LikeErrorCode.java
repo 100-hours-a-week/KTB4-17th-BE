@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 public enum LikeErrorCode implements ErrorCode {
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND),
     SENDER_NOT_ACTIVE(HttpStatus.FORBIDDEN),
+    RECEIVER_NOT_ACTIVE(HttpStatus.FORBIDDEN),
     DUPLICATE_PENDING_LIKE(
         HttpStatus.CONFLICT),
     MATCH_ALREADY_EXISTS(

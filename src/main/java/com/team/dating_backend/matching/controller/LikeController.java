@@ -3,8 +3,10 @@ package com.team.dating_backend.matching.controller;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.matching.dto.request.LikeCreateRequest;
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
+import com.team.dating_backend.matching.dto.response.ReceivedLikesGetResponse;
 import com.team.dating_backend.matching.dto.response.SentLikesGetResponse;
 import com.team.dating_backend.matching.service.LikeSendService;
+import com.team.dating_backend.matching.service.ReceivedLikeGetService;
 import com.team.dating_backend.matching.service.SentLikeGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.validation.Valid;
@@ -26,6 +28,7 @@ public class LikeController {
 
     private final LikeSendService likeSendService;
     private final SentLikeGetService sentLikeGetService;
+    private final ReceivedLikeGetService receivedLikeGetService;
 
     @PostMapping
     public ResponseEntity<SuccessResponse<LikeCreateResponse>> sendLike(
@@ -44,5 +47,14 @@ public class LikeController {
         SentLikesGetResponse response = sentLikeGetService.getSentLikes(
             principal.userId(), cursor);
         return ResponseEntity.ok(SuccessResponse.of("sent_like_get_success", response));
+    }
+
+    @GetMapping("/received")
+    public ResponseEntity<SuccessResponse<ReceivedLikesGetResponse>> getReceivedLikes(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @RequestParam(required = false) Long cursor) {
+        ReceivedLikesGetResponse response = receivedLikeGetService.getReceivedLikes(
+            principal.userId(), cursor);
+        return ResponseEntity.ok(SuccessResponse.of("received_like_get_success", response));
     }
 }

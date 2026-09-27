@@ -47,6 +47,34 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
         @Param("cursor") Long cursor,
         Pageable pageable);
 
+    @Query("""
+        SELECT new com.team.dating_backend.matching.repository.ReceivedLikeItem(
+            memberLike.id, sender.id, sender.birthDate, profile.nickname, profile.job,
+            region.provinceName, region.regionName, memberLike.status, memberLike.createdAt)
+        FROM MemberLike memberLike
+        JOIN User sender ON sender.id = memberLike.senderId
+        JOIN Profile profile ON profile.user = sender AND profile.deletedAt IS NULL
+        LEFT JOIN profile.activityRegion region
+        WHERE memberLike.receiverId = :receiverId
+          AND memberLike.status = com.team.dating_backend.matching.enums.LikeStatus.PENDING
+          AND sender.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
+          AND (:cursor IS NULL OR memberLike.id < :cursor)
+          AND NOT EXISTS (
+              SELECT userBlock.id
+              FROM UserBlock userBlock
+              WHERE userBlock.unblockedAt IS NULL
+                AND ((userBlock.blockerUserId = :receiverId
+                    AND userBlock.blockedUserId = sender.id)
+                  OR (userBlock.blockerUserId = sender.id
+                    AND userBlock.blockedUserId = :receiverId))
+          )
+        ORDER BY memberLike.id DESC
+        """)
+    List<ReceivedLikeItem> findReceivedPendingLikes(
+        @Param("receiverId") Long receiverId,
+        @Param("cursor") Long cursor,
+        Pageable pageable);
+
     @Modifying
     @Query("""
         update MemberLike memberLike
