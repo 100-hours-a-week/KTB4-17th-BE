@@ -36,6 +36,7 @@ kakao:
 
 app:
   auth:
+    login-redirect-uri: ${AUTH_LOGIN_REDIRECT_URI:${AUTH_SERVICE_REDIRECT_URI}}
     service-redirect-uri: ${AUTH_SERVICE_REDIRECT_URI}
     registration-redirect-uri: ${AUTH_REGISTRATION_REDIRECT_URI}
     onboarding-redirect-uri: ${AUTH_ONBOARDING_REDIRECT_URI}

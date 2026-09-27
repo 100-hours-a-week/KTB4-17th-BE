@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 public class AuthWebProperties {
 
+    private String loginRedirectUri;
     private String serviceRedirectUri;
     private String registrationRedirectUri;
     private String onboardingRedirectUri;

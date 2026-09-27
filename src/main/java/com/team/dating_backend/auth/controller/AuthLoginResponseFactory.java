@@ -41,7 +41,16 @@ public class AuthLoginResponseFactory {
             authCookieFactory.deleteAccessToken());
     }
 
+    public ResponseEntity<Void> redirectToLoginPage() {
+        return ResponseEntity.status(HttpStatus.FOUND)
+            .location(loginDestination())
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .header("Referrer-Policy", "no-referrer")
+            .build();
+    }
+
     public void validateRedirectUris() {
+        loginDestination();
         destinationFor(LoginDestination.SERVICE);
         destinationFor(LoginDestination.REGISTRATION);
         destinationFor(LoginDestination.ONBOARDING);
@@ -73,6 +82,24 @@ public class AuthLoginResponseFactory {
 
         if (!redirectDestination.isAbsolute()) {
             throw new IllegalStateException("Authentication redirect URI must be absolute");
+        }
+
+        return redirectDestination;
+    }
+
+    private URI loginDestination() {
+        String redirectUri = StringUtils.hasText(authWebProperties.getLoginRedirectUri())
+            ? authWebProperties.getLoginRedirectUri()
+            : authWebProperties.getServiceRedirectUri();
+
+        if (!StringUtils.hasText(redirectUri)) {
+            throw new IllegalStateException("Authentication login redirect URI is not configured");
+        }
+
+        URI redirectDestination = URI.create(redirectUri);
+
+        if (!redirectDestination.isAbsolute()) {
+            throw new IllegalStateException("Authentication login redirect URI must be absolute");
         }
 
         return redirectDestination;

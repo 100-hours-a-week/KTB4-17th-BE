@@ -7,6 +7,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -19,5 +20,12 @@ public class UserRegistrationExceptionHandler {
         RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
             .body(new AuthErrorResponse("AUTH_REQUIRED"));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<AuthErrorResponse> handleInvalidRequest(
+        MethodArgumentNotValidException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(new AuthErrorResponse("INVALID_REQUEST"));
     }
 }
