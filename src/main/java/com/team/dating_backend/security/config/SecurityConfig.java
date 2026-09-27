@@ -36,7 +36,9 @@ public class SecurityConfig {
         ServiceJwtAuthenticationFilter jwtAuthenticationFilter = new ServiceJwtAuthenticationFilter(
             jwtService);
 
-        http.csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
+        http.csrf(csrf -> csrf
+            .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+            .ignoringRequestMatchers("/internal/v1/ai-practice/events"))
             .cors(Customizer.withDefaults())
             .sessionManagement(
                 session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -47,6 +49,7 @@ public class SecurityConfig {
                     .requestMatchers(
                         "/api/v1/auth/**",
                         "/api/v1/registration/**",
+                        "/internal/v1/ai-practice/events",
                         "/actuator/health",
                         "/error")
                     .permitAll()
