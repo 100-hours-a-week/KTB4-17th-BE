@@ -39,7 +39,7 @@ public class OnboardingService {
 
         OnboardingRequirementsResponse requirements = profileRepository
             .findByUserIdAndDeletedAtIsNull(userId)
-            .map(this::calculateRequirements)
+            .map(profile -> calculateRequirements(user, profile))
             .orElseGet(OnboardingRequirementsResponse::incomplete);
 
         return new OnboardingStatusResponse(
@@ -63,10 +63,11 @@ public class OnboardingService {
         }
     }
 
-    private OnboardingRequirementsResponse calculateRequirements(Profile profile) {
+    private OnboardingRequirementsResponse calculateRequirements(User user, Profile profile) {
         boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
             profile.getId());
-        return requirementsCalculator.calculate(profile, profileImageComplete);
+        return requirementsCalculator.calculate(
+            profile, user.isPersonaOnboardingComplete(), profileImageComplete);
     }
 
     private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {
@@ -78,6 +79,9 @@ public class OnboardingService {
         }
         if (!requirements.lifestyleComplete() || !requirements.mbtiComplete()) {
             return OnboardingStep.LIFESTYLE;
+        }
+        if (!requirements.personaComplete()) {
+            return OnboardingStep.PERSONA;
         }
         if (!requirements.profileImageComplete()) {
             return OnboardingStep.PROFILE_IMAGE;

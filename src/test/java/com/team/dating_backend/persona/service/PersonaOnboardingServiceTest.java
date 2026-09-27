@@ -15,9 +15,12 @@ import com.team.dating_backend.persona.dto.response.PersonaConversationResponse;
 import com.team.dating_backend.persona.dto.response.PersonaDraftResponse;
 import com.team.dating_backend.persona.enums.PersonaErrorCode;
 import com.team.dating_backend.persona.exception.PersonaBusinessException;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.user.entity.User;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -34,19 +37,25 @@ class PersonaOnboardingServiceTest {
 
     private ProfileRepository profileRepository;
     private PersonaAiClient aiClient;
+    private OnboardingCompletionService onboardingCompletionService;
     private Profile profile;
+    private User user;
     private PersonaOnboardingService service;
 
     @BeforeEach
     void setUp() {
         profileRepository = Mockito.mock(ProfileRepository.class);
         aiClient = Mockito.mock(PersonaAiClient.class);
+        onboardingCompletionService = Mockito.mock(OnboardingCompletionService.class);
         profile = Mockito.mock(Profile.class);
-        service = new PersonaOnboardingService(profileRepository, aiClient);
+        user = Mockito.mock(User.class);
+        service = new PersonaOnboardingService(
+            profileRepository, aiClient, onboardingCompletionService);
 
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.of(profile));
         given(profile.getNickname()).willReturn("하루");
+        given(profile.getUser()).willReturn(user);
     }
 
     @Test
@@ -255,6 +264,24 @@ class PersonaOnboardingServiceTest {
         verify(aiClient).confirm(org.mockito.ArgumentMatchers.eq("persona-1"), captor.capture());
         assertThat(captor.getValue().mbti()).isEqualTo("ENFJ");
         assertThat(captor.getValue().confirmedAt().getOffset()).isEqualTo(ZoneOffset.UTC);
+        verify(user).confirmPersonaOnboarding(any(LocalDateTime.class));
+        verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+    }
+
+    @Test
+    void AI_확정_응답이_유효하지_않으면_CONFIRMED로_변경하지_않는다() {
+        given(profile.getMbti()).willReturn(Mbti.ENFJ);
+        given(aiClient.confirm(any(), any())).willReturn(
+            new PersonaAiPayloads.ConfirmResponse(
+                "different-persona", "7", true, "ENFJ", OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.confirm(USER_ID, "persona-1"))
+            .isInstanceOfSatisfying(
+                PersonaBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(PersonaErrorCode.AI_SERVER_RESPONSE_INVALID));
+        verify(user, never()).confirmPersonaOnboarding(any(LocalDateTime.class));
+        verify(onboardingCompletionService, never()).activateIfCompleted(any());
     }
 
     @Test

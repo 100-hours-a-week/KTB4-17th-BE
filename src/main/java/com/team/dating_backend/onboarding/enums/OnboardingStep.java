@@ -1,5 +1,5 @@
 package com.team.dating_backend.onboarding.enums;
 
 public enum OnboardingStep {
-    REGION, PROFILE, LIFESTYLE, PROFILE_IMAGE, COMPLETE
+    REGION, PROFILE, LIFESTYLE, PERSONA, PROFILE_IMAGE, COMPLETE
 }

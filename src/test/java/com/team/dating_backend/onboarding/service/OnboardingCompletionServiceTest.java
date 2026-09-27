@@ -17,6 +17,7 @@ import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
@@ -64,6 +65,39 @@ class OnboardingCompletionServiceTest {
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(user.getUpdatedAt()).isAfter(user.getCreatedAt());
+    }
+
+    @Test
+    void 페르소나_온보딩이_PENDING이면_다른_조건을_충족해도_ONBOARDING을_유지한다() {
+        User user = pendingPersonaUser();
+        assertThat(user.getPersonaOnboardingStatus()).isEqualTo(PersonaOnboardingStatus.PENDING);
+        Profile profile = completeProfile(user);
+        givenUser(user);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(profile));
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
+            .willReturn(true);
+
+        onboardingCompletionService.activateIfCompleted(USER_ID);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ONBOARDING);
+    }
+
+    @Test
+    void 페르소나_온보딩이_BYPASSED이면_다른_조건_충족_시_ACTIVE가_된다() {
+        User user = pendingPersonaUser();
+        ReflectionTestUtils.setField(
+            user, "personaOnboardingStatus", PersonaOnboardingStatus.BYPASSED);
+        Profile profile = completeProfile(user);
+        givenUser(user);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(profile));
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
+            .willReturn(true);
+
+        onboardingCompletionService.activateIfCompleted(USER_ID);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
     }
 
     @Test
@@ -133,6 +167,12 @@ class OnboardingCompletionServiceTest {
     }
 
     private User onboardingUser() {
+        User user = pendingPersonaUser();
+        user.confirmPersonaOnboarding(LocalDateTime.now().minusNanos(1));
+        return user;
+    }
+
+    private User pendingPersonaUser() {
         LocalDateTime createdAt = LocalDateTime.now().minusSeconds(1);
         User user = User.create("하리", LocalDate.of(2000, 1, 1), Gender.FEMALE, createdAt);
         ReflectionTestUtils.setField(user, "id", USER_ID);
