@@ -4,6 +4,7 @@ import com.team.dating_backend.auth.dto.OAuthIdentity;
 import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.exception.OAuthInvalidRequestException;
+import com.team.dating_backend.auth.exception.OAuthProviderUnavailableException;
 import com.team.dating_backend.auth.service.OAuthProviderClient;
 import com.team.dating_backend.auth.service.OAuthProviderClientRegistry;
 import com.team.dating_backend.auth.service.OAuthStateService;
@@ -55,11 +56,30 @@ public class OAuthController {
             required = false
         ) String code,
         @RequestParam(
+            value = "error",
+            required = false
+        ) String error,
+        @RequestParam(
             value = "state",
             required = false
         ) String state,
         HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
+
+        if (StringUtils.hasText(error)) {
+            if (!StringUtils.hasText(state)) {
+                throw new OAuthInvalidRequestException("OAuth callback state is missing");
+            }
+
+            oauthStateService.validateAndConsumeState(provider, state, session);
+
+            if ("access_denied".equals(error)) {
+                return authLoginResponseFactory.redirectToLoginPage();
+            }
+
+            throw new OAuthProviderUnavailableException();
+        }
+
         validateCallbackParameters(code, state);
         authLoginResponseFactory.validateRedirectUris();
         OAuthProviderClient providerClient = oauthProviderClientRegistry.get(provider);
