@@ -1,18 +1,16 @@
 package com.team.dating_backend.security;
 
-import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -30,7 +28,8 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
         HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
         throws ServletException, IOException {
 
-        String accessToken = resolveAccessToken(request);
+        String accessToken = BearerTokenResolver.resolve(
+            request.getHeader(HttpHeaders.AUTHORIZATION));
 
         if (accessToken != null) {
             authenticate(accessToken, request);
@@ -59,19 +58,5 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
             log.warn("Service JWT authentication failed. method={}, path={}, reason={}",
                 request.getMethod(), request.getRequestURI(), exception.getClass().getSimpleName());
         }
-    }
-
-    private String resolveAccessToken(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-
-        if (cookies == null) {
-            return null;
-        }
-
-        return Arrays.stream(cookies)
-            .filter(cookie -> AuthCookieFactory.ACCESS_TOKEN_COOKIE.equals(cookie.getName()))
-            .map(Cookie::getValue)
-            .findFirst()
-            .orElse(null);
     }
 }

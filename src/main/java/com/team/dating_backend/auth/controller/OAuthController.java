@@ -89,7 +89,7 @@ public class OAuthController {
         SocialLoginResult loginResult = socialLoginService.login(identity.provider(),
             identity.providerUserId());
 
-        return authLoginResponseFactory.create(loginResult);
+        return authLoginResponseFactory.create(loginResult, session);
     }
 
     private AuthProvider parseProvider(String providerValue) {

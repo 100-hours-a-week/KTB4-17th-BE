@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.onboarding.dto.response.OnboardingProfileResponse;
 import com.team.dating_backend.onboarding.dto.response.OnboardingRequirementsResponse;
@@ -19,7 +18,6 @@ import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.UserStatus;
-import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,7 +54,7 @@ class OnboardingControllerTest {
     }
 
     @Test
-    void 온보딩_진행_상태를_조회하면_200과_그에_대한_응답을_반환한다() throws Exception {
+    void Bearer_토큰으로_온보딩_진행_상태를_조회할_수_있다() throws Exception {
         OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true,
             false, false,
             false, false, false);
@@ -67,10 +65,7 @@ class OnboardingControllerTest {
 
         mockMvc.perform(
             get("/api/v1/users/me/onboarding")
-                .cookie(
-                    new Cookie(
-                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                        ACCESS_TOKEN)))
+                .header("Authorization", "Bearer " + ACCESS_TOKEN))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("onboarding_status_get_success"))
             .andExpect(jsonPath("$.data.userStatus").value("ONBOARDING"))
@@ -94,10 +89,7 @@ class OnboardingControllerTest {
 
         mockMvc.perform(
             get("/api/v1/users/me/onboarding/profile")
-                .cookie(
-                    new Cookie(
-                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                        ACCESS_TOKEN)))
+                .header("Authorization", "Bearer " + ACCESS_TOKEN))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("user_onboarding_profile_get_success"))
             .andExpect(jsonPath("$.data.userId").value(USER_ID))

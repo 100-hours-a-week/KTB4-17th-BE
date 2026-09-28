@@ -4,7 +4,10 @@ import com.team.dating_backend.auth.config.AuthWebProperties;
 import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.LoginDestination;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.auth.service.OAuthLoginCodeService;
+import jakarta.servlet.http.HttpSession;
 import java.net.URI;
+import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,16 +21,18 @@ import org.springframework.util.StringUtils;
 public class AuthLoginResponseFactory {
 
     private final JwtService jwtService;
+    private final OAuthLoginCodeService oauthLoginCodeService;
     private final AuthCookieFactory authCookieFactory;
     private final AuthWebProperties authWebProperties;
 
-    public ResponseEntity<Void> create(SocialLoginResult loginResult) {
+    public ResponseEntity<Void> create(SocialLoginResult loginResult, HttpSession session) {
         if (loginResult instanceof SocialLoginResult.Authenticated authenticated) {
             String serviceToken = jwtService.createServiceAuthToken(authenticated.userId());
+            String loginCode = oauthLoginCodeService.issue(serviceToken, session);
 
             return redirect(
-                destinationFor(authenticated.destination()),
-                authCookieFactory.accessToken(serviceToken),
+                withLoginCode(destinationFor(authenticated.destination()), loginCode),
+                authCookieFactory.deleteAccessToken(),
                 authCookieFactory.deletePendingRegistrationToken());
         }
 
@@ -56,15 +61,37 @@ public class AuthLoginResponseFactory {
         destinationFor(LoginDestination.ONBOARDING);
     }
 
-    private ResponseEntity<Void> redirect(
-        URI destination, ResponseCookie issuedCookie, ResponseCookie deletedCookie) {
-        return ResponseEntity.status(HttpStatus.FOUND)
+    private ResponseEntity<Void> redirect(URI destination, ResponseCookie... cookies) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.FOUND)
             .location(destination)
-            .header(HttpHeaders.SET_COOKIE, issuedCookie.toString())
-            .header(HttpHeaders.SET_COOKIE, deletedCookie.toString())
             .header(HttpHeaders.CACHE_CONTROL, "no-store")
-            .header("Referrer-Policy", "no-referrer")
-            .build();
+            .header("Referrer-Policy", "no-referrer");
+
+        Arrays.stream(cookies)
+            .map(ResponseCookie::toString)
+            .forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));
+
+        return response.build();
+    }
+
+    private URI withLoginCode(URI destination, String loginCode) {
+        String destinationValue = destination.toASCIIString();
+        int fragmentStart = destinationValue.indexOf('#');
+        String beforeFragment = fragmentStart >= 0
+            ? destinationValue.substring(0, fragmentStart)
+            : destinationValue;
+        String fragment = fragmentStart >= 0
+            ? destinationValue.substring(fragmentStart + 1)
+            : "";
+
+        String separator = fragment.isEmpty()
+            ? ""
+            : fragment.contains("?")
+                ? (fragment.endsWith("?") || fragment.endsWith("&") ? "" : "&")
+                : "?";
+
+        return URI.create(
+            beforeFragment + "#" + fragment + separator + "auth_code=" + loginCode);
     }
 
     private URI destinationFor(LoginDestination destination) {

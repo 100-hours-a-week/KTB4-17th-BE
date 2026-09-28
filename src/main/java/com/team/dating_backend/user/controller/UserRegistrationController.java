@@ -1,10 +1,12 @@
 package com.team.dating_backend.user.controller;
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
+import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.service.UserRegistrationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -24,7 +26,7 @@ public class UserRegistrationController {
     private final AuthCookieFactory authCookieFactory;
 
     @PutMapping("/identity")
-    public ResponseEntity<Void> registerUser(
+    public ResponseEntity<AuthTokenResponse> registerUser(
         @CookieValue(
             value = PENDING_REGISTRATION_TOKEN_COOKIE,
             required = false
@@ -35,12 +37,13 @@ public class UserRegistrationController {
             request);
 
         return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
             .header(
                 HttpHeaders.SET_COOKIE,
-                authCookieFactory.accessToken(serviceToken).toString())
+                authCookieFactory.deleteAccessToken().toString())
             .header(
                 HttpHeaders.SET_COOKIE,
                 authCookieFactory.deletePendingRegistrationToken().toString())
-            .build();
+            .body(AuthTokenResponse.bearer(serviceToken));
     }
 }
