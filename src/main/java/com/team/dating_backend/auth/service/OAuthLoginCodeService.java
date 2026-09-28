@@ -1,5 +1,6 @@
 package com.team.dating_backend.auth.service;
 
+import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import jakarta.servlet.http.HttpSession;
 import java.io.Serializable;
 import java.security.SecureRandom;
@@ -17,9 +18,12 @@ public class OAuthLoginCodeService {
     private static final String SESSION_CODE_PREFIX = "OAUTH_LOGIN_CODE_";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    public String issue(String accessToken, HttpSession session) {
+    public String issue(String accessToken, String refreshToken, HttpSession session) {
         if (!StringUtils.hasText(accessToken)) {
             throw new IllegalArgumentException("Access token must not be blank");
+        }
+        if (!StringUtils.hasText(refreshToken)) {
+            throw new IllegalArgumentException("Refresh token must not be blank");
         }
         if (session == null) {
             throw new IllegalArgumentException("OAuth login session is required");
@@ -39,12 +43,12 @@ public class OAuthLoginCodeService {
 
             session.setAttribute(
                 attributeName,
-                new LoginCodeGrant(accessToken, System.currentTimeMillis()));
+                new LoginCodeGrant(accessToken, refreshToken, System.currentTimeMillis()));
             return code;
         }
     }
 
-    public Optional<String> consume(String code, HttpSession session) {
+    public Optional<IssuedAuthTokens> consume(String code, HttpSession session) {
         if (session == null || !isValidCode(code)) {
             return Optional.empty();
         }
@@ -63,7 +67,7 @@ public class OAuthLoginCodeService {
                 return Optional.empty();
             }
 
-            return Optional.of(grant.accessToken());
+            return Optional.of(new IssuedAuthTokens(grant.accessToken(), grant.refreshToken()));
         }
     }
 
@@ -98,7 +102,7 @@ public class OAuthLoginCodeService {
         return SESSION_CODE_PREFIX + code;
     }
 
-    private record LoginCodeGrant(String accessToken, long createdAtMillis)
+    private record LoginCodeGrant(String accessToken, String refreshToken, long createdAtMillis)
         implements
             Serializable {}
 }

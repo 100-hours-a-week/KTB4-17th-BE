@@ -27,12 +27,14 @@ public class AuthLoginResponseFactory {
 
     public ResponseEntity<Void> create(SocialLoginResult loginResult, HttpSession session) {
         if (loginResult instanceof SocialLoginResult.Authenticated authenticated) {
-            String serviceToken = jwtService.createServiceAuthToken(authenticated.userId());
-            String loginCode = oauthLoginCodeService.issue(serviceToken, session);
+            String accessToken = jwtService.createServiceAuthToken(authenticated.userId());
+            String refreshToken = jwtService.createRefreshAuthToken(authenticated.userId());
+            String loginCode = oauthLoginCodeService.issue(accessToken, refreshToken, session);
 
             return redirect(
                 withLoginCode(destinationFor(authenticated.destination()), loginCode),
                 authCookieFactory.deleteAccessToken(),
+                authCookieFactory.deleteRefreshToken(),
                 authCookieFactory.deletePendingRegistrationToken());
         }
 
@@ -43,7 +45,8 @@ public class AuthLoginResponseFactory {
         return redirect(
             destinationFor(LoginDestination.REGISTRATION),
             authCookieFactory.pendingRegistrationToken(pendingToken),
-            authCookieFactory.deleteAccessToken());
+            authCookieFactory.deleteAccessToken(),
+            authCookieFactory.deleteRefreshToken());
     }
 
     public ResponseEntity<Void> redirectToLoginPage() {

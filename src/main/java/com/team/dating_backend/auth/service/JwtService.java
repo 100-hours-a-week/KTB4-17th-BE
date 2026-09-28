@@ -24,6 +24,7 @@ public class JwtService {
     private static final String PURPOSE_CLAIM = "purpose";
     private static final String PENDING_REGISTRATION_PURPOSE = "PENDING_REGISTRATION";
     private static final String SERVICE_AUTH_PURPOSE = "SERVICE_AUTH";
+    private static final String REFRESH_AUTH_PURPOSE = "REFRESH_AUTH";
 
     private final JwtProperties jwtProperties;
 
@@ -124,6 +125,50 @@ public class JwtService {
             return Long.valueOf(subject);
         } catch (NumberFormatException exception) {
             throw new JwtException("Invalid service auth token subject", exception);
+        }
+    }
+
+    public String createRefreshAuthToken(Long userId) {
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(jwtProperties.getRefreshExpirationDays(),
+            ChronoUnit.DAYS);
+
+        return Jwts.builder()
+            .subject(userId.toString())
+            .claim(PURPOSE_CLAIM, REFRESH_AUTH_PURPOSE)
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(expiresAt))
+            .signWith(signingKey())
+            .compact();
+    }
+
+    public Long parseRefreshAuthToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new JwtException("Refresh auth token is missing");
+        }
+
+        Claims claims = Jwts.parser()
+            .verifyWith(signingKey())
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
+
+        String purpose = claims.get(PURPOSE_CLAIM, String.class);
+
+        if (!REFRESH_AUTH_PURPOSE.equals(purpose)) {
+            throw new JwtException("Invalid refresh auth token purpose");
+        }
+
+        String subject = claims.getSubject();
+
+        if (subject == null || subject.isBlank()) {
+            throw new JwtException("Refresh auth token subject is missing");
+        }
+
+        try {
+            return Long.valueOf(subject);
+        } catch (NumberFormatException exception) {
+            throw new JwtException("Invalid refresh auth token subject", exception);
         }
     }
 }
