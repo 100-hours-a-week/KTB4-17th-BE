@@ -4,8 +4,10 @@ import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.onboarding.dto.request.NicknameAvailabilityRequest;
 import com.team.dating_backend.onboarding.dto.response.NicknameAvailabilityResponse;
 import com.team.dating_backend.onboarding.service.NicknameAvailabilityService;
+import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,9 +22,11 @@ public class NicknameAvailabilityController {
 
     @GetMapping("/availability")
     public SuccessResponse<NicknameAvailabilityResponse> checkNicknameAvailability(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @Valid @ModelAttribute NicknameAvailabilityRequest request) {
         return SuccessResponse.of(
             "nickname_availability_check_success",
-            nicknameAvailabilityService.checkNicknameAvailability(request.nickname()));
+            nicknameAvailabilityService.checkNicknameAvailability(
+                request.nickname(), principal.userId()));
     }
 }
