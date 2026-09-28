@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
@@ -35,6 +36,7 @@ class UserRegistrationServiceTest {
     private static final String PENDING_TOKEN = "pending-token";
     private static final String PROVIDER_USER_ID = "kakao-123";
     private static final String ACCESS_TOKEN = "access-token";
+    private static final String REFRESH_TOKEN = "refresh-token";
 
     @Mock
     private JwtService jwtService;
@@ -59,15 +61,19 @@ class UserRegistrationServiceTest {
         User savedUser = savedUser(10L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
         given(jwtService.createServiceAuthToken(10L)).willReturn(ACCESS_TOKEN);
+        given(jwtService.createRefreshAuthToken(10L)).willReturn(REFRESH_TOKEN);
 
         // when
-        String result = userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest());
+        IssuedAuthTokens result = userRegistrationService.registerUser(
+            PENDING_TOKEN, registrationRequest());
 
         // then
-        assertEquals(ACCESS_TOKEN, result);
+        assertEquals(ACCESS_TOKEN, result.accessToken());
+        assertEquals(REFRESH_TOKEN, result.refreshToken());
         verify(userRepository).save(any(User.class));
         verify(userAuthAccountRepository).save(any(UserAuthAccount.class));
         verify(jwtService).createServiceAuthToken(10L);
+        verify(jwtService).createRefreshAuthToken(10L);
     }
 
     @Test
@@ -82,15 +88,19 @@ class UserRegistrationServiceTest {
         User savedUser = savedUser(20L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
         given(jwtService.createServiceAuthToken(20L)).willReturn(ACCESS_TOKEN);
+        given(jwtService.createRefreshAuthToken(20L)).willReturn(REFRESH_TOKEN);
 
         // when
-        String result = userRegistrationService.registerUser(PENDING_TOKEN, registrationRequest());
+        IssuedAuthTokens result = userRegistrationService.registerUser(
+            PENDING_TOKEN, registrationRequest());
 
         // then
-        assertEquals(ACCESS_TOKEN, result);
+        assertEquals(ACCESS_TOKEN, result.accessToken());
+        assertEquals(REFRESH_TOKEN, result.refreshToken());
         verify(existingAccount).relink(eq(savedUser), any(LocalDateTime.class));
         verify(userAuthAccountRepository).save(existingAccount);
         verify(jwtService).createServiceAuthToken(20L);
+        verify(jwtService).createRefreshAuthToken(20L);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.team.dating_backend.user.controller;
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
+import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.service.UserRegistrationService;
@@ -33,8 +34,8 @@ public class UserRegistrationController {
         ) String pendingRegistrationToken,
         @Valid @RequestBody UserRegistrationRequest request) {
 
-        String serviceToken = userRegistrationService.registerUser(pendingRegistrationToken,
-            request);
+        IssuedAuthTokens tokens = userRegistrationService.registerUser(
+            pendingRegistrationToken, request);
 
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
@@ -43,7 +44,10 @@ public class UserRegistrationController {
                 authCookieFactory.deleteAccessToken().toString())
             .header(
                 HttpHeaders.SET_COOKIE,
+                authCookieFactory.refreshToken(tokens.refreshToken()).toString())
+            .header(
+                HttpHeaders.SET_COOKIE,
                 authCookieFactory.deletePendingRegistrationToken().toString())
-            .body(AuthTokenResponse.bearer(serviceToken));
+            .body(AuthTokenResponse.bearer(tokens.accessToken()));
     }
 }

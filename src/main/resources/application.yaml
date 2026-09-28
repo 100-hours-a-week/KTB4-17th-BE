@@ -24,6 +24,7 @@ jwt:
   secret: ${JWT_SECRET}
   pending-expiration-minutes: ${JWT_PENDING_EXPIRATION_MINUTES}
   service-expiration-minutes: ${JWT_SERVICE_EXPIRATION_MINUTES}
+  refresh-expiration-days: ${JWT_REFRESH_EXPIRATION_DAYS:30}
 
 kakao:
   oauth:

@@ -1,5 +1,6 @@
 package com.team.dating_backend.user.service;
 
+import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
@@ -23,7 +24,8 @@ public class UserRegistrationService {
     private final UserAuthAccountRepository userAuthAccountRepository;
 
     @Transactional
-    public String registerUser(String pendingRegistrationToken, UserRegistrationRequest request) {
+    public IssuedAuthTokens registerUser(
+        String pendingRegistrationToken, UserRegistrationRequest request) {
         PendingRegistrationTokenPayload payload = jwtService
             .parsePendingRegistrationToken(pendingRegistrationToken);
 
@@ -53,6 +55,8 @@ public class UserRegistrationService {
             userAuthAccountRepository.save(existingAccount);
         }
 
-        return jwtService.createServiceAuthToken(savedUser.getId());
+        return new IssuedAuthTokens(
+            jwtService.createServiceAuthToken(savedUser.getId()),
+            jwtService.createRefreshAuthToken(savedUser.getId()));
     }
 }
