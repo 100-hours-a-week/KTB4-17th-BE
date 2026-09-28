@@ -48,7 +48,8 @@ class AuthLoginResponseFactoryTest {
         authWebProperties.setSecureCookie(true);
 
         JwtProperties jwtProperties = new JwtProperties();
-        jwtProperties.setServiceExpirationMinutes(60);
+        jwtProperties.setServiceExpirationMinutes(15);
+        jwtProperties.setRefreshExpirationDays(30);
         jwtProperties.setPendingExpirationMinutes(10);
 
         AuthCookieFactory authCookieFactory = new AuthCookieFactory(authWebProperties,
@@ -62,7 +63,9 @@ class AuthLoginResponseFactoryTest {
         // given
         HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
         given(jwtService.createServiceAuthToken(1L)).willReturn("service-token");
-        given(oauthLoginCodeService.issue("service-token", session)).willReturn("one-time-code");
+        given(jwtService.createRefreshAuthToken(1L)).willReturn("refresh-token");
+        given(oauthLoginCodeService.issue("service-token", "refresh-token", session))
+            .willReturn("one-time-code");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
             LoginDestination.SERVICE);
 
@@ -80,10 +83,13 @@ class AuthLoginResponseFactoryTest {
         List<String> setCookieHeaders = response.getHeaders().get(HttpHeaders.SET_COOKIE);
         assertTrue(setCookieHeaders.getFirst().contains("ACCESS_TOKEN="));
         assertTrue(setCookieHeaders.getFirst().contains("Max-Age=0"));
-        assertTrue(setCookieHeaders.get(1).contains("PENDING_REGISTRATION_TOKEN="));
+        assertTrue(setCookieHeaders.get(1).contains("REFRESH_TOKEN="));
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
-        org.mockito.Mockito.verify(oauthLoginCodeService).issue("service-token", session);
+        assertTrue(setCookieHeaders.get(2).contains("PENDING_REGISTRATION_TOKEN="));
+        assertTrue(setCookieHeaders.get(2).contains("Max-Age=0"));
+        verify(oauthLoginCodeService).issue("service-token", "refresh-token", session);
         verify(jwtService).createServiceAuthToken(1L);
+        verify(jwtService).createRefreshAuthToken(1L);
         verifyNoMoreInteractions(jwtService);
     }
 
@@ -109,20 +115,24 @@ class AuthLoginResponseFactoryTest {
         assertTrue(setCookieHeaders.getFirst().contains("Max-Age=600"));
         assertTrue(setCookieHeaders.get(1).contains("ACCESS_TOKEN="));
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
+        assertTrue(setCookieHeaders.get(2).contains("REFRESH_TOKEN="));
+        assertTrue(setCookieHeaders.get(2).contains("Max-Age=0"));
         verify(jwtService).createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
         verifyNoMoreInteractions(jwtService);
     }
 
     @Test
-    void ONBOARDING_회원은_ACCESS_TOKEN으로_온보딩_목적지에_진입한다() {
+    void ONBOARDING_회원은_일회용_로그인_코드로_온보딩_목적지에_진입한다() {
         // given
         given(jwtService.createServiceAuthToken(2L)).willReturn("service-token");
+        given(jwtService.createRefreshAuthToken(2L)).willReturn("refresh-token");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(2L,
             LoginDestination.ONBOARDING);
 
         // when
         HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
-        given(oauthLoginCodeService.issue("service-token", session)).willReturn("onboarding-code");
+        given(oauthLoginCodeService.issue("service-token", "refresh-token", session))
+            .willReturn("onboarding-code");
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult, session);
 
         // then
@@ -132,8 +142,9 @@ class AuthLoginResponseFactoryTest {
             response.getHeaders().getLocation().toString());
         assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).getFirst()
             .contains("ACCESS_TOKEN="));
-        verify(oauthLoginCodeService).issue("service-token", session);
+        verify(oauthLoginCodeService).issue("service-token", "refresh-token", session);
         verify(jwtService).createServiceAuthToken(2L);
+        verify(jwtService).createRefreshAuthToken(2L);
         verifyNoMoreInteractions(jwtService);
     }
 }

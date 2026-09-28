@@ -24,7 +24,8 @@ class JwtServiceTest {
         JwtProperties jwtProperties = new JwtProperties();
         jwtProperties.setSecret(TEST_SECRET);
         jwtProperties.setPendingExpirationMinutes(10);
-        jwtProperties.setServiceExpirationMinutes(60);
+        jwtProperties.setServiceExpirationMinutes(15);
+        jwtProperties.setRefreshExpirationDays(30);
 
         jwtService = new JwtService(jwtProperties);
     }
@@ -64,6 +65,7 @@ class JwtServiceTest {
         expiredProperties.setSecret(TEST_SECRET);
         expiredProperties.setPendingExpirationMinutes(10);
         expiredProperties.setServiceExpirationMinutes(-1);
+        expiredProperties.setRefreshExpirationDays(30);
 
         JwtService expiredJwtService = new JwtService(expiredProperties);
         String expiredToken = expiredJwtService.createServiceAuthToken(123L);
@@ -85,10 +87,34 @@ class JwtServiceTest {
                     "different-secret-0123456789012345"
                         .getBytes(StandardCharsets.UTF_8)));
         differentProperties.setServiceExpirationMinutes(60);
+        differentProperties.setRefreshExpirationDays(30);
 
         JwtService differentJwtService = new JwtService(differentProperties);
 
         // when & then
         assertThrows(JwtException.class, () -> differentJwtService.parseServiceAuthToken(token));
+    }
+
+    @Test
+    void Refresh_토큰에서_userId를_추출하고_Service_토큰과_구분한다() {
+        String refreshToken = jwtService.createRefreshAuthToken(456L);
+
+        assertEquals(456L, jwtService.parseRefreshAuthToken(refreshToken));
+        assertThrows(
+            JwtException.class,
+            () -> jwtService.parseRefreshAuthToken(jwtService.createServiceAuthToken(456L)));
+    }
+
+    @Test
+    void 만료된_Refresh_토큰은_인증에_실패한다() {
+        JwtProperties expiredProperties = new JwtProperties();
+        expiredProperties.setSecret(TEST_SECRET);
+        expiredProperties.setRefreshExpirationDays(-1);
+
+        JwtService expiredJwtService = new JwtService(expiredProperties);
+        String expiredToken = expiredJwtService.createRefreshAuthToken(456L);
+
+        assertThrows(
+            JwtException.class, () -> expiredJwtService.parseRefreshAuthToken(expiredToken));
     }
 }
