@@ -1,18 +1,24 @@
 package com.team.dating_backend.chat.config;
 
+import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.security.BearerTokenResolver;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.config.SecurityProperties;
+import io.jsonwebtoken.JwtException;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -30,6 +36,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
         "/user/queue/ai-practice");
 
     private final SecurityProperties securityProperties;
+    private final JwtService jwtService;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
@@ -60,6 +67,10 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     return null;
                 }
 
+                if (command == StompCommand.CONNECT || command == StompCommand.STOMP) {
+                    authenticate(accessor);
+                }
+
                 if (command == StompCommand.CONNECT || command == StompCommand.STOMP
                     || command == StompCommand.SUBSCRIBE) {
                     if (!(accessor.getUser() instanceof Authentication authentication)
@@ -78,6 +89,26 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 }
 
                 return message;
+            }
+
+            private void authenticate(StompHeaderAccessor accessor) {
+                String bearerToken = BearerTokenResolver.resolve(
+                    accessor.getFirstNativeHeader(HttpHeaders.AUTHORIZATION));
+                accessor.removeNativeHeader(HttpHeaders.AUTHORIZATION);
+
+                if (bearerToken == null) {
+                    throw new MessageDeliveryException(
+                        "STOMP Authorization bearer token is required");
+                }
+
+                try {
+                    Long userId = jwtService.parseServiceAuthToken(bearerToken);
+                    accessor.setUser(UsernamePasswordAuthenticationToken.authenticated(
+                        new ServiceAuthenticationPrincipal(userId), null, Set.of()));
+                } catch (JwtException exception) {
+                    throw new MessageDeliveryException(
+                        "STOMP Authorization bearer token is invalid");
+                }
             }
         });
     }

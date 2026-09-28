@@ -17,13 +17,6 @@ public class AuthCookieFactory {
     private final AuthWebProperties authWebProperties;
     private final JwtProperties jwtProperties;
 
-    public ResponseCookie accessToken(String token) {
-        return create(
-            ACCESS_TOKEN_COOKIE,
-            token,
-            Duration.ofMinutes(jwtProperties.getServiceExpirationMinutes()));
-    }
-
     public ResponseCookie pendingRegistrationToken(String token) {
         return create(
             PENDING_REGISTRATION_TOKEN_COOKIE,

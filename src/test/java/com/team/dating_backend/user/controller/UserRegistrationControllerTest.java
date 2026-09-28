@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseCookie;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -47,12 +49,44 @@ class UserRegistrationControllerTest {
                 .content(
                     """
                         {
-                          "name": "우",
+                          "name": "이안",
                           "birthDate": "2000-01-01",
                           "gender": "MALE"
                         }
                         """))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+    }
+
+    @Test
+    void 회원가입_완료는_Bearer_토큰을_JSON으로_반환하고_기존_인증_쿠키를_삭제한다()
+        throws Exception {
+        given(
+            userRegistrationService.registerUser(
+                eq("pending-token"), any(UserRegistrationRequest.class)))
+            .willReturn("new-service-token");
+        given(authCookieFactory.deleteAccessToken())
+            .willReturn(ResponseCookie.from("ACCESS_TOKEN", "").maxAge(0).build());
+        given(authCookieFactory.deletePendingRegistrationToken())
+            .willReturn(ResponseCookie.from("PENDING_REGISTRATION_TOKEN", "")
+                .maxAge(0)
+                .build());
+
+        mockMvc.perform(
+            put("/api/v1/registration/identity")
+                .cookie(new Cookie("PENDING_REGISTRATION_TOKEN", "pending-token"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                        {
+                          "name": "이안",
+                          "birthDate": "2000-01-01",
+                          "gender": "MALE"
+                        }
+                        """))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.accessToken").value("new-service-token"))
+            .andExpect(jsonPath("$.tokenType").value("Bearer"));
     }
 }

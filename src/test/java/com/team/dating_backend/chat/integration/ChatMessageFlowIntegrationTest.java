@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.team.dating_backend.auth.config.JwtProperties;
-import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
 import com.team.dating_backend.chat.controller.ChatExceptionHandler;
@@ -36,11 +35,9 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -88,12 +85,10 @@ class ChatMessageFlowIntegrationTest {
     private static final Long CHAT_ROOM_ID = 83001L;
     private static final Long SENDER_USER_ID = 83011L;
     private static final Long RECEIVER_USER_ID = 83012L;
-    private static final String CSRF_TOKEN = "chat-integration-csrf-token";
     private static final String MESSAGE_DESTINATION = "/user/queue/chat-messages";
     private static final String READ_RECEIPT_DESTINATION = "/user/queue/chat-read-receipts";
     private static final String MESSAGE_TEXT = "실제 DB 통합 테스트 메시지";
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
-    private static final SecureRandom CSRF_RANDOM = new SecureRandom();
 
     @Container
     @ServiceConnection
@@ -305,14 +300,15 @@ class ChatMessageFlowIntegrationTest {
         String accessToken,
         BlockingQueue<ChatMessageCreatedEvent> receivedEvents) throws Exception {
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        headers.add(HttpHeaders.COOKIE,
-            AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + accessToken);
         headers.setOrigin("http://localhost:5173");
         headers.setSecWebSocketProtocol("v12.stomp");
+        StompHeaders connectHeaders = new StompHeaders();
+        connectHeaders.add(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
 
         StompSession session = stompClient.connectAsync(
             "ws://127.0.0.1:" + port + "/ws/chat",
             headers,
+            connectHeaders,
             new StompSessionHandlerAdapter() {})
             .get(5, TimeUnit.SECONDS);
         session.subscribe(MESSAGE_DESTINATION, new StompFrameHandler() {
@@ -352,8 +348,7 @@ class ChatMessageFlowIntegrationTest {
             + "\",\"textContent\":\"" + textContent + "\"}";
         HttpRequest request = HttpRequest.newBuilder(messageUri())
             .header(HttpHeaders.CONTENT_TYPE, "application/json")
-            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, true))
-            .header("X-XSRF-TOKEN", maskedCsrfToken())
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
             .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -366,8 +361,7 @@ class ChatMessageFlowIntegrationTest {
             + imageFileId + "}";
         HttpRequest request = HttpRequest.newBuilder(messageUri())
             .header(HttpHeaders.CONTENT_TYPE, "application/json")
-            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, true))
-            .header("X-XSRF-TOKEN", maskedCsrfToken())
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
             .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -376,7 +370,7 @@ class ChatMessageFlowIntegrationTest {
     private HttpResponse<String> getMessageHistory(String accessToken) throws Exception {
         URI uri = URI.create(messageUri() + "?size=20");
         HttpRequest request = HttpRequest.newBuilder(uri)
-            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, false))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .GET()
             .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -388,29 +382,10 @@ class ChatMessageFlowIntegrationTest {
         HttpRequest request = HttpRequest.newBuilder(URI.create(
             "http://127.0.0.1:" + port + "/api/v1/chat-rooms/" + CHAT_ROOM_ID + "/read"))
             .header(HttpHeaders.CONTENT_TYPE, "application/json")
-            .header(HttpHeaders.COOKIE, cookieHeader(accessToken, true))
-            .header("X-XSRF-TOKEN", maskedCsrfToken())
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
             .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    }
-
-    private String cookieHeader(String accessToken, boolean includeCsrf) {
-        String accessCookie = AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + accessToken;
-        return includeCsrf ? accessCookie + "; XSRF-TOKEN=" + CSRF_TOKEN : accessCookie;
-    }
-
-    private String maskedCsrfToken() {
-        byte[] tokenBytes = CSRF_TOKEN.getBytes(StandardCharsets.UTF_8);
-        byte[] randomBytes = new byte[tokenBytes.length];
-        CSRF_RANDOM.nextBytes(randomBytes);
-        byte[] maskedBytes = new byte[tokenBytes.length * 2];
-        System.arraycopy(randomBytes, 0, maskedBytes, 0, randomBytes.length);
-        for (int index = 0; index < tokenBytes.length; index++) {
-            maskedBytes[randomBytes.length
-                + index] = (byte) (randomBytes[index] ^ tokenBytes[index]);
-        }
-        return Base64.getUrlEncoder().encodeToString(maskedBytes);
     }
 
     private URI messageUri() {

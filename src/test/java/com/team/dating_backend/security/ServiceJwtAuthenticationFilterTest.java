@@ -8,7 +8,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.auth.config.JwtProperties;
-import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.service.JwtService;
 import jakarta.servlet.FilterChain;
@@ -16,6 +15,7 @@ import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
@@ -45,11 +45,11 @@ class ServiceJwtAuthenticationFilterTest {
     }
 
     @Test
-    void 유효한_ACCESS_TOKEN이면_SecurityContext에_인증정보를_저장한다() throws Exception {
+    void 유효한_Bearer_토큰이면_SecurityContext에_인증정보를_저장한다() throws Exception {
         // given
         String accessToken = jwtService.createServiceAuthToken(123L);
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setCookies(new Cookie(AuthCookieFactory.ACCESS_TOKEN_COOKIE, accessToken));
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 
@@ -68,7 +68,7 @@ class ServiceJwtAuthenticationFilterTest {
     }
 
     @Test
-    void ACCESS_TOKEN이_없으면_인증정보를_저장하지_않는다() throws Exception {
+    void Bearer_토큰이_없으면_인증정보를_저장하지_않는다() throws Exception {
         // given
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -83,10 +83,10 @@ class ServiceJwtAuthenticationFilterTest {
     }
 
     @Test
-    void 잘못된_ACCESS_TOKEN이면_인증정보를_저장하지_않는다() throws Exception {
+    void 쿠키에만_ACCESS_TOKEN이_있으면_인증정보를_저장하지_않는다() throws Exception {
         // given
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setCookies(new Cookie(AuthCookieFactory.ACCESS_TOKEN_COOKIE, "invalid-token"));
+        request.setCookies(new Cookie("ACCESS_TOKEN", jwtService.createServiceAuthToken(123L)));
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 
@@ -99,19 +99,32 @@ class ServiceJwtAuthenticationFilterTest {
     }
 
     @Test
-    void Pending_토큰은_ACCESS_TOKEN으로_인증되지_않는다() throws Exception {
+    void 잘못된_Bearer_토큰은_인증정보를_저장하지_않는다() throws Exception {
         // given
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer invalid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = mock(FilterChain.class);
+
+        // when
+        filter.doFilter(request, response, filterChain);
+
+        // then
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void Pending_토큰은_Bearer_ACCESS_TOKEN으로_인증되지_않는다() throws Exception {
         String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO,
             "kakao-123");
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setCookies(new Cookie(AuthCookieFactory.ACCESS_TOKEN_COOKIE, pendingToken));
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + pendingToken);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 
-        // when
         filter.doFilter(request, response, filterChain);
 
-        // then
         assertNull(SecurityContextHolder.getContext().getAuthentication());
         verify(filterChain).doFilter(request, response);
     }

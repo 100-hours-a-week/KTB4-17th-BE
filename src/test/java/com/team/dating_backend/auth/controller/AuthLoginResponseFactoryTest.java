@@ -12,6 +12,8 @@ import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.enums.LoginDestination;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.auth.service.OAuthLoginCodeService;
+import jakarta.servlet.http.HttpSession;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,9 @@ class AuthLoginResponseFactoryTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private OAuthLoginCodeService oauthLoginCodeService;
+
     private AuthLoginResponseFactory authLoginResponseFactory;
 
     @BeforeEach
@@ -48,32 +53,36 @@ class AuthLoginResponseFactoryTest {
 
         AuthCookieFactory authCookieFactory = new AuthCookieFactory(authWebProperties,
             jwtProperties);
-        authLoginResponseFactory = new AuthLoginResponseFactory(jwtService, authCookieFactory,
-            authWebProperties);
+        authLoginResponseFactory = new AuthLoginResponseFactory(
+            jwtService, oauthLoginCodeService, authCookieFactory, authWebProperties);
     }
 
     @Test
-    void ACTIVE_회원은_ACCESS_TOKEN과_서비스_목적지로_리다이렉트된다() {
+    void ACTIVE_회원은_일회용_로그인_코드와_서비스_목적지로_리다이렉트된다() {
         // given
+        HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
         given(jwtService.createServiceAuthToken(1L)).willReturn("service-token");
+        given(oauthLoginCodeService.issue("service-token", session)).willReturn("one-time-code");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
             LoginDestination.SERVICE);
 
         // when
-        ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
+        ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult, session);
 
         // then
         assertEquals(HttpStatus.FOUND, response.getStatusCode());
-        assertEquals(SERVICE_REDIRECT_URI, response.getHeaders().getLocation().toString());
+        assertEquals(
+            SERVICE_REDIRECT_URI + "#auth_code=one-time-code",
+            response.getHeaders().getLocation().toString());
         assertEquals("no-store", response.getHeaders().getCacheControl());
         assertEquals("no-referrer", response.getHeaders().getFirst("Referrer-Policy"));
 
         List<String> setCookieHeaders = response.getHeaders().get(HttpHeaders.SET_COOKIE);
-        assertTrue(setCookieHeaders.getFirst().contains("ACCESS_TOKEN=service-token"));
-        assertTrue(setCookieHeaders.getFirst().contains("HttpOnly"));
-        assertTrue(setCookieHeaders.getFirst().contains("Secure"));
+        assertTrue(setCookieHeaders.getFirst().contains("ACCESS_TOKEN="));
+        assertTrue(setCookieHeaders.getFirst().contains("Max-Age=0"));
         assertTrue(setCookieHeaders.get(1).contains("PENDING_REGISTRATION_TOKEN="));
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
+        org.mockito.Mockito.verify(oauthLoginCodeService).issue("service-token", session);
         verify(jwtService).createServiceAuthToken(1L);
         verifyNoMoreInteractions(jwtService);
     }
@@ -87,7 +96,8 @@ class AuthLoginResponseFactoryTest {
             AuthProvider.KAKAO, "kakao-123");
 
         // when
-        ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
+        ResponseEntity<Void> response = authLoginResponseFactory.create(
+            loginResult, org.mockito.Mockito.mock(HttpSession.class));
 
         // then
         assertEquals(HttpStatus.FOUND, response.getStatusCode());
@@ -111,16 +121,18 @@ class AuthLoginResponseFactoryTest {
             LoginDestination.ONBOARDING);
 
         // when
-        ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult);
+        HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
+        given(oauthLoginCodeService.issue("service-token", session)).willReturn("onboarding-code");
+        ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult, session);
 
         // then
         assertEquals(HttpStatus.FOUND, response.getStatusCode());
-        assertEquals(ONBOARDING_REDIRECT_URI, response.getHeaders().getLocation().toString());
-        assertTrue(
-            response.getHeaders()
-                .get(HttpHeaders.SET_COOKIE)
-                .getFirst()
-                .contains("ACCESS_TOKEN="));
+        assertEquals(
+            ONBOARDING_REDIRECT_URI + "#auth_code=onboarding-code",
+            response.getHeaders().getLocation().toString());
+        assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).getFirst()
+            .contains("ACCESS_TOKEN="));
+        verify(oauthLoginCodeService).issue("service-token", session);
         verify(jwtService).createServiceAuthToken(2L);
         verifyNoMoreInteractions(jwtService);
     }

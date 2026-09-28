@@ -102,7 +102,8 @@ class OAuthControllerTest {
         given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
         given(kakaoClient.requestIdentity("authorization-code")).willReturn(identity);
         given(socialLoginService.login(AuthProvider.KAKAO, "kakao-123")).willReturn(loginResult);
-        given(authLoginResponseFactory.create(loginResult)).willReturn(loginResponse);
+        given(authLoginResponseFactory.create(eq(loginResult), any(HttpSession.class)))
+            .willReturn(loginResponse);
 
         // when & then
         mockMvc.perform(
@@ -118,7 +119,7 @@ class OAuthControllerTest {
         verify(kakaoClient).requestIdentity("authorization-code");
         verify(socialLoginService).login(AuthProvider.KAKAO, "kakao-123");
         verify(authLoginResponseFactory).validateRedirectUris();
-        verify(authLoginResponseFactory).create(loginResult);
+        verify(authLoginResponseFactory).create(eq(loginResult), any(HttpSession.class));
     }
 
     @Test
