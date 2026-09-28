@@ -13,7 +13,6 @@ import java.util.concurrent.ExecutionException;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import com.team.dating_backend.auth.config.JwtProperties;
-import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
@@ -90,11 +89,9 @@ class ChatWebSocketHandshakeTest {
         String token = jwtService.createServiceAuthToken(42L);
 
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        headers.add(
-            HttpHeaders.COOKIE,
-            AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + token);
         headers.setOrigin("http://localhost:5173");
         headers.setSecWebSocketProtocol("v12.stomp");
+        StompHeaders connectHeaders = bearerConnectHeaders(token);
 
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         StompSession session = null;
@@ -103,6 +100,7 @@ class ChatWebSocketHandshakeTest {
             session = client.connectAsync(
                 "ws://127.0.0.1:" + port + "/ws/chat",
                 headers,
+                connectHeaders,
                 new StompSessionHandlerAdapter() {})
                 .get(5, TimeUnit.SECONDS);
 
@@ -131,11 +129,9 @@ class ChatWebSocketHandshakeTest {
         String token = jwtService.createServiceAuthToken(42L);
 
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        headers.add(
-            HttpHeaders.COOKIE,
-            AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + token);
         headers.setOrigin("http://localhost:5173");
         headers.setSecWebSocketProtocol("v12.stomp");
+        StompHeaders connectHeaders = bearerConnectHeaders(token);
 
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         client.setMessageConverter(new JacksonJsonMessageConverter());
@@ -156,6 +152,7 @@ class ChatWebSocketHandshakeTest {
             session = client.connectAsync(
                 "ws://127.0.0.1:" + port + "/ws/chat",
                 headers,
+                connectHeaders,
                 new StompSessionHandlerAdapter() {})
                 .get(5, TimeUnit.SECONDS);
             session.subscribe("/user/queue/chat-messages", new StompFrameHandler() {
@@ -186,31 +183,23 @@ class ChatWebSocketHandshakeTest {
     }
 
     @Test
-    void ACCESS_TOKEN이_없으면_handshake가_거부된다() throws Exception {
-        assertHandshakeRejected(null, "http://localhost:5173");
+    void STOMP_CONNECT에_Bearer_토큰이_없으면_인증이_거부된다() throws Exception {
+        assertStompConnectRejected(null, "http://localhost:5173");
     }
 
     @Test
-    void 유효하지_않은_ACCESS_TOKEN이면_handshake가_거부된다() throws Exception {
-        assertHandshakeRejected("invalid-token", "http://localhost:5173");
+    void STOMP_CONNECT에_유효하지_않은_Bearer_토큰이_있으면_인증이_거부된다()
+        throws Exception {
+        assertStompConnectRejected("invalid-token", "http://localhost:5173");
     }
 
     @Test
     void 허용되지_않은_Origin이면_handshake가_거부된다() throws Exception {
-        String token = jwtService.createServiceAuthToken(42L);
-
-        assertHandshakeRejected(token, "https://attacker.example");
+        assertHandshakeRejected("https://attacker.example");
     }
 
-    private void assertHandshakeRejected(String token, String origin) throws Exception {
+    private void assertHandshakeRejected(String origin) throws Exception {
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-
-        if (token != null) {
-            headers.add(
-                HttpHeaders.COOKIE,
-                AuthCookieFactory.ACCESS_TOKEN_COOKIE + "=" + token);
-        }
-
         headers.setOrigin(origin);
         headers.setSecWebSocketProtocol("v12.stomp");
 
@@ -221,6 +210,34 @@ class ChatWebSocketHandshakeTest {
             headers,
             URI.create("ws://127.0.0.1:" + port + "/ws/chat"))
             .get(5, TimeUnit.SECONDS));
+    }
+
+    private void assertStompConnectRejected(String token, String origin) throws Exception {
+        WebSocketHttpHeaders handshakeHeaders = new WebSocketHttpHeaders();
+        handshakeHeaders.setOrigin(origin);
+        handshakeHeaders.setSecWebSocketProtocol("v12.stomp");
+        StompHeaders connectHeaders = new StompHeaders();
+        if (token != null) {
+            connectHeaders.add(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        }
+
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        try {
+            assertThrows(ExecutionException.class, () -> client.connectAsync(
+                "ws://127.0.0.1:" + port + "/ws/chat",
+                handshakeHeaders,
+                connectHeaders,
+                new StompSessionHandlerAdapter() {})
+                .get(5, TimeUnit.SECONDS));
+        } finally {
+            client.stop();
+        }
+    }
+
+    private StompHeaders bearerConnectHeaders(String token) {
+        StompHeaders headers = new StompHeaders();
+        headers.add(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        return headers;
     }
 
     private boolean awaitUserSubscription(String userName, String destination)

@@ -29,7 +29,7 @@ class OAuthStateServiceTest {
     }
 
     @Test
-    void 일치하지_않는_state가_들어오면_저장된_state도_소비된다() {
+    void 일치하지_않는_state는_다른_로그인_시도의_state를_소비하지_않는다() {
         // given
         MockHttpSession session = new MockHttpSession();
         String state = oauthStateService.createState(AuthProvider.KAKAO, session);
@@ -39,8 +39,7 @@ class OAuthStateServiceTest {
             OAuthInvalidRequestException.class,
             () -> oauthStateService.validateAndConsumeState(
                 AuthProvider.KAKAO, "wrong-state", session));
-        assertThrows(
-            OAuthInvalidRequestException.class,
+        assertDoesNotThrow(
             () -> oauthStateService.validateAndConsumeState(
                 AuthProvider.KAKAO, state, session));
     }

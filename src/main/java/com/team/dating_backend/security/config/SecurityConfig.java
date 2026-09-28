@@ -8,7 +8,6 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -16,7 +15,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -36,14 +34,7 @@ public class SecurityConfig {
         ServiceJwtAuthenticationFilter jwtAuthenticationFilter = new ServiceJwtAuthenticationFilter(
             jwtService);
 
-        http.csrf(csrf -> csrf
-            .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-            // Registration authenticates with its short-lived pending token before service
-            // auth
-            // is issued, so it must not depend on the service API's CSRF handshake.
-            .ignoringRequestMatchers(
-                "/api/v1/registration/identity",
-                "/internal/v1/ai-practice/events"))
+        http.csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
             .sessionManagement(
                 session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -55,6 +46,7 @@ public class SecurityConfig {
                         "/api/v1/auth/**",
                         "/api/v1/registration/**",
                         "/internal/v1/ai-practice/events",
+                        "/ws/chat",
                         "/actuator/health",
                         "/error")
                     .permitAll()
@@ -78,7 +70,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(
             List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(
-            List.of(HttpHeaders.ACCEPT, HttpHeaders.CONTENT_TYPE, "X-XSRF-TOKEN"));
+            List.of("Accept", "Content-Type", "Authorization"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
