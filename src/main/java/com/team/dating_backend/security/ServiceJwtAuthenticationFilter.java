@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -19,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @RequiredArgsConstructor
+@Slf4j
 public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -31,13 +33,13 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
         String accessToken = resolveAccessToken(request);
 
         if (accessToken != null) {
-            authenticate(accessToken);
+            authenticate(accessToken, request);
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private void authenticate(String accessToken) {
+    private void authenticate(String accessToken, HttpServletRequest request) {
         try {
             Long userId = jwtService.parseServiceAuthToken(accessToken);
 
@@ -50,8 +52,12 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
             SecurityContextHolder.setContext(context);
+            log.info("Service JWT authentication succeeded. method={}, path={}, userId={}",
+                request.getMethod(), request.getRequestURI(), userId);
         } catch (JwtException exception) {
             SecurityContextHolder.clearContext();
+            log.warn("Service JWT authentication failed. method={}, path={}, reason={}",
+                request.getMethod(), request.getRequestURI(), exception.getClass().getSimpleName());
         }
     }
 
