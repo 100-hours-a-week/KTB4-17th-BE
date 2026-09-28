@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class NicknameAvailabilityServiceTest {
 
+    private static final Long USER_ID = 1L;
     private static final String NICKNAME = "하리";
 
     private ProfileRepository profileRepository;
@@ -24,24 +25,41 @@ class NicknameAvailabilityServiceTest {
     }
 
     @Test
-    void 활성_프로필에_동일한_닉네임이_없으면_사용_가능하다() {
-        given(profileRepository.existsByNicknameAndDeletedAtIsNull(NICKNAME)).willReturn(false);
+    void 사용하지_않는_닉네임이면_사용_가능하다() {
+        given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
+            .willReturn(false);
 
         NicknameAvailabilityResponse response = nicknameAvailabilityService
-            .checkNicknameAvailability(NICKNAME);
+            .checkNicknameAvailability(NICKNAME, USER_ID);
 
         assertThat(response.available()).isTrue();
-        verify(profileRepository).existsByNicknameAndDeletedAtIsNull(NICKNAME);
+        verify(profileRepository)
+            .existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID);
     }
 
     @Test
-    void 활성_프로필에_동일한_닉네임이_있으면_사용_불가능하다() {
-        given(profileRepository.existsByNicknameAndDeletedAtIsNull(NICKNAME)).willReturn(true);
+    void 사용자의_기존_닉네임은_중복으로_판단하지_않는다() {
+        given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
+            .willReturn(false);
 
         NicknameAvailabilityResponse response = nicknameAvailabilityService
-            .checkNicknameAvailability(NICKNAME);
+            .checkNicknameAvailability(NICKNAME, USER_ID);
+
+        assertThat(response.available()).isTrue();
+        verify(profileRepository)
+            .existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID);
+    }
+
+    @Test
+    void 다른_사용자가_동일한_닉네임을_사용하면_사용_불가하다() {
+        given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
+            .willReturn(true);
+
+        NicknameAvailabilityResponse response = nicknameAvailabilityService
+            .checkNicknameAvailability(NICKNAME, USER_ID);
 
         assertThat(response.available()).isFalse();
-        verify(profileRepository).existsByNicknameAndDeletedAtIsNull(NICKNAME);
+        verify(profileRepository)
+            .existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID);
     }
 }

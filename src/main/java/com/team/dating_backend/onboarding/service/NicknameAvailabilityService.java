@@ -13,8 +13,9 @@ public class NicknameAvailabilityService {
     private final ProfileRepository profileRepository;
 
     @Transactional(readOnly = true)
-    public NicknameAvailabilityResponse checkNicknameAvailability(String nickname) {
-        boolean exists = profileRepository.existsByNicknameAndDeletedAtIsNull(nickname);
+    public NicknameAvailabilityResponse checkNicknameAvailability(String nickname, Long userId) {
+        boolean exists = profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(
+            nickname, userId);
         return new NicknameAvailabilityResponse(!exists);
     }
 }
