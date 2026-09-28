@@ -4,6 +4,13 @@
         "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <module name="Checker">
+    <!-- Java indentation must use spaces, not literal tab characters. -->
+    <module name="FileTabCharacter"/>
+
+    <module name="SuppressionFilter">
+        <property name="file" value="${config_loc}/suppressions.xml"/>
+    </module>
+
     <module name="TreeWalker">
 
         <!-- wildcard import 금지 -->

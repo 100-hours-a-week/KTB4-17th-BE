@@ -1,0 +1,91 @@
+package com.team.dating_backend.onboarding.service;
+
+import com.team.dating_backend.onboarding.dto.response.OnboardingProfileResponse;
+import com.team.dating_backend.onboarding.dto.response.OnboardingRequirementsResponse;
+import com.team.dating_backend.onboarding.dto.response.OnboardingStatusResponse;
+import com.team.dating_backend.onboarding.enums.OnboardingStep;
+import com.team.dating_backend.onboarding.exception.OnboardingAccessNotAllowedException;
+import com.team.dating_backend.onboarding.exception.UserNotFoundException;
+import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.repository.ProfileImageRepository;
+import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class OnboardingService {
+
+    private final UserRepository userRepository;
+    private final ProfileRepository profileRepository;
+    private final ProfileImageRepository profileImageRepository;
+    private final OnboardingRequirementsCalculator requirementsCalculator;
+
+    @Transactional(readOnly = true)
+    public OnboardingStatusResponse getOnboardingStatus(Long userId) {
+        User user = findUser(userId);
+        validateOnboardingAccess(userId, user);
+
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            return new OnboardingStatusResponse(
+                user.getStatus(),
+                OnboardingStep.COMPLETE,
+                OnboardingRequirementsResponse.complete());
+        }
+
+        OnboardingRequirementsResponse requirements = profileRepository
+            .findByUserIdAndDeletedAtIsNull(userId)
+            .map(profile -> calculateRequirements(user, profile))
+            .orElseGet(OnboardingRequirementsResponse::incomplete);
+
+        return new OnboardingStatusResponse(
+            user.getStatus(), determineNextStep(requirements), requirements);
+    }
+
+    @Transactional(readOnly = true)
+    public OnboardingProfileResponse getOnboardingProfile(Long userId) {
+        User user = findUser(userId);
+        validateOnboardingAccess(userId, user);
+        return new OnboardingProfileResponse(user.getId(), user.getBirthDate(), user.getGender());
+    }
+
+    private User findUser(Long userId) {
+        return userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
+    }
+
+    private void validateOnboardingAccess(Long userId, User user) {
+        if (user.getStatus() != UserStatus.ONBOARDING && user.getStatus() != UserStatus.ACTIVE) {
+            throw new OnboardingAccessNotAllowedException(userId, user.getStatus());
+        }
+    }
+
+    private OnboardingRequirementsResponse calculateRequirements(User user, Profile profile) {
+        boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
+            profile.getId());
+        return requirementsCalculator.calculate(
+            profile, user.isPersonaOnboardingComplete(), profileImageComplete);
+    }
+
+    private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {
+        if (!requirements.regionComplete()) {
+            return OnboardingStep.REGION;
+        }
+        if (!requirements.nicknameComplete() || !requirements.basicInfoComplete()) {
+            return OnboardingStep.PROFILE;
+        }
+        if (!requirements.lifestyleComplete() || !requirements.mbtiComplete()) {
+            return OnboardingStep.LIFESTYLE;
+        }
+        if (!requirements.personaComplete()) {
+            return OnboardingStep.PERSONA;
+        }
+        if (!requirements.profileImageComplete()) {
+            return OnboardingStep.PROFILE_IMAGE;
+        }
+        return OnboardingStep.COMPLETE;
+    }
+}

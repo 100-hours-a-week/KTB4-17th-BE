@@ -19,15 +19,15 @@ public class SocialLoginService {
     @Transactional(readOnly = true)
     public SocialLoginResult login(AuthProvider provider, String providerUserId) {
         return userAuthAccountRepository
-                .findByProviderAndProviderUserId(provider, providerUserId)
-                .<SocialLoginResult>map(
-                        account -> resolveExistingUser(account.getUser(), provider, providerUserId))
-                .orElseGet(
-                        () -> new SocialLoginResult.PendingRegistration(provider, providerUserId));
+            .findByProviderAndProviderUserId(provider, providerUserId)
+            .<SocialLoginResult>map(
+                account -> resolveExistingUser(account.getUser(), provider, providerUserId))
+            .orElseGet(
+                () -> new SocialLoginResult.PendingRegistration(provider, providerUserId));
     }
 
     private SocialLoginResult resolveExistingUser(
-            User user, AuthProvider provider, String providerUserId) {
+        User user, AuthProvider provider, String providerUserId) {
         if (user.getStatus() == UserStatus.ACTIVE) {
             return new SocialLoginResult.Authenticated(user.getId(), LoginDestination.SERVICE);
         }

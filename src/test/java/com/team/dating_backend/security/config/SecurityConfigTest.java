@@ -1,4 +1,4 @@
-package com.team.dating_backend.security;
+package com.team.dating_backend.security.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,7 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.security.config.SecurityProperties;
+import com.team.dating_backend.security.ApiAccessDeniedHandler;
+import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
 import java.util.Map;
@@ -29,19 +31,24 @@ import org.springframework.web.cors.CorsConfiguration;
 import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = SecurityConfigTest.SecurityProbeController.class)
-@Import({
-    SecurityConfig.class,
-    ApiAuthenticationEntryPoint.class,
-    ApiAccessDeniedHandler.class,
-    SecurityConfigTest.SecurityProbeController.class
-})
+@Import(
+    {
+        SecurityConfig.class,
+        ApiAuthenticationEntryPoint.class,
+        ApiAccessDeniedHandler.class,
+        SecurityConfigTest.SecurityProbeController.class
+    }
+)
 class SecurityConfigTest {
 
-    @Autowired private MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean private JwtService jwtService;
+    @MockitoBean
+    private JwtService jwtService;
 
-    @MockitoBean private SecurityProperties securityProperties;
+    @MockitoBean
+    private SecurityProperties securityProperties;
 
     @BeforeEach
     void setUp() {
@@ -51,8 +58,8 @@ class SecurityConfigTest {
     @Test
     void 보호_API에_인증정보가_없으면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/api/v1/security/protected"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 
     @Test
@@ -67,32 +74,43 @@ class SecurityConfigTest {
 
         // when & then
         mockMvc.perform(
-                        get("/api/v1/security/protected")
-                                .cookie(
-                                        new Cookie(
-                                                AuthCookieFactory.ACCESS_TOKEN_COOKIE,
-                                                "service-token")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userId").value(42));
+            get("/api/v1/security/protected")
+                .cookie(
+                    new Cookie(
+                        AuthCookieFactory.ACCESS_TOKEN_COOKIE,
+                        "service-token")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.userId").value(42));
     }
 
     @Test
     void CORS_설정은_허용된_Origin을_등록한다() {
-        SecurityConfig securityConfig =
-                new SecurityConfig(
-                        jwtService,
-                        new ApiAuthenticationEntryPoint(new ObjectMapper()),
-                        new ApiAccessDeniedHandler(new ObjectMapper()),
-                        securityProperties);
+        SecurityConfig securityConfig = new SecurityConfig(
+            jwtService,
+            new ApiAuthenticationEntryPoint(new ObjectMapper()),
+            new ApiAccessDeniedHandler(new ObjectMapper()),
+            securityProperties);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/v1/security/protected");
 
-        CorsConfiguration configuration =
-                securityConfig.corsConfigurationSource().getCorsConfiguration(request);
+        CorsConfiguration configuration = securityConfig.corsConfigurationSource()
+            .getCorsConfiguration(request);
 
         assertEquals(List.of("http://localhost:5173"), configuration.getAllowedOrigins());
         assertTrue(configuration.getAllowedMethods().contains("OPTIONS"));
         assertTrue(configuration.getAllowCredentials());
+    }
+
+    @Test
+    void WebSocket_handshake에_ACCESS_TOKEN이_없으면_401을_반환한다() throws Exception {
+        mockMvc.perform(
+            get("/ws/chat")
+                .header("Connection", "Upgrade")
+                .header("Upgrade", "websocket")
+                .header("Sec-WebSocket-Version", "13")
+                .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 
     @RestController
@@ -100,7 +118,7 @@ class SecurityConfigTest {
 
         @GetMapping("/api/v1/security/protected")
         Map<String, Long> protectedEndpoint(
-                @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+            @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
             return Map.of("userId", principal.userId());
         }
 

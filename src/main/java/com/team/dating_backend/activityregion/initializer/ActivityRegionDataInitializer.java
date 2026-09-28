@@ -26,9 +26,8 @@ public class ActivityRegionDataInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ActivityRegionDataInitializer.class);
     private static final String CSV_PATH = "data/activity-regions-2025.csv";
-    private static final String HEADER =
-            "region_code,province_name,region_name,"
-                    + "representative_latitude,representative_longitude";
+    private static final String HEADER = "region_code,province_name,region_name,"
+        + "representative_latitude,representative_longitude";
 
     private final ActivityRegionRepository activityRegionRepository;
 
@@ -51,9 +50,8 @@ public class ActivityRegionDataInitializer implements ApplicationRunner {
     private List<ActivityRegion> readRegions() throws IOException {
         ClassPathResource resource = new ClassPathResource(CSV_PATH);
 
-        try (BufferedReader reader =
-                new BufferedReader(
-                        new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(
+            new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             if (!HEADER.equals(reader.readLine())) {
                 throw new IllegalStateException("Invalid activity region CSV header");
             }
@@ -97,9 +95,9 @@ public class ActivityRegionDataInitializer implements ApplicationRunner {
             throw new IllegalStateException("Invalid activity region CSV value");
         }
         if (latitude.compareTo(BigDecimal.valueOf(-90)) < 0
-                || latitude.compareTo(BigDecimal.valueOf(90)) > 0
-                || longitude.compareTo(BigDecimal.valueOf(-180)) < 0
-                || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
+            || latitude.compareTo(BigDecimal.valueOf(90)) > 0
+            || longitude.compareTo(BigDecimal.valueOf(-180)) < 0
+            || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
             throw new IllegalStateException("Invalid activity region coordinate");
         }
 

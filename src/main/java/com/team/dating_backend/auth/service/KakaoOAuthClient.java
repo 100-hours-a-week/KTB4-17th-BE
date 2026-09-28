@@ -31,13 +31,13 @@ public class KakaoOAuthClient implements OAuthProviderClient {
     @Override
     public String createAuthorizationUrl(String state) {
         return UriComponentsBuilder.fromUriString(kakaoOAuthProperties.getAuthorizationUri())
-                .queryParam("response_type", "code")
-                .queryParam("client_id", kakaoOAuthProperties.getClientId())
-                .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
-                .queryParam("state", state)
-                .build()
-                .encode()
-                .toUriString();
+            .queryParam("response_type", "code")
+            .queryParam("client_id", kakaoOAuthProperties.getClientId())
+            .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
+            .queryParam("state", state)
+            .build()
+            .encode()
+            .toUriString();
     }
 
     @Override
@@ -70,22 +70,22 @@ public class KakaoOAuthClient implements OAuthProviderClient {
         form.add("client_secret", kakaoOAuthProperties.getClientSecret());
 
         return restClientBuilder
-                .build()
-                .post()
-                .uri(kakaoOAuthProperties.getTokenUri())
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(form)
-                .retrieve()
-                .body(KakaoTokenResponse.class);
+            .build()
+            .post()
+            .uri(kakaoOAuthProperties.getTokenUri())
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body(form)
+            .retrieve()
+            .body(KakaoTokenResponse.class);
     }
 
     private KakaoUserInfoResponse requestUserInfo(String accessToken) {
         return restClientBuilder
-                .build()
-                .get()
-                .uri(kakaoOAuthProperties.getUserInfoUri())
-                .header("Authorization", "Bearer " + accessToken)
-                .retrieve()
-                .body(KakaoUserInfoResponse.class);
+            .build()
+            .get()
+            .uri(kakaoOAuthProperties.getUserInfoUri())
+            .header("Authorization", "Bearer " + accessToken)
+            .retrieve()
+            .body(KakaoUserInfoResponse.class);
     }
 }

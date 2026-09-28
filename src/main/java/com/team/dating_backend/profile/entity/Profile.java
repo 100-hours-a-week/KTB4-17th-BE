@@ -31,13 +31,12 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Getter
 @Entity
 @Table(
-        name = "profiles",
-        uniqueConstraints = {
-            @UniqueConstraint(name = "uk_profiles_user_id", columnNames = "user_id"),
-            @UniqueConstraint(
-                    name = "uk_profiles_nickname_deleted_at",
-                    columnNames = {"nickname", "deleted_at"})
-        })
+    name = "profiles",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_profiles_user_id",
+        columnNames = "user_id"
+    )
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Profile {
 
@@ -90,7 +89,10 @@ public class Profile {
     private LocalDateTime deletedAt;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(
+        name = "user_id",
+        nullable = false
+    )
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -102,16 +104,16 @@ public class Profile {
     }
 
     public void updateProfile(
-            ActivityRegion activityRegion,
-            String nickname,
-            Short height,
-            BodyType bodyType,
-            EducationLevel educationLevel,
-            String job,
-            Religion religion,
-            Mbti mbti,
-            Drinking drinking,
-            Smoking smoking) {
+        ActivityRegion activityRegion,
+        String nickname,
+        Short height,
+        BodyType bodyType,
+        EducationLevel educationLevel,
+        String job,
+        Religion religion,
+        Mbti mbti,
+        Drinking drinking,
+        Smoking smoking) {
         this.activityRegion = activityRegion;
         this.nickname = nickname;
         this.height = height;

@@ -4,6 +4,7 @@ import com.team.dating_backend.auth.dto.OAuthIdentity;
 import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.exception.OAuthInvalidRequestException;
+import com.team.dating_backend.auth.exception.OAuthProviderUnavailableException;
 import com.team.dating_backend.auth.service.OAuthProviderClient;
 import com.team.dating_backend.auth.service.OAuthProviderClientRegistry;
 import com.team.dating_backend.auth.service.OAuthStateService;
@@ -34,34 +35,59 @@ public class OAuthController {
 
     @GetMapping("/{provider}")
     public ResponseEntity<Void> startLogin(
-            @PathVariable("provider") String providerValue, HttpSession session) {
+        @PathVariable("provider") String providerValue, HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
         authLoginResponseFactory.validateRedirectUris();
         OAuthProviderClient providerClient = oauthProviderClientRegistry.get(provider);
         String state = oauthStateService.createState(provider, session);
 
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(providerClient.createAuthorizationUrl(state)))
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("Referrer-Policy", "no-referrer")
-                .build();
+            .location(URI.create(providerClient.createAuthorizationUrl(state)))
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .header("Referrer-Policy", "no-referrer")
+            .build();
     }
 
     @GetMapping("/{provider}/callback")
     public ResponseEntity<Void> handleCallback(
-            @PathVariable("provider") String providerValue,
-            @RequestParam(value = "code", required = false) String code,
-            @RequestParam(value = "state", required = false) String state,
-            HttpSession session) {
+        @PathVariable("provider") String providerValue,
+        @RequestParam(
+            value = "code",
+            required = false
+        ) String code,
+        @RequestParam(
+            value = "error",
+            required = false
+        ) String error,
+        @RequestParam(
+            value = "state",
+            required = false
+        ) String state,
+        HttpSession session) {
         AuthProvider provider = parseProvider(providerValue);
+
+        if (StringUtils.hasText(error)) {
+            if (!StringUtils.hasText(state)) {
+                throw new OAuthInvalidRequestException("OAuth callback state is missing");
+            }
+
+            oauthStateService.validateAndConsumeState(provider, state, session);
+
+            if ("access_denied".equals(error)) {
+                return authLoginResponseFactory.redirectToLoginPage();
+            }
+
+            throw new OAuthProviderUnavailableException();
+        }
+
         validateCallbackParameters(code, state);
         authLoginResponseFactory.validateRedirectUris();
         OAuthProviderClient providerClient = oauthProviderClientRegistry.get(provider);
         oauthStateService.validateAndConsumeState(provider, state, session);
 
         OAuthIdentity identity = providerClient.requestIdentity(code);
-        SocialLoginResult loginResult =
-                socialLoginService.login(identity.provider(), identity.providerUserId());
+        SocialLoginResult loginResult = socialLoginService.login(identity.provider(),
+            identity.providerUserId());
 
         return authLoginResponseFactory.create(loginResult);
     }

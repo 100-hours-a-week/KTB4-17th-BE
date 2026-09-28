@@ -1,7 +1,9 @@
-package com.team.dating_backend.security;
+package com.team.dating_backend.security.config;
 
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.security.config.SecurityProperties;
+import com.team.dating_backend.security.ApiAccessDeniedHandler;
+import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.ServiceJwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -31,33 +33,39 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        ServiceJwtAuthenticationFilter jwtAuthenticationFilter =
-                new ServiceJwtAuthenticationFilter(jwtService);
+        ServiceJwtAuthenticationFilter jwtAuthenticationFilter = new ServiceJwtAuthenticationFilter(
+            jwtService);
 
-        http.csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
-                .cors(Customizer.withDefaults())
-                .sessionManagement(
-                        session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .formLogin(AbstractHttpConfigurer::disable)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(
-                        authorize ->
-                                authorize
-                                        .requestMatchers(
-                                                "/api/v1/auth/**",
-                                                "/api/v1/registration/**",
-                                                "/actuator/health",
-                                                "/error")
-                                        .permitAll()
-                                        .anyRequest()
-                                        .authenticated())
-                .exceptionHandling(
-                        exception ->
-                                exception
-                                        .authenticationEntryPoint(authenticationEntryPoint)
-                                        .accessDeniedHandler(accessDeniedHandler))
-                .addFilterBefore(
-                        jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.csrf(csrf -> csrf
+            .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+            // Registration authenticates with its short-lived pending token before service
+            // auth
+            // is issued, so it must not depend on the service API's CSRF handshake.
+            .ignoringRequestMatchers(
+                "/api/v1/registration/identity",
+                "/internal/v1/ai-practice/events"))
+            .cors(Customizer.withDefaults())
+            .sessionManagement(
+                session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(
+                authorize -> authorize
+                    .requestMatchers(
+                        "/api/v1/auth/**",
+                        "/api/v1/registration/**",
+                        "/internal/v1/ai-practice/events",
+                        "/actuator/health",
+                        "/error")
+                    .permitAll()
+                    .anyRequest()
+                    .authenticated())
+            .exceptionHandling(
+                exception -> exception
+                    .authenticationEntryPoint(authenticationEntryPoint)
+                    .accessDeniedHandler(accessDeniedHandler))
+            .addFilterBefore(
+                jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -68,9 +76,9 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(securityProperties.getAllowedOrigins());
         configuration.setAllowedMethods(
-                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+            List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(
-                List.of(HttpHeaders.ACCEPT, HttpHeaders.CONTENT_TYPE, "X-XSRF-TOKEN"));
+            List.of(HttpHeaders.ACCEPT, HttpHeaders.CONTENT_TYPE, "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

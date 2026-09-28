@@ -20,37 +20,47 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
-        return error(exception.getErrorCode());
+        ErrorCode errorCode = exception.getErrorCode();
+
+        if (errorCode.status().is5xxServerError()) {
+            log.error("Business exception. errorCode={}", errorCode.name(), exception);
+        }
+
+        return error(errorCode);
     }
 
     @ExceptionHandler(RequestValidationException.class)
     public ResponseEntity<ErrorResponse> handleRequestValidation(
-            RequestValidationException exception) {
-        return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.status())
-                .body(ErrorResponse.invalidRequest(exception.getErrors()));
+        RequestValidationException exception) {
+        if (!exception.hasErrors()) {
+            return error(exception.getErrorCode());
+        }
+
+        return ResponseEntity.status(exception.getErrorCode().status())
+            .body(ErrorResponse.invalidRequest(exception.getErrors()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException exception) {
-        List<FieldErrorResponse> errors =
-                exception.getBindingResult().getFieldErrors().stream()
-                        .map(
-                                fieldError ->
-                                        new FieldErrorResponse(
-                                                fieldError.getField(),
-                                                fieldError.getDefaultMessage()))
-                        .toList();
+        MethodArgumentNotValidException exception) {
+        List<FieldErrorResponse> errors = exception.getBindingResult().getFieldErrors().stream()
+            .map(
+                fieldError -> new FieldErrorResponse(
+                    fieldError.getField(),
+                    fieldError.getDefaultMessage()))
+            .toList();
 
         return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.status())
-                .body(ErrorResponse.invalidRequest(errors));
+            .body(ErrorResponse.invalidRequest(errors));
     }
 
-    @ExceptionHandler({
-        HttpMessageNotReadableException.class,
-        MethodArgumentTypeMismatchException.class,
-        MissingServletRequestParameterException.class
-    })
+    @ExceptionHandler(
+        {
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class
+        }
+    )
     public ResponseEntity<ErrorResponse> handleInvalidRequest(Exception exception) {
         return error(CommonErrorCode.INVALID_REQUEST);
     }

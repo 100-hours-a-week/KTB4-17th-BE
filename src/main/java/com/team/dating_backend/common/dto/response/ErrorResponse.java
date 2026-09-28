@@ -6,8 +6,8 @@ import com.team.dating_backend.common.enums.ErrorCode;
 import java.util.List;
 
 public record ErrorResponse(
-        String errorCode,
-        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<FieldErrorResponse> errors) {
+    String errorCode,
+    @JsonInclude(JsonInclude.Include.NON_EMPTY) List<FieldErrorResponse> errors) {
 
     public static ErrorResponse of(ErrorCode errorCode) {
         return new ErrorResponse(errorCode.name(), List.of());

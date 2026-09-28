@@ -23,11 +23,13 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
-        name = "user_auth_accounts",
-        uniqueConstraints =
-                @UniqueConstraint(
-                        name = "uk_user_auth_accounts_provider_provider_user_id",
-                        columnNames = {"provider", "provider_user_id"}))
+    name = "user_auth_accounts",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_user_auth_accounts_provider_provider_user_id",
+        columnNames = {
+            "provider", "provider_user_id"}
+    )
+)
 public class UserAuthAccount {
 
     @Id
@@ -35,7 +37,10 @@ public class UserAuthAccount {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(
+        name = "user_id",
+        nullable = false
+    )
     private User user;
 
     @Enumerated(EnumType.STRING)
@@ -49,7 +54,7 @@ public class UserAuthAccount {
     private LocalDateTime linkedAt;
 
     public static UserAuthAccount create(
-            User user, AuthProvider provider, String providerUserId, LocalDateTime now) {
+        User user, AuthProvider provider, String providerUserId, LocalDateTime now) {
 
         UserAuthAccount userAuthAccount = new UserAuthAccount();
         userAuthAccount.user = user;

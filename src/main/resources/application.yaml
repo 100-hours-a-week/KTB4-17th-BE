@@ -14,11 +14,16 @@ spring:
 
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO}
+    properties:
+      hibernate:
+        format_sql: ${JPA_FORMAT_SQL}
 
 jwt:
   secret: ${JWT_SECRET}
-  pending-expiration-minutes: 10
-  service-expiration-minutes: 60
+  pending-expiration-minutes: ${JWT_PENDING_EXPIRATION_MINUTES}
+  service-expiration-minutes: ${JWT_SERVICE_EXPIRATION_MINUTES}
 
 kakao:
   oauth:
@@ -31,6 +36,7 @@ kakao:
 
 app:
   auth:
+    login-redirect-uri: ${AUTH_LOGIN_REDIRECT_URI:${AUTH_SERVICE_REDIRECT_URI}}
     service-redirect-uri: ${AUTH_SERVICE_REDIRECT_URI}
     registration-redirect-uri: ${AUTH_REGISTRATION_REDIRECT_URI}
     onboarding-redirect-uri: ${AUTH_ONBOARDING_REDIRECT_URI}
@@ -39,3 +45,48 @@ app:
 
   security:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
+
+  chat:
+    outbox:
+      max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
+
+  ai-practice:
+    base-url: ${AI_PRACTICE_BASE_URL:}
+    initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/ai/api/v1/practice/start}
+    message-path: ${AI_PRACTICE_MESSAGE_PATH:/ai/api/v1/practice/%s/messages}
+    retry-path: ${AI_PRACTICE_RETRY_PATH:/ai/api/v1/practice/%s/retry}
+    end-session-path: ${AI_PRACTICE_END_SESSION_PATH:/ai/api/v1/practice/%s/end}
+    api-key: ${AI_PRACTICE_API_KEY:}
+    callback-secret: ${AI_PRACTICE_CALLBACK_SECRET:}
+    connect-timeout-ms: ${AI_PRACTICE_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_PRACTICE_READ_TIMEOUT_MS:120000}
+    daily-limit: ${AI_PRACTICE_DAILY_LIMIT:30}
+    max-outbox-failures: ${AI_PRACTICE_OUTBOX_MAX_FAILURES:10}
+    outbox-publish-delay-ms: ${AI_PRACTICE_OUTBOX_PUBLISH_DELAY_MS:1000}
+
+  persona-ai:
+    base-url: ${AI_PERSONA_BASE_URL:}
+
+  ai-simulation:
+    base-url: ${AI_SIMULATION_BASE_URL:}
+    simulation-path: ${AI_SIMULATION_PATH:/ai/api/v1/simulation}
+    connect-timeout-ms: ${AI_SIMULATION_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_SIMULATION_READ_TIMEOUT_MS:130000}
+
+  file:
+    max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}
+    allowed-mime-types: ${APP_FILE_ALLOWED_MIME_TYPES}
+    upload-intent-ttl: ${APP_FILE_UPLOAD_INTENT_TTL}
+    upload-intent-retention: ${APP_FILE_UPLOAD_INTENT_RETENTION}
+    cleanup-delay-ms: ${APP_FILE_CLEANUP_DELAY_MS}
+    cleanup-batch-size: ${APP_FILE_CLEANUP_BATCH_SIZE}
+    s3:
+      bucket: ${AWS_S3_BUCKET}
+      region: ${AWS_S3_REGION}
+      upload-url-expiration: ${AWS_S3_UPLOAD_URL_EXPIRATION}
+      download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
+
+logging:
+  level:
+    org.hibernate.SQL: ${LOGGING_LEVEL_HIBERNATE_SQL}
+    org.hibernate.orm.jdbc.bind: ${LOGGING_LEVEL_HIBERNATE_BIND}

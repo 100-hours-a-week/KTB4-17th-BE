@@ -19,16 +19,16 @@ public class AuthCookieFactory {
 
     public ResponseCookie accessToken(String token) {
         return create(
-                ACCESS_TOKEN_COOKIE,
-                token,
-                Duration.ofMinutes(jwtProperties.getServiceExpirationMinutes()));
+            ACCESS_TOKEN_COOKIE,
+            token,
+            Duration.ofMinutes(jwtProperties.getServiceExpirationMinutes()));
     }
 
     public ResponseCookie pendingRegistrationToken(String token) {
         return create(
-                PENDING_REGISTRATION_TOKEN_COOKIE,
-                token,
-                Duration.ofMinutes(jwtProperties.getPendingExpirationMinutes()));
+            PENDING_REGISTRATION_TOKEN_COOKIE,
+            token,
+            Duration.ofMinutes(jwtProperties.getPendingExpirationMinutes()));
     }
 
     public ResponseCookie deleteAccessToken() {
@@ -41,11 +41,11 @@ public class AuthCookieFactory {
 
     private ResponseCookie create(String name, String value, Duration maxAge) {
         return ResponseCookie.from(name, value)
-                .httpOnly(true)
-                .secure(authWebProperties.isSecureCookie())
-                .sameSite(authWebProperties.getSameSite())
-                .path("/")
-                .maxAge(maxAge)
-                .build();
+            .httpOnly(true)
+            .secure(authWebProperties.isSecureCookie())
+            .sameSite(authWebProperties.getSameSite())
+            .path("/")
+            .maxAge(maxAge)
+            .build();
     }
 }

@@ -20,10 +20,10 @@ public class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
     @Override
     public void commence(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AuthenticationException exception)
-            throws IOException {
+        HttpServletRequest request,
+        HttpServletResponse response,
+        AuthenticationException exception)
+        throws IOException {
 
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
