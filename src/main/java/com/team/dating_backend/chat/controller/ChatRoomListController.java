@@ -54,9 +54,11 @@ public class ChatRoomListController {
             .distinct()
             .toList();
         Map<Long, String> nicknames = participantDisplayService.findNicknames(otherUserIds);
+        Map<Long, String> profileImageUrls =
+            participantDisplayService.findProfileImageUrls(otherUserIds);
 
         List<ChatRoomListResponse.Item> items = page.items().stream()
-            .map(summary -> toResponseItem(summary, nicknames))
+            .map(summary -> toResponseItem(summary, nicknames, profileImageUrls))
             .toList();
         String nextCursor = page.pageInfo().hasNext()
             ? encodeCursor(page.pageInfo().nextCursor())
@@ -72,13 +74,14 @@ public class ChatRoomListController {
 
     private ChatRoomListResponse.Item toResponseItem(
         ChatRoomSummary summary,
-        Map<Long, String> nicknames) {
+        Map<Long, String> nicknames,
+        Map<Long, String> profileImageUrls) {
         ChatRoomPreview preview = summary.preview();
         return new ChatRoomListResponse.Item(
             summary.chatRoomId(),
             summary.chatNotification(),
             new ChatRoomListResponse.OtherParticipant(
-                nicknames.get(summary.otherUserId()), null),
+                nicknames.get(summary.otherUserId()), profileImageUrls.get(summary.otherUserId())),
             new ChatRoomListResponse.Preview(
                 preview.type(), preview.text(), preview.imageFileId()),
             summary.unreadCount(),
