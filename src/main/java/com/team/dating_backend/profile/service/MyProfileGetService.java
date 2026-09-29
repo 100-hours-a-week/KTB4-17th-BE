@@ -28,8 +28,21 @@ public class MyProfileGetService {
             .map(profile -> new MyProfileResponse(
                 profile.getNickname(),
                 profile.getUser().getBirthDate(),
+                activityRegionId(profile),
                 activityRegionName(profile),
+                profile.getHeight(),
+                profile.getBodyType(),
+                profile.getEducationLevel(),
+                profile.getJob(),
+                profile.getReligion(),
+                profile.getMbti(),
+                profile.getDrinking(),
+                profile.getSmoking(),
                 profileImageUrl(profile)));
+    }
+
+    private Long activityRegionId(Profile profile) {
+        return profile.getActivityRegion() == null ? null : profile.getActivityRegion().getId();
     }
 
     private String activityRegionName(Profile profile) {

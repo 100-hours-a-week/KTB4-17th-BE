@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.repository.ChatParticipantDisplayRow;
 import com.team.dating_backend.chat.repository.ChatRoomParticipantDisplayRepository;
+import com.team.dating_backend.profile.service.ProfileImageGetService;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,12 +17,14 @@ import org.junit.jupiter.api.Test;
 class ChatRoomParticipantDisplayServiceTest {
 
     private ChatRoomParticipantDisplayRepository repository;
+    private ProfileImageGetService profileImageGetService;
     private ChatRoomParticipantDisplayService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ChatRoomParticipantDisplayRepository.class);
-        service = new ChatRoomParticipantDisplayService(repository);
+        profileImageGetService = mock(ProfileImageGetService.class);
+        service = new ChatRoomParticipantDisplayService(repository, profileImageGetService);
     }
 
     @Test
