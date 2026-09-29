@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.service.JwtService;
@@ -23,15 +24,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 class ServiceJwtAuthenticationFilterTest {
 
-    private static final String TEST_SECRET = "RsJrP89+FuXm/BZZiqI2p8tCi1PAvb0/rATGDAp0KX0=";
-
     private JwtService jwtService;
     private ServiceJwtAuthenticationFilter filter;
 
     @BeforeEach
     void setUp() {
         JwtProperties jwtProperties = new JwtProperties();
-        jwtProperties.setSecret(TEST_SECRET);
+        jwtProperties.setSecret(TestJwtSecret.generate());
         jwtProperties.setPendingExpirationMinutes(10);
         jwtProperties.setServiceExpirationMinutes(60);
 

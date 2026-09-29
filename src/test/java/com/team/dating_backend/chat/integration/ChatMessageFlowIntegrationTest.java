@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
@@ -47,6 +48,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -75,13 +78,13 @@ import org.testcontainers.mysql.MySQLContainer;
         "server.address=127.0.0.1",
         "spring.jpa.hibernate.ddl-auto=create",
         "app.security.allowed-origins=http://localhost:5173",
-        "jwt.secret=RsJrP89+FuXm/BZZiqI2p8tCi1PAvb0/rATGDAp0KX0=",
         "jwt.service-expiration-minutes=60"
     }
 )
 @Testcontainers(disabledWithoutDocker = true)
 class ChatMessageFlowIntegrationTest {
 
+    private static final String TEST_JWT_SECRET = TestJwtSecret.generate();
     private static final Long CHAT_ROOM_ID = 83001L;
     private static final Long SENDER_USER_ID = 83011L;
     private static final Long RECEIVER_USER_ID = 83012L;
@@ -89,6 +92,11 @@ class ChatMessageFlowIntegrationTest {
     private static final String READ_RECEIPT_DESTINATION = "/user/queue/chat-read-receipts";
     private static final String MESSAGE_TEXT = "실제 DB 통합 테스트 메시지";
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
+
+    @DynamicPropertySource
+    static void registerJwtSecret(DynamicPropertyRegistry registry) {
+        registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+    }
 
     @Container
     @ServiceConnection
