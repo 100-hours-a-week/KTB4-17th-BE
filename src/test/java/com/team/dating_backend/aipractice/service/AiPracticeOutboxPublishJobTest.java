@@ -84,13 +84,13 @@ class AiPracticeOutboxPublishJobTest {
 
     @Test
     void 최초생성은AI세션을만든뒤메시지를보내고답변을저장한다() {
-        given(aiClient.startSession(TARGET_MEMBER_ID)).willReturn("ai-session-42");
+        given(aiClient.startSession(USER_ID, TARGET_MEMBER_ID)).willReturn("ai-session-42");
         given(aiClient.sendMessage(anyString(), anyString()))
             .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
 
         job.publishDueCommands();
 
-        verify(aiClient).startSession(TARGET_MEMBER_ID);
+        verify(aiClient).startSession(USER_ID, TARGET_MEMBER_ID);
         verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
         verify(resultService).attachAiSessionId(OUTBOX_ID, "ai-session-42");
         verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
@@ -106,7 +106,7 @@ class AiPracticeOutboxPublishJobTest {
 
         verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
         verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
-        verify(aiClient, never()).startSession(any());
+        verify(aiClient, never()).startSession(any(), any());
     }
 
     @Test
@@ -122,7 +122,7 @@ class AiPracticeOutboxPublishJobTest {
     @Test
     void AI서버요청실패는정해진횟수와재시도시각을기록한다() {
         org.mockito.BDDMockito.willThrow(new RestClientException("request failed"))
-            .given(aiClient).startSession(TARGET_MEMBER_ID);
+            .given(aiClient).startSession(USER_ID, TARGET_MEMBER_ID);
 
         job.publishDueCommands();
 
