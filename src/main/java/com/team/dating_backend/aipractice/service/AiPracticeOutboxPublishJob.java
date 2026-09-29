@@ -89,7 +89,8 @@ public class AiPracticeOutboxPublishJob {
                     throw new AiPracticeBusinessException(
                         AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
                 }
-                aiSessionId = aiClient.startSession(session.getTargetMemberId());
+                aiSessionId = aiClient.startSession(
+                    session.getUserId(), session.getTargetMemberId());
                 resultService.attachAiSessionId(outbox.getId(), aiSessionId);
             }
 
