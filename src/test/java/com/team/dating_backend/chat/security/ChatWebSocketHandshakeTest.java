@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.team.dating_backend.TestJwtSecret;
 import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -34,6 +35,8 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -60,11 +63,17 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
         "spring.config.name=chat-websocket-test",
         "server.address=127.0.0.1",
         "app.security.allowed-origins=http://localhost:5173",
-        "jwt.secret=RsJrP89+FuXm/BZZiqI2p8tCi1PAvb0/rATGDAp0KX0=",
         "jwt.service-expiration-minutes=60"
     }
 )
 class ChatWebSocketHandshakeTest {
+
+    private static final String TEST_JWT_SECRET = TestJwtSecret.generate();
+
+    @DynamicPropertySource
+    static void registerJwtSecret(DynamicPropertyRegistry registry) {
+        registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+    }
 
     @LocalServerPort
     private int port;
