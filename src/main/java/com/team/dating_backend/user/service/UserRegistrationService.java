@@ -9,8 +9,12 @@ import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.exception.RegistrationAgeRequirementNotMetException;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class UserRegistrationService {
+
+    private static final int MIN_REGISTRATION_AGE = 19;
+    private static final int MAX_REGISTRATION_AGE_EXCLUSIVE = 40;
+    private static final ZoneId REGISTRATION_AGE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
@@ -39,6 +47,8 @@ public class UserRegistrationService {
             throw new PendingRegistrationAccessDeniedException();
         }
 
+        validateRegistrationAge(request.birthDate());
+
         LocalDateTime now = LocalDateTime.now();
 
         User user = User.create(request.name(), request.birthDate(), request.gender(), now);
@@ -58,5 +68,14 @@ public class UserRegistrationService {
         return new IssuedAuthTokens(
             jwtService.createServiceAuthToken(savedUser.getId()),
             jwtService.createRefreshAuthToken(savedUser.getId()));
+    }
+
+    private void validateRegistrationAge(LocalDate birthDate) {
+        LocalDate today = LocalDate.now(REGISTRATION_AGE_ZONE);
+        int age = Period.between(birthDate, today).getYears();
+
+        if (age < MIN_REGISTRATION_AGE || age >= MAX_REGISTRATION_AGE_EXCLUSIVE) {
+            throw new RegistrationAgeRequirementNotMetException();
+        }
     }
 }
