@@ -2,6 +2,7 @@ package com.team.dating_backend.user.controller;
 
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
+import com.team.dating_backend.user.exception.RegistrationAgeRequirementNotMetException;
 import io.jsonwebtoken.JwtException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -27,5 +28,12 @@ public class UserRegistrationExceptionHandler {
         MethodArgumentNotValidException exception) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(new AuthErrorResponse("INVALID_REQUEST"));
+    }
+
+    @ExceptionHandler(RegistrationAgeRequirementNotMetException.class)
+    public ResponseEntity<AuthErrorResponse> handleRegistrationAgeRequirementNotMet(
+        RegistrationAgeRequirementNotMetException exception) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .body(new AuthErrorResponse("USER_AGE_REQUIREMENT_NOT_MET"));
     }
 }

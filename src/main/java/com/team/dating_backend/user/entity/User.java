@@ -32,7 +32,7 @@ public class User {
     @Column(name = "status", nullable = false)
     private UserStatus status;
 
-    @Column(name = "name", nullable = false)
+    @Column(name = "name", nullable = false, length = 8)
     private String name;
 
     @Column(name = "birth_date", nullable = false)
