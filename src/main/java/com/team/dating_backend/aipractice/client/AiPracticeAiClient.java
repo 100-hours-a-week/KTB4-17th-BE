@@ -4,7 +4,7 @@ import com.team.dating_backend.aipractice.dto.ai.AiPracticeAiPayloads.Generation
 
 public interface AiPracticeAiClient {
 
-    String startSession(Long partnerMemberId);
+    String startSession(Long meUserId, Long partnerMemberId);
 
     GenerationReplyResponse sendMessage(String aiSessionId, String userMessage);
 
