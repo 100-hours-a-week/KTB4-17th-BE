@@ -54,8 +54,7 @@ public class ChatRoomListController {
             .distinct()
             .toList();
         Map<Long, String> nicknames = participantDisplayService.findNicknames(otherUserIds);
-        Map<Long, String> profileImageUrls =
-            participantDisplayService.findProfileImageUrls(otherUserIds);
+        Map<Long, String> profileImageUrls = participantDisplayService.findProfileImageUrls(otherUserIds);
 
         List<ChatRoomListResponse.Item> items = page.items().stream()
             .map(summary -> toResponseItem(summary, nicknames, profileImageUrls))

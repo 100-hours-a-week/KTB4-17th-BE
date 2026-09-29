@@ -39,8 +39,8 @@ public class ChatRoomParticipantDisplayService {
             return Map.of();
         }
 
-        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId =
-            profileImageGetService.getProfileImagesByMemberIds(userIds);
+        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId = profileImageGetService
+            .getProfileImagesByMemberIds(userIds);
         Map<Long, String> profileImageUrlsByMemberId = new LinkedHashMap<>();
         profileImagesByMemberId.forEach((userId, images) -> images.stream()
             .filter(image -> image.displayOrder() == REPRESENTATIVE_IMAGE_ORDER)
