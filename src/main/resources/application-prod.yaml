@@ -10,3 +10,14 @@ logging:
   level:
     root: info
     org.hibernate.SQL: warn   # 운영에서는 SQL 로깅 비활성화(오버헤드 방지)
+
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,prometheus
+
+    metrics:
+        distribution:
+            percentiles-histogram:
+                http.server.requests: true
