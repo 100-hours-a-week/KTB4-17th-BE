@@ -47,7 +47,7 @@ public class SecurityConfig {
                         "/api/v1/registration/**",
                         "/internal/v1/ai-practice/events",
                         "/ws/chat",
-                        "/actuator/*",
+                        "/actuator/**",
                         "/error")
                     .permitAll()
                     .anyRequest()

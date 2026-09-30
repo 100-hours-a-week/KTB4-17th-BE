@@ -86,9 +86,3 @@ app:
       region: ${AWS_S3_REGION}
       upload-url-expiration: ${AWS_S3_UPLOAD_URL_EXPIRATION}
       download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
-
-logging:
-  level:
-    org.hibernate.SQL: ${LOGGING_LEVEL_HIBERNATE_SQL}
-    org.hibernate.orm.jdbc.bind: ${LOGGING_LEVEL_HIBERNATE_BIND}
-    org.springframework.messaging.simp.broker: warn
