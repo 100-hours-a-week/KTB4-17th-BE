@@ -86,3 +86,9 @@ app:
       region: ${AWS_S3_REGION}
       upload-url-expiration: ${AWS_S3_UPLOAD_URL_EXPIRATION}
       download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
