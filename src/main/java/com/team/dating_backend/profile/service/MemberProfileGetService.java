@@ -72,6 +72,13 @@ public class MemberProfileGetService {
             age,
             profile.getJob(),
             region,
+            profile.getHeight(),
+            profile.getBodyType(),
+            profile.getEducationLevel(),
+            profile.getReligion(),
+            profile.getDrinking(),
+            profile.getSmoking(),
+            profile.getMbti(),
             images);
     }
 
