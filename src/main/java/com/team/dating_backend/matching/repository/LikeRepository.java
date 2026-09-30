@@ -13,6 +13,20 @@ import org.springframework.data.repository.query.Param;
 
 public interface LikeRepository extends JpaRepository<Like, Long> {
 
+    @Query("""
+        select count(memberLike) > 0
+        from MemberLike memberLike
+        where ((memberLike.senderId = :viewerUserId and memberLike.receiverId = :targetUserId)
+            or (memberLike.senderId = :targetUserId and memberLike.receiverId = :viewerUserId))
+          and memberLike.status in (
+              com.team.dating_backend.matching.enums.LikeStatus.PENDING,
+              com.team.dating_backend.matching.enums.LikeStatus.MATCHED
+          )
+        """)
+    boolean hasProfileViewAccessBetween(
+        @Param("viewerUserId") Long viewerUserId,
+        @Param("targetUserId") Long targetUserId);
+
     Optional<Like> findFirstBySenderIdAndReceiverIdAndStatusOrderByIdDesc(
         Long senderId, Long receiverId, LikeStatus status);
 
