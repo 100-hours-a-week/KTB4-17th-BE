@@ -16,6 +16,23 @@ import org.springframework.data.repository.query.Param;
 
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
+    @Query("""
+        select count(room) > 0
+        from ChatRoom room
+        join ChatParticipant viewer on viewer.chatRoom.id = room.id
+        join ChatParticipant target on target.chatRoom.id = room.id
+        where viewer.userId = :viewerUserId
+          and viewer.status = com.team.dating_backend.chat.enums.ChatParticipantStatus.ACTIVE
+          and target.userId = :targetUserId
+          and room.status in (
+              com.team.dating_backend.chat.enums.ChatRoomStatus.ACTIVE,
+              com.team.dating_backend.chat.enums.ChatRoomStatus.ENDED
+          )
+        """)
+    boolean existsVisibleBetweenUsers(
+        @Param("viewerUserId") Long viewerUserId,
+        @Param("targetUserId") Long targetUserId);
+
     @Query("select room from ChatRoom room where room.match.id = :matchId")
     Optional<ChatRoom> findByMatchId(@Param("matchId") Long matchId);
 
