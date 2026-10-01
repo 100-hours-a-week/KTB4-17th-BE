@@ -32,6 +32,8 @@ dependencies {
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	implementation platform('software.amazon.awssdk:bom:2.55.1')
 	implementation 'software.amazon.awssdk:s3'
+	implementation 'io.sentry:sentry-spring-boot-4-starter:8.58.0'
+	implementation 'io.sentry:sentry-logback:8.58.0'
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
