@@ -7,6 +7,7 @@ import com.team.dating_backend.profile.entity.ProfileImage;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,20 +26,25 @@ public class MyProfileGetService {
     @Transactional(readOnly = true)
     public Optional<MyProfileResponse> getMyProfile(Long userId) {
         return profileRepository.findByUserIdAndDeletedAtIsNull(userId)
-            .map(profile -> new MyProfileResponse(
-                profile.getNickname(),
-                profile.getUser().getBirthDate(),
-                activityRegionId(profile),
-                activityRegionName(profile),
-                profile.getHeight(),
-                profile.getBodyType(),
-                profile.getEducationLevel(),
-                profile.getJob(),
-                profile.getReligion(),
-                profile.getMbti(),
-                profile.getDrinking(),
-                profile.getSmoking(),
-                profileImageUrl(profile)));
+            .map(profile -> {
+                List<MyProfileResponse.Image> images = profileImages(profile);
+                String profileImageUrl = images.isEmpty() ? null : images.get(0).imageUrl();
+                return new MyProfileResponse(
+                    profile.getNickname(),
+                    profile.getUser().getBirthDate(),
+                    activityRegionId(profile),
+                    activityRegionName(profile),
+                    profile.getHeight(),
+                    profile.getBodyType(),
+                    profile.getEducationLevel(),
+                    profile.getJob(),
+                    profile.getReligion(),
+                    profile.getMbti(),
+                    profile.getDrinking(),
+                    profile.getSmoking(),
+                    profileImageUrl,
+                    images);
+            });
     }
 
     private Long activityRegionId(Profile profile) {
@@ -53,15 +59,15 @@ public class MyProfileGetService {
             + profile.getActivityRegion().getRegionName();
     }
 
-    private String profileImageUrl(Profile profile) {
+    private List<MyProfileResponse.Image> profileImages(Profile profile) {
         return profileImageRepository.findByProfileIdAndDeletedAtIsNull(profile.getId()).stream()
-            .sorted(
-                Comparator.comparing(ProfileImage::isFrontal)
-                    .reversed()
-                    .thenComparingInt(ProfileImage::getDisplayOrder))
-            .findFirst()
-            .map(profileImage -> fileAccessUrlCreateService.createPresignedAccessUrl(
-                profileImage.getImage(), INLINE_DISPOSITION).accessUrl())
-            .orElse(null);
+            .sorted(Comparator.comparingInt(ProfileImage::getDisplayOrder))
+            .map(profileImage -> new MyProfileResponse.Image(
+                profileImage.getImage().getId(),
+                profileImage.getDisplayOrder(),
+                profileImage.isFrontal(),
+                fileAccessUrlCreateService.createPresignedAccessUrl(
+                    profileImage.getImage(), INLINE_DISPOSITION).accessUrl()))
+            .toList();
     }
 }
