@@ -86,3 +86,15 @@ app:
       region: ${AWS_S3_REGION}
       upload-url-expiration: ${AWS_S3_UPLOAD_URL_EXPIRATION}
       download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+sentry:
+  dsn: https://3a23addb65af845726a75c610836d234@o4512169151496192.ingest.us.sentry.io/4512169955229696
+  # Add data like request headers and IP for users,
+  # see https://docs.sentry.io/platforms/java/guides/spring-boot/data-management/data-collected/ for more info
+  send-default-pii: true
