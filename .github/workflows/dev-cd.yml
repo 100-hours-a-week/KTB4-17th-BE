@@ -93,6 +93,8 @@ jobs:
                     -p "${EC2_PORT}" \
                     "$EC2_USER@$EC2_HOST" \
                     "cd /home/ubuntu/app && \
+                    aws ecr get-login-password --region $AWS_REGION | \
+                      docker login --username AWS --password-stdin $ECR_REGISTRY && \
                     sed -i 's|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE_URL|' .env && \
                     docker compose pull backend && \
                     docker compose up -d --no-deps backend"

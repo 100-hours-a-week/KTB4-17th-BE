@@ -1,94 +1,137 @@
 name: Backend CD
 
 on:
-  push:
-    branches:
-      - main
-
+    release:
+        types: [published]
 
 permissions:
-  contents: read
-  id-token: write
+    contents: read
+    id-token: write
 
 env:
-  AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
-  IMAGE_TAG: ${{ github.sha }}
+    AWS_REGION: ap-northeast-2
+    ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+    ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+    RELEASE_TAG: ${{ github.event.release.tag_name }}
 
 jobs:
-  build_image:
-    name: Build and Push Image
-    runs-on: ubuntu-latest
+    promote_image:
+        name: Promote DEV Image
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v7
+        outputs:
+            image_url: ${{ steps.promote.outputs.image_url }}
+            dev_sha: ${{ steps.dev_sha.outputs.dev_sha }}
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
 
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region "$AWS_REGION" |
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v6
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
 
-            docker login \
-              --username AWS \
-              --password-stdin "$ECR_REGISTRY"
+            # Release Tag가 붙은 main Merge Commit의
+            # 두 번째 parent = merge 당시 dev HEAD
+            - name: Resolve DEV SHA
+              id: dev_sha
+              run: |
+                  set -euo pipefail
 
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
-            .
+                  DEV_SHA=$(git rev-parse "${RELEASE_TAG}^2")
 
-      - name: Push image to ECR
-        run: |
-          docker push \
-            "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+                  echo "DEV SHA: $DEV_SHA"
+                  echo "dev_sha=$DEV_SHA" >> "$GITHUB_OUTPUT"
 
-  deploy:
-    name: Backend Blue-Green Deploy
-    needs: build_image
-    runs-on: ubuntu-latest
-    environment: production
+            # 해당 SHA 이미지가 실제 ECR에 존재하는지 확인
+            - name: Verify DEV image
+              env:
+                  DEV_SHA: ${{ steps.dev_sha.outputs.dev_sha }}
+              run: |
+                  set -euo pipefail
 
-    steps:
-      - name: Configure SSH
-        env:
-          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
+                  aws ecr describe-images \
+                    --repository-name "$ECR_REPOSITORY" \
+                    --image-ids imageTag="$DEV_SHA" \
+                    --region "$AWS_REGION"
 
-          mkdir -p "$RUNNER_TEMP/ssh"
+            # DEV에서 검증한 SHA 이미지의 Manifest를 가져와
+            # Release Version Tag를 추가
+            - name: Promote image
+              id: promote
+              env:
+                  DEV_SHA: ${{ steps.dev_sha.outputs.dev_sha }}
+              run: |
+                  set -euo pipefail
 
-          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" \
-            > "$RUNNER_TEMP/ssh/ec2_key"
+                  MANIFEST=$(aws ecr batch-get-image \
+                    --repository-name "$ECR_REPOSITORY" \
+                    --image-ids imageTag="$DEV_SHA" \
+                    --query 'images[0].imageManifest' \
+                    --output text \
+                    --region "$AWS_REGION")
 
-          printf '%s\n' "$EC2_KNOWN_HOSTS" \
-            > "$RUNNER_TEMP/ssh/known_hosts"
+                  if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+                    echo "ECR image manifest not found: $DEV_SHA"
+                    exit 1
+                  fi
 
-          chmod 600 "$RUNNER_TEMP/ssh/ec2_key"
-          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+                  aws ecr put-image \
+                    --repository-name "$ECR_REPOSITORY" \
+                    --image-tag "$RELEASE_TAG" \
+                    --image-manifest "$MANIFEST" \
+                    --region "$AWS_REGION"
 
-      - name: Deploy to EC2
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PORT: ${{ secrets.EC2_PORT }}
-        run: |
-          set -euo pipefail
+                  IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
 
-          IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+                  echo "Promoted:"
+                  echo "$DEV_SHA -> $RELEASE_TAG"
+                  echo "IMAGE: $IMAGE_URL"
 
-          ssh \
-            -i "$RUNNER_TEMP/ssh/ec2_key" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -p "${EC2_PORT:-22}" \
-            "$EC2_USER@$EC2_HOST" \
-            "cd /home/ubuntu/app && ./deploy-be.sh '$IMAGE_URL'"
+                  echo "image_url=$IMAGE_URL" >> "$GITHUB_OUTPUT"
+
+    deploy:
+        name: Backend Blue-Green Deploy
+        needs: promote_image
+        runs-on: ubuntu-latest
+        environment: production
+
+        steps:
+            - name: Configure SSH
+              env:
+                  EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+                  EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+              run: |
+                  set -euo pipefail
+
+                  mkdir -p "$RUNNER_TEMP/ssh"
+
+                  printf '%s\n' "$EC2_SSH_PRIVATE_KEY" \
+                    > "$RUNNER_TEMP/ssh/ec2_key"
+
+                  printf '%s\n' "$EC2_KNOWN_HOSTS" \
+                    > "$RUNNER_TEMP/ssh/known_hosts"
+
+                  chmod 600 "$RUNNER_TEMP/ssh/ec2_key"
+                  chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+            - name: Deploy to EC2
+              env:
+                  EC2_HOST: ${{ secrets.EC2_HOST }}
+                  EC2_USER: ${{ secrets.EC2_USER }}
+                  EC2_PORT: ${{ secrets.EC2_PORT }}
+                  IMAGE_URL: ${{ needs.promote_image.outputs.image_url }}
+              run: |
+                  set -euo pipefail
+
+                  ssh \
+                    -i "$RUNNER_TEMP/ssh/ec2_key" \
+                    -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+                    -o StrictHostKeyChecking=yes \
+                    -p "${EC2_PORT:-22}" \
+                    "$EC2_USER@$EC2_HOST" \
+                    "cd /home/ubuntu/app && ./deploy-be.sh '$IMAGE_URL'"
