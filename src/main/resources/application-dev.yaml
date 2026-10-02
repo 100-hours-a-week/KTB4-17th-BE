@@ -1,0 +1,29 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update   # 운영: 스키마 변경 없이 엔티티-테이블 매핑 검증만
+    properties:
+      hibernate:
+        format_sql: false
+
+# application-prod.yaml
+logging:
+    level:
+        root: info
+        com.team.dating_backend: info
+        org.hibernate.SQL: off
+        org.hibernate.orm.jdbc.bind: off
+        org.springframework.messaging.simp.broker: warn
+        org.springframework.security: warn
+        com.zaxxer.hikari: warn
+
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,prometheus
+
+    metrics:
+        distribution:
+            percentiles-histogram:
+                http.server.requests: true
