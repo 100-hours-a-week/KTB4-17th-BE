@@ -1,0 +1,236 @@
+name: Discord PR Review Reminder
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: discord-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  notify:
+    if: >-
+      github.event.pull_request.head.ref == 'dev' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      DISCORD_USER_MAP: ${{ vars.DISCORD_USER_MAP }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+
+    steps:
+      - name: Validate notification configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo "Repository secret DISCORD_WEBHOOK_URL is not configured."
+            exit 1
+          fi
+
+          if [[ -z "$DISCORD_USER_MAP" ]]; then
+            echo "Repository variable DISCORD_USER_MAP is not configured."
+            exit 1
+          fi
+
+          jq -e '
+            type == "object" and
+            all(.[]; type == "string" and test("^[0-9]+$"))
+          ' <<< "$DISCORD_USER_MAP" > /dev/null
+
+      - name: Notify requested reviewers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          reviewers_response=$(curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 3 \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/requested_reviewers")
+
+          normalized_user_map=$(jq -c '
+            to_entries
+            | map({key: (.key | ascii_downcase), value})
+            | from_entries
+          ' <<< "$DISCORD_USER_MAP")
+
+          reviewer_count=$(jq '.users | length' <<< "$reviewers_response")
+          discord_user_ids=$(jq -cn \
+            --argjson reviewers "$reviewers_response" \
+            --argjson user_map "$normalized_user_map" '
+              $reviewers.users
+              | map(.login | ascii_downcase)
+              | map($user_map[.])
+              | map(select(. != null and . != ""))
+              | unique
+            ')
+          mapped_count=$(jq 'length' <<< "$discord_user_ids")
+
+          if (( reviewer_count > 0 && mapped_count == reviewer_count )); then
+            mention=$(jq -r 'map("<@" + . + ">") | join(" ")' <<< "$discord_user_ids")
+            allowed_mentions=$(jq -cn \
+              --argjson users "$discord_user_ids" \
+              '{users: $users}')
+          else
+            mention="@everyone"
+            allowed_mentions='{"parse":["everyone"]}'
+          fi
+
+          payload=$(jq -n \
+            --arg content "$mention 리뷰 승인이 필요한 PR이 생성되었습니다. 리뷰 승인 바랍니다." \
+            --arg title "PR #$PR_NUMBER · $PR_TITLE" \
+            --arg url "$PR_URL" \
+            --arg author "$PR_AUTHOR" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --argjson allowed_mentions "$allowed_mentions" '
+              {
+                content: $content,
+                allowed_mentions: $allowed_mentions,
+                embeds: [
+                  {
+                    title: $title,
+                    url: $url,
+                    color: 3447003,
+                    fields: [
+                      {name: "저장소", value: ("`" + $repository + "`"), inline: false},
+                      {name: "작성자", value: ("`" + $author + "`"), inline: true},
+                      {name: "브랜치", value: "`dev` → `main`", inline: true}
+                    ]
+                  }
+                ]
+              }
+            ')
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 3 \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+      - name: Wait until three minutes after PR creation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          created_at_epoch=$(date --date="$PR_CREATED_AT" +%s)
+          deadline_epoch=$((created_at_epoch + 180))
+          now_epoch=$(date +%s)
+          remaining_seconds=$((deadline_epoch - now_epoch))
+
+          if (( remaining_seconds > 0 )); then
+            echo "Waiting $remaining_seconds seconds before checking approval."
+            sleep "$remaining_seconds"
+          fi
+
+      - name: Check approval and notify everyone if still pending
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repository_name=${GITHUB_REPOSITORY#*/}
+          graphql_query='query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+              pullRequest(number: $number) {
+                state
+                isDraft
+                reviewDecision
+              }
+            }
+          }'
+
+          graphql_payload=$(jq -n \
+            --arg query "$graphql_query" \
+            --arg owner "$GITHUB_REPOSITORY_OWNER" \
+            --arg name "$repository_name" \
+            --argjson number "$PR_NUMBER" '
+              {
+                query: $query,
+                variables: {
+                  owner: $owner,
+                  name: $name,
+                  number: $number
+                }
+              }
+            ')
+
+          graphql_response=$(curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 3 \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data "$graphql_payload" \
+            "$GITHUB_GRAPHQL_URL")
+
+          if jq -e '.errors | length > 0' <<< "$graphql_response" > /dev/null; then
+            jq '.errors' <<< "$graphql_response"
+            exit 1
+          fi
+
+          pr_state=$(jq -r '.data.repository.pullRequest.state' <<< "$graphql_response")
+          is_draft=$(jq -r '.data.repository.pullRequest.isDraft' <<< "$graphql_response")
+          review_decision=$(jq -r '.data.repository.pullRequest.reviewDecision // ""' <<< "$graphql_response")
+
+          if [[ "$pr_state" != "OPEN" || "$is_draft" == "true" || "$review_decision" == "APPROVED" ]]; then
+            echo "No escalation required: state=$pr_state, draft=$is_draft, reviewDecision=$review_decision"
+            exit 0
+          fi
+
+          payload=$(jq -n \
+            --arg content "@everyone PR 생성 후 아직 리뷰 승인이 완료되지 않았습니다. 리뷰 승인 바랍니다." \
+            --arg title "PR #$PR_NUMBER · $PR_TITLE" \
+            --arg url "$PR_URL" \
+            --arg author "$PR_AUTHOR" \
+            --arg repository "$GITHUB_REPOSITORY" '
+              {
+                content: $content,
+                allowed_mentions: {parse: ["everyone"]},
+                embeds: [
+                  {
+                    title: $title,
+                    url: $url,
+                    color: 15158332,
+                    fields: [
+                      {name: "저장소", value: ("`" + $repository + "`"), inline: false},
+                      {name: "작성자", value: ("`" + $author + "`"), inline: true},
+                      {name: "브랜치", value: "`dev` → `main`", inline: true}
+                    ]
+                  }
+                ]
+              }
+            ')
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 3 \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"
