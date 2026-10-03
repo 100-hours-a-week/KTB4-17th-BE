@@ -6,6 +6,11 @@ on:
       - main
     types:
       - opened
+  pull_request_review:
+    branches:
+      - main
+    types:
+      - submitted
 
 permissions:
   contents: read
@@ -18,13 +23,14 @@ concurrency:
 jobs:
   notify:
     if: >-
+      github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.ref == 'dev' &&
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
     env:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      DISCORD_USER_MAP: ${{ vars.DISCORD_USER_MAP }}
+      DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_TITLE: ${{ github.event.pull_request.title }}
@@ -34,6 +40,9 @@ jobs:
 
     steps:
       - name: Validate notification configuration
+        if: >-
+          github.event_name == 'pull_request_target' ||
+          github.event.review.state != 'approved'
         shell: bash
         run: |
           set -euo pipefail
@@ -44,7 +53,7 @@ jobs:
           fi
 
           if [[ -z "$DISCORD_USER_MAP" ]]; then
-            echo "Repository variable DISCORD_USER_MAP is not configured."
+            echo "Repository secret DISCORD_USER_MAP is not configured."
             exit 1
           fi
 
@@ -54,6 +63,7 @@ jobs:
           ' <<< "$DISCORD_USER_MAP" > /dev/null
 
       - name: Notify requested reviewers
+        if: github.event_name == 'pull_request_target'
         shell: bash
         run: |
           set -euo pipefail
@@ -130,7 +140,16 @@ jobs:
             --data "$payload" \
             "$DISCORD_WEBHOOK_URL"
 
+      - name: Finish immediately after approval
+        if: >-
+          github.event_name == 'pull_request_review' &&
+          github.event.review.state == 'approved'
+        run: echo "Required review approval received. Finishing without waiting for the reminder deadline."
+
       - name: Wait until three minutes after PR creation
+        if: >-
+          github.event_name == 'pull_request_target' ||
+          github.event.review.state != 'approved'
         shell: bash
         run: |
           set -euo pipefail
@@ -146,6 +165,9 @@ jobs:
           fi
 
       - name: Check approval and notify everyone if still pending
+        if: >-
+          github.event_name == 'pull_request_target' ||
+          github.event.review.state != 'approved'
         shell: bash
         run: |
           set -euo pipefail
