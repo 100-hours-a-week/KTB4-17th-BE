@@ -5,13 +5,20 @@ on:
         branches:
             - main
 
+concurrency:
+    group: backend-release-and-production
+    cancel-in-progress: false
+
 permissions:
     contents: write
+    id-token: write
 
 jobs:
     release:
         name: Semantic Release
         runs-on: ubuntu-latest
+        outputs:
+            release_tag: ${{ steps.release_tag.outputs.release_tag }}
 
         steps:
             - name: Checkout source
@@ -32,3 +39,18 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: npx semantic-release
+
+            - name: Get release tag for this commit
+              id: release_tag
+              run: |
+                  RELEASE_TAG=$(git tag --points-at HEAD --list 'v*' --sort=-version:refname | head -n 1)
+                  echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+    production:
+        name: Production CD
+        needs: release
+        if: needs.release.outputs.release_tag != ''
+        uses: ./.github/workflows/prod-cd.yml
+        with:
+            release_tag: ${{ needs.release.outputs.release_tag }}
+        secrets: inherit
