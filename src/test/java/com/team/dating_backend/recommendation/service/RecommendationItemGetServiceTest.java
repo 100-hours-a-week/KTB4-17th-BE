@@ -24,6 +24,7 @@ import com.team.dating_backend.recommendation.repository.RecommendationItemRepos
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -72,9 +73,15 @@ class RecommendationItemGetServiceTest {
                 21L,
                 List.of(
                     new ProfileImageAccessResult(
-                        701L, (short) 1, "https://example.com/701"),
+                        701L,
+                        (short) 1,
+                        "https://example.com/701",
+                        Instant.parse("2026-09-27T12:00:00Z")),
                     new ProfileImageAccessResult(
-                        704L, (short) 2, "https://example.com/704"))));
+                        704L,
+                        (short) 2,
+                        "https://example.com/704",
+                        Instant.parse("2026-09-27T12:00:00Z")))));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
 
@@ -89,12 +96,18 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items().getFirst().candidate().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.items().getFirst().candidate().mbti()).isEqualTo(Mbti.INFP);
         assertThat(response.items().getFirst().candidate().images())
-            .extracting("fileId", "displayOrder", "imageUrl")
+            .extracting("fileId", "displayOrder", "imageUrl", "expiresAt")
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(
-                    701L, (short) 1, "https://example.com/701"),
+                    701L,
+                    (short) 1,
+                    "https://example.com/701",
+                    Instant.parse("2026-09-27T12:00:00Z")),
                 org.assertj.core.groups.Tuple.tuple(
-                    704L, (short) 2, "https://example.com/704"));
+                    704L,
+                    (short) 2,
+                    "https://example.com/704",
+                    Instant.parse("2026-09-27T12:00:00Z")));
         assertThat(response.pageInfo().nextCursor()).isEqualTo(120L);
         assertThat(response.pageInfo().hasNext()).isTrue();
         assertThat(response.pageInfo().batchId()).isEqualTo(42L);

@@ -113,7 +113,7 @@ public class RecommendationItemGetService {
                 .getYears();
         List<RecommendationProfileImageResponse> images = profileImages.stream()
             .map(image -> new RecommendationProfileImageResponse(
-                image.fileId(), image.displayOrder(), image.imageUrl()))
+                image.fileId(), image.displayOrder(), image.imageUrl(), image.expiresAt()))
             .toList();
         RecommendationCandidateResponse candidate = new RecommendationCandidateResponse(
             row.memberId(), row.nickname(), age, row.job(), region, row.mbti(), images);

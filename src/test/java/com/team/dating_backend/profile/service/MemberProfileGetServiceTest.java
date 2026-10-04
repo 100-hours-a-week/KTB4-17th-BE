@@ -18,6 +18,7 @@ import com.team.dating_backend.recommendation.repository.RecommendationItemRepos
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +64,10 @@ class MemberProfileGetServiceTest {
         assertThat(response.nickname()).isEqualTo("하리");
         assertThat(response.age()).isEqualTo(29);
         assertThat(response.images()).containsExactly(
-            new MemberProfileResponse.Image(701L, (short) 1, "https://example.com/701"));
+            new MemberProfileResponse.Image(
+                701L,
+                (short) 1,
+                "https://example.com/701"));
     }
 
     @Test
@@ -137,7 +141,11 @@ class MemberProfileGetServiceTest {
             .willReturn(Optional.of(profile));
         given(profileImageGetService.getProfileImagesByMemberIds(List.of(21L)))
             .willReturn(Map.of(21L,
-                List.of(new ProfileImageAccessResult(701L, (short) 1, "https://example.com/701"))));
+                List.of(new ProfileImageAccessResult(
+                    701L,
+                    (short) 1,
+                    "https://example.com/701",
+                    Instant.parse("2026-09-27T12:00:00Z")))));
     }
 
     private void assertUnavailable(Long memberId) {
