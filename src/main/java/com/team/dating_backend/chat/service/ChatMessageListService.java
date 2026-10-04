@@ -1,20 +1,20 @@
 package com.team.dating_backend.chat.service;
 
+import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
-import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -29,9 +29,11 @@ public class ChatMessageListService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatRoomParticipantDisplayService participantDisplayService;
 
     @Transactional(readOnly = true)
-    public MessagePage listMessages(Long chatRoomId, Long viewerUserId, Long cursor, int size) {
+    public ChatMessageListResponse listMessages(
+        Long chatRoomId, Long viewerUserId, Long cursor, int size) {
         validatePagination(cursor, size);
 
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
@@ -69,14 +71,28 @@ public class ChatMessageListService {
         Long nextCursor = hasNext ? page.getLast().getId() : null;
         Collections.reverse(page);
 
-        List<MessageItem> messages = page.stream()
-            .map(message -> toMessageItem(
+        List<ChatMessageListResponse.Message> messages = page.stream()
+            .map(message -> toResponseMessage(
                 message, viewer.getId(), others.getFirst().getLastReadMessageId()))
             .toList();
 
-        return new MessagePage(
-            room.getId(), room.getStatus(), viewer.isChatNotification(),
-            others.getFirst().getUserId(), messages, nextCursor, hasNext);
+        Long otherUserId = others.getFirst().getUserId();
+        List<Long> otherUserIds = List.of(otherUserId);
+        Map<Long, String> nicknames = participantDisplayService.findNicknames(otherUserIds);
+        Map<Long, String> profileImageUrls = participantDisplayService
+            .findProfileImageUrls(otherUserIds);
+
+        return new ChatMessageListResponse(
+            new ChatMessageListResponse.ChatRoomInfo(
+                room.getId(),
+                room.getStatus(),
+                viewer.isChatNotification(),
+                new ChatMessageListResponse.OtherParticipant(
+                    otherUserId,
+                    nicknames.get(otherUserId),
+                    profileImageUrls.get(otherUserId))),
+            messages,
+            new ChatMessageListResponse.PageInfo(nextCursor, hasNext));
     }
 
     private void validatePagination(Long cursor, int size) {
@@ -88,14 +104,14 @@ public class ChatMessageListService {
         }
     }
 
-    private MessageItem toMessageItem(
+    private ChatMessageListResponse.Message toResponseMessage(
         ChatMessage message, Long viewerParticipantId, Long otherLastReadMessageId) {
         boolean mine = viewerParticipantId.equals(message.getSenderParticipantId());
         boolean deleted = mine
             ? message.getSenderDeletedAt() != null
             : message.getReceiverDeletedAt() != null;
 
-        return new MessageItem(
+        return new ChatMessageListResponse.Message(
             message.getId(), mine, message.getMessageType(),
             deleted ? DELETED_CONTENT : message.getTextContent(),
             message.getImageFileId(),
@@ -103,23 +119,4 @@ public class ChatMessageListService {
                 || message.getId() > otherLastReadMessageId) ? 1 : 0,
             message.getStatus(), message.getCreatedAt());
     }
-
-    public record MessagePage(
-        Long chatRoomId,
-        ChatRoomStatus roomStatus,
-        boolean chatNotification,
-        Long otherUserId,
-        List<MessageItem> messages,
-        Long nextCursor,
-        boolean hasNext) {}
-
-    public record MessageItem(
-        Long messageId,
-        boolean mine,
-        ChatMessageType messageType,
-        String textContent,
-        Long imageFileId,
-        int unreadCount,
-        ChatMessageStatus status,
-        LocalDateTime createdAt) {}
 }
