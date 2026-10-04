@@ -38,7 +38,8 @@ public class ProfileImageGetService {
             ProfileImageAccessResult image = new ProfileImageAccessResult(
                 profileImage.getImage().getId(),
                 profileImage.getDisplayOrder(),
-                accessUrl.accessUrl());
+                accessUrl.accessUrl(),
+                accessUrl.expiresAt());
             profileImagesByMemberId.computeIfAbsent(memberId, ignored -> new java.util.ArrayList<>())
                 .add(image);
         }

@@ -19,6 +19,7 @@ import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -93,9 +94,15 @@ class ReceivedLikeGetServiceTest {
                 20L,
                 List.of(
                     new ProfileImageAccessResult(
-                        702L, (short) 2, "https://example.com/second"),
+                        702L,
+                        (short) 2,
+                        "https://example.com/second",
+                        Instant.parse("2026-09-27T12:05:00Z")),
                     new ProfileImageAccessResult(
-                        701L, (short) 1, "https://example.com/representative"))));
+                        701L,
+                        (short) 1,
+                        "https://example.com/representative",
+                        Instant.parse("2026-09-27T12:05:00Z")))));
 
         ReceivedLikesGetResponse response = service.getReceivedLikes(RECEIVER_ID, 120L);
 
