@@ -14,6 +14,23 @@ public interface RecommendationItemRepository extends JpaRepository<Recommendati
         Long recommendationBatchId);
 
     @Query("""
+        SELECT count(item) > 0
+        FROM RecommendationItem item
+        JOIN RecommendationBatch batch ON batch.id = item.recommendationBatchId
+        JOIN User requester ON requester.id = batch.userId
+        JOIN User candidate ON candidate.id = item.candidateUserId
+        JOIN Profile profile ON profile.user = candidate AND profile.deletedAt IS NULL
+        WHERE batch.userId = :requesterUserId
+          AND batch.deletedAt IS NULL
+          AND requester.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
+          AND candidate.id = :memberId
+          AND
+        """ + RecommendationEligibilityQuery.ELIGIBLE_CANDIDATE_PREDICATE)
+    boolean existsEligibleCandidateInActiveBatch(
+        @Param("requesterUserId") Long requesterUserId,
+        @Param("memberId") Long memberId);
+
+    @Query("""
         SELECT new com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow(
             item.id, candidate.id, candidate.birthDate, profile.nickname, profile.job,
             profile.mbti, region.provinceName, region.regionName)
