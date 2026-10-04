@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -18,6 +19,7 @@ import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,10 +33,12 @@ class ChatMessageListServiceTest {
     private static final Long VIEWER_USER_ID = 1L;
     private static final Long VIEWER_PARTICIPANT_ID = 10L;
     private static final Long OTHER_PARTICIPANT_ID = 20L;
+    private static final Long OTHER_USER_ID = 2L;
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
 
     private ChatRoomRepository chatRoomRepository;
     private ChatMessageRepository chatMessageRepository;
+    private ChatRoomParticipantDisplayService participantDisplayService;
     private ChatMessageListService service;
     private ChatRoom room;
     private ChatParticipant viewer;
@@ -44,15 +48,16 @@ class ChatMessageListServiceTest {
     void setUp() {
         chatRoomRepository = mock(ChatRoomRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
+        participantDisplayService = mock(ChatRoomParticipantDisplayService.class);
         service = new ChatMessageListService(
-            chatRoomRepository, chatMessageRepository);
+            chatRoomRepository, chatMessageRepository, participantDisplayService);
 
-        Match match = new Match(VIEWER_USER_ID, 2L, BASE_TIME.minusDays(1));
+        Match match = new Match(VIEWER_USER_ID, OTHER_USER_ID, BASE_TIME.minusDays(1));
         ReflectionTestUtils.setField(match, "id", 70L);
         room = new ChatRoom(match, BASE_TIME.minusDays(1));
         ReflectionTestUtils.setField(room, "id", CHAT_ROOM_ID);
         viewer = participant(VIEWER_PARTICIPANT_ID, VIEWER_USER_ID);
-        other = participant(OTHER_PARTICIPANT_ID, 2L);
+        other = participant(OTHER_PARTICIPANT_ID, OTHER_USER_ID);
 
         given(chatRoomRepository.findById(CHAT_ROOM_ID)).willReturn(Optional.of(room));
     }
@@ -65,17 +70,17 @@ class ChatMessageListServiceTest {
                 message(20L, VIEWER_PARTICIPANT_ID, "중간"),
                 message(10L, OTHER_PARTICIPANT_ID, "추가 조회")));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+        ChatMessageListResponse result = service.listMessages(CHAT_ROOM_ID,
             VIEWER_USER_ID, null, 2);
 
-        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::messageId)
+        assertThat(result.messages()).extracting(ChatMessageListResponse.Message::messageId)
             .containsExactly(20L, 30L);
-        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::textContent)
+        assertThat(result.messages()).extracting(ChatMessageListResponse.Message::textContent)
             .containsExactly("중간", "최신");
-        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::unreadCount)
+        assertThat(result.messages()).extracting(ChatMessageListResponse.Message::unreadCount)
             .containsExactly(1, 0);
-        assertThat(result.hasNext()).isTrue();
-        assertThat(result.nextCursor()).isEqualTo(20L);
+        assertThat(result.pageInfo().hasNext()).isTrue();
+        assertThat(result.pageInfo().nextCursor()).isEqualTo(20L);
         verify(chatMessageRepository).findByChatRoomIdAndStatusOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3));
     }
@@ -88,10 +93,10 @@ class ChatMessageListServiceTest {
             .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "받은 메시지"),
                 message(20L, VIEWER_PARTICIPANT_ID, "내 메시지")));
 
-        ChatMessageListService.MessagePage result = service.listMessages(
+        ChatMessageListResponse result = service.listMessages(
             CHAT_ROOM_ID, VIEWER_USER_ID, null, 2);
 
-        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::unreadCount)
+        assertThat(result.messages()).extracting(ChatMessageListResponse.Message::unreadCount)
             .containsExactly(0, 0);
     }
 
@@ -103,13 +108,13 @@ class ChatMessageListServiceTest {
                 20L, PageRequest.of(0, 3)))
             .willReturn(List.of(message(19L, OTHER_PARTICIPANT_ID, "이전 메시지")));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+        ChatMessageListResponse result = service.listMessages(CHAT_ROOM_ID,
             VIEWER_USER_ID, 20L, 2);
 
-        assertThat(result.messages()).extracting(ChatMessageListService.MessageItem::messageId)
+        assertThat(result.messages()).extracting(ChatMessageListResponse.Message::messageId)
             .containsExactly(19L);
-        assertThat(result.hasNext()).isFalse();
-        assertThat(result.nextCursor()).isNull();
+        assertThat(result.pageInfo().hasNext()).isFalse();
+        assertThat(result.pageInfo().nextCursor()).isNull();
         verify(chatMessageRepository)
             .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
                 CHAT_ROOM_ID, ChatMessageStatus.SENT,
@@ -124,10 +129,31 @@ class ChatMessageListServiceTest {
             CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 2)))
             .willReturn(List.of(deletedMessage));
 
-        ChatMessageListService.MessagePage result = service.listMessages(CHAT_ROOM_ID,
+        ChatMessageListResponse result = service.listMessages(CHAT_ROOM_ID,
             VIEWER_USER_ID, null, 1);
 
         assertThat(result.messages().getFirst().textContent()).isEqualTo("삭제된 메시지입니다.");
+    }
+
+    @Test
+    void 상대방_표시_정보를_조회해_응답에_포함한다() {
+        String profileImageUrl = "https://example.com/profile.jpg";
+        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
+            .willReturn(List.of());
+        given(participantDisplayService.findNicknames(List.of(OTHER_USER_ID)))
+            .willReturn(Map.of(OTHER_USER_ID, "상대방"));
+        given(participantDisplayService.findProfileImageUrls(List.of(OTHER_USER_ID)))
+            .willReturn(Map.of(OTHER_USER_ID, profileImageUrl));
+
+        ChatMessageListResponse result = service.listMessages(
+            CHAT_ROOM_ID, VIEWER_USER_ID, null, 20);
+
+        assertThat(result.chatRoom().otherParticipant())
+            .isEqualTo(new ChatMessageListResponse.OtherParticipant(
+                OTHER_USER_ID, "상대방", profileImageUrl));
+        verify(participantDisplayService).findNicknames(List.of(OTHER_USER_ID));
+        verify(participantDisplayService).findProfileImageUrls(List.of(OTHER_USER_ID));
     }
 
     @Test
