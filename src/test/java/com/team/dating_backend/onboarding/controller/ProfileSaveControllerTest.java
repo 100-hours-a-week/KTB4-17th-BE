@@ -17,10 +17,12 @@ import com.team.dating_backend.onboarding.dto.response.ProfileSaveProfileRespons
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResponse;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
 import com.team.dating_backend.onboarding.exception.NicknameAlreadyInUseException;
+import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedException;
 import com.team.dating_backend.onboarding.service.ProfileSaveService;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.EducationLevel;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -206,6 +208,21 @@ class ProfileSaveControllerTest {
                 .content("{\"nickname\":\"하리\"}"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("NICKNAME_ALREADY_IN_USE"))
+            .andExpect(jsonPath("$.errors").doesNotExist());
+    }
+
+    @Test
+    void 페르소나_문답을_시작한_후_프로필을_수정하면_409를_반환한다() throws Exception {
+        given(profileSaveService.saveProfile(any(), any(ProfileSaveRequest.class)))
+            .willThrow(new ProfileUpdateNotAllowedException(
+                USER_ID, PersonaOnboardingStatus.IN_PROGRESS));
+
+        mockMvc.perform(
+            authenticatedPut()
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nickname\":\"하리\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("PROFILE_UPDATE_NOT_ALLOWED"))
             .andExpect(jsonPath("$.errors").doesNotExist());
     }
 
