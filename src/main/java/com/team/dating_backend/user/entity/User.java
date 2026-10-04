@@ -83,6 +83,13 @@ public class User {
         }
     }
 
+    public void startPersonaOnboarding(LocalDateTime now) {
+        if (personaOnboardingStatus == PersonaOnboardingStatus.PENDING) {
+            personaOnboardingStatus = PersonaOnboardingStatus.IN_PROGRESS;
+            updatedAt = now;
+        }
+    }
+
     public void confirmPersonaOnboarding(LocalDateTime now) {
         if (personaOnboardingStatus != PersonaOnboardingStatus.CONFIRMED) {
             personaOnboardingStatus = PersonaOnboardingStatus.CONFIRMED;

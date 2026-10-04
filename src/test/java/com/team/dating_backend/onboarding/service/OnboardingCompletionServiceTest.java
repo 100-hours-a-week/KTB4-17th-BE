@@ -84,6 +84,24 @@ class OnboardingCompletionServiceTest {
     }
 
     @Test
+    void 페르소나_온보딩이_IN_PROGRESS이면_다른_조건을_충족해도_ONBOARDING을_유지한다() {
+        User user = pendingPersonaUser();
+        user.startPersonaOnboarding(LocalDateTime.now().plusSeconds(1));
+        assertThat(user.getPersonaOnboardingStatus())
+            .isEqualTo(PersonaOnboardingStatus.IN_PROGRESS);
+        Profile profile = completeProfile(user);
+        givenUser(user);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(profile));
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
+            .willReturn(true);
+
+        onboardingCompletionService.activateIfCompleted(USER_ID);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ONBOARDING);
+    }
+
+    @Test
     void 페르소나_온보딩이_BYPASSED이면_다른_조건_충족_시_ACTIVE가_된다() {
         User user = pendingPersonaUser();
         ReflectionTestUtils.setField(
