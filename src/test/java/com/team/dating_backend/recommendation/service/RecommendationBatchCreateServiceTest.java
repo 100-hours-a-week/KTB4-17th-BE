@@ -58,11 +58,11 @@ class RecommendationBatchCreateServiceTest {
     }
 
     @Test
-    void 추천_후보를_순서대로_아이템으로_저장하고_배치_정보를_반환한다() {
+    void 추천_후보를_랜덤으로_배치하고_순위를_순차적으로_부여한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findById(5L)).willReturn(Optional.of(requester));
         given(recommendationCandidateRepository.findEligibleCandidateIds(5L))
-            .willReturn(List.of(2L, 9L));
+            .willReturn(List.of(2L, 9L, 11L));
 
         var response = service.createRecommendationBatch(5L).orElseThrow();
 
@@ -81,13 +81,15 @@ class RecommendationBatchCreateServiceTest {
         verify(recommendationItemRepository).saveAll(itemCaptor.capture());
         assertThat(itemCaptor.getValue())
             .extracting(RecommendationItem::getRecommendationBatchId)
-            .containsExactly(42L, 42L);
+            .containsOnly(42L);
         assertThat(itemCaptor.getValue())
             .extracting(RecommendationItem::getCandidateUserId)
-            .containsExactly(2L, 9L);
+            .containsExactlyInAnyOrder(2L, 9L, 11L)
+            .doesNotHaveDuplicates();
         assertThat(itemCaptor.getValue())
             .extracting(RecommendationItem::getRankingOrder)
-            .containsExactly(1, 2);
+            .containsExactly(1, 2, 3)
+            .doesNotHaveDuplicates();
         InOrder saveOrder = inOrder(recommendationBatchRepository, recommendationItemRepository);
         saveOrder.verify(recommendationBatchRepository).save(any(RecommendationBatch.class));
         saveOrder.verify(recommendationItemRepository).saveAll(any());
