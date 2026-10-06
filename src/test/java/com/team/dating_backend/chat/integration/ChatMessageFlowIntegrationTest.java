@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.BDDMockito.given;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -24,6 +26,7 @@ import com.team.dating_backend.chat.service.ChatMessageRateLimiter;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
 import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
+import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.config.SecurityConfig;
@@ -36,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -50,6 +54,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -117,10 +122,16 @@ class ChatMessageFlowIntegrationTest {
     @Autowired
     private SimpUserRegistry simpUserRegistry;
 
+    @MockitoBean
+    private ProfileImageGetService profileImageGetService;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @BeforeEach
     void setUpDatabase() {
+        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+            .willReturn(Map.of());
+
         jdbcTemplate.update("delete from chat_message_outbox");
         jdbcTemplate.update("delete from chat_messages");
         jdbcTemplate.update("delete from files");
