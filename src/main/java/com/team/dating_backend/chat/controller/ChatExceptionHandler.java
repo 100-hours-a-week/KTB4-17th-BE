@@ -36,7 +36,7 @@ public class ChatExceptionHandler {
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(errorCode.status());
         if (errorCode == ChatErrorCode.TOO_MANY_MESSAGE_REQUESTS) {
-            response.header(HttpHeaders.RETRY_AFTER, "2");
+            response.header(HttpHeaders.RETRY_AFTER, "1");
         }
         return response.body(ErrorResponse.of(errorCode));
     }
