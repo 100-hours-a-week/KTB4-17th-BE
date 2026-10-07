@@ -1,7 +1,7 @@
 spring:
   jpa:
     hibernate:
-      ddl-auto: create   # 개발 중: create / create-drop / update 중 선택
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true

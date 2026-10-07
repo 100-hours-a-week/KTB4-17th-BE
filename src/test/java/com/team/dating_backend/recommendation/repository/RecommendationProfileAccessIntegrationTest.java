@@ -28,7 +28,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create")
+@DataJpaTest(
+    properties = {
+        "spring.jpa.hibernate.ddl-auto=create",
+        "spring.flyway.enabled=false"
+    }
+)
 @Testcontainers(disabledWithoutDocker = true)
 class RecommendationProfileAccessIntegrationTest {
 
