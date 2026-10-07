@@ -11,7 +11,7 @@ on:
 permissions:
     contents: read
     id-token: write
-
+# 이미지 입력방식 변경
 env:
     AWS_REGION: ap-northeast-2
     ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
