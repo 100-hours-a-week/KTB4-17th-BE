@@ -2,10 +2,11 @@
 
 ## Before deploying
 
-This repository does not currently run Flyway or Liquibase. Apply
-`src/main/resources/db/manual/20260926_create_file_upload_intents.sql` to the
-production database before deploying this version. Production uses
-`ddl-auto=validate`, so the application will not create this table itself.
+Database schema changes are managed by Flyway under
+`src/main/resources/db/migration`. `V1__initial_schema.sql` includes
+`file_upload_intents` for new databases. Before the first Flyway deployment
+to an existing database, verify that its schema matches V1 and register
+baseline version 1. JPA uses `ddl-auto=validate` to verify entity mappings.
 
 The bucket must remain private with S3 Block Public Access enabled. The
 application role needs `s3:PutObject` on `staging/*` and `files/*`,
