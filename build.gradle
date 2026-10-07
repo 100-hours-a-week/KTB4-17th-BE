@@ -60,6 +60,37 @@ tasks.named('test') {
 	}
 }
 
+// API 테스트: MockMvc로 컨트롤러 계층을 검증하는 테스트
+def apiTestPatterns = ['*ControllerTest', '*SecurityConfigTest']
+// 통합 테스트: 전체 컨텍스트나 Testcontainers(Docker)가 필요한 테스트 현재 CI에서 동작하지 않음
+def integrationTestPatterns = [
+	'*IntegrationTest',
+	'*ChatWebSocketHandshakeTest',
+	'*DatingBackendApplicationTests'
+]
+
+tasks.register('apiTest', Test) {
+	description = 'MockMvc 기반 API 테스트만 실행.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	filter {
+		apiTestPatterns.each { includeTestsMatching it }
+	}
+}
+
+tasks.register('unitTest', Test) {
+	description = ' 단위 테스트만 실행.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	filter {
+		(apiTestPatterns + integrationTestPatterns).each { excludeTestsMatching it }
+	}
+}
+
 spotless {
 	java {
 		eclipse().configFile('config/formatter/java-formatter.xml')
