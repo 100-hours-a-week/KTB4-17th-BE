@@ -95,9 +95,6 @@ jobs:
                   echo "Promoted:"
                   echo "$DEV_SHA -> $RELEASE_TAG"
                   echo "IMAGE: $IMAGE_URL"
-
-                  echo "image_url=$IMAGE_URL" >> "$GITHUB_OUTPUT"
-
     deploy:
         name: Backend Blue-Green Deploy
         needs: promote_image
@@ -128,9 +125,10 @@ jobs:
                   EC2_HOST: ${{ secrets.EC2_HOST }}
                   EC2_USER: ${{ secrets.EC2_USER }}
                   EC2_PORT: ${{ secrets.EC2_PORT }}
-                  IMAGE_URL: ${{ needs.promote_image.outputs.image_url }}
               run: |
                   set -euo pipefail
+
+                  IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
 
                   ssh \
                     -i "$RUNNER_TEMP/ssh/ec2_key" \
