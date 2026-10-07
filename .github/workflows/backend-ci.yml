@@ -37,9 +37,12 @@ jobs:
 
         # 의존성 검사 대신 Gitleaks으로 변경
       - name: Secret Scan
+        env:
+          # PR이면 PR 브랜치의 최신 커밋이나 push면 방금 올라온 커밋만 검사
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            git /repo --redact --no-banner --verbose
+            git /repo --log-opts="-1 $COMMIT" --redact --no-banner --verbose
 
 
         #단위 테스트
