@@ -32,8 +32,29 @@ jobs:
       - name: Formatter Check
         run: ./gradlew spotlessCheck
 
+
+        #의존성 테스트 변경
       - name: Check Dependencies
         run: ./gradlew dependencies
+
+
+        #단위 테스트
+      - name: Unit Test
+        run: ./gradlew unitTest
+
+
+        #Api테스트
+      - name: API Test
+        run: ./gradlew apiTest
+
+        #테스트 레포트 작성
+      - name: Upload Test Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests
+          retention-days: 7
 
       - name: Build
         run: ./gradlew clean bootJar -x test
