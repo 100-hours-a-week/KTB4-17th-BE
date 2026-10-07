@@ -20,7 +20,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create")
+@DataJpaTest(
+    properties = {
+        "spring.jpa.hibernate.ddl-auto=create",
+        "spring.flyway.enabled=false"
+    }
+)
 @Testcontainers(disabledWithoutDocker = true)
 class ChatRoomRepositoryIntegrationTest {
 
@@ -140,7 +145,7 @@ class ChatRoomRepositoryIntegrationTest {
     void 채팅_연관관계_마이그레이션을_현재_엔티티_스키마에서_실행할_수_있다() {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource(
-                "db/manual/20260927_add_chat_message_image_and_relation_constraints.sql"));
+                "fixtures/db/manual/20260927_add_chat_message_image_and_relation_constraints.sql"));
             return null;
         });
 

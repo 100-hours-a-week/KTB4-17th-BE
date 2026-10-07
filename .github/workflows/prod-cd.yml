@@ -24,6 +24,7 @@ jobs:
         runs-on: ubuntu-latest
 
         outputs:
+            image_url: ${{ steps.promote.outputs.image_url }}
             dev_sha: ${{ steps.dev_sha.outputs.dev_sha }}
 
         steps:

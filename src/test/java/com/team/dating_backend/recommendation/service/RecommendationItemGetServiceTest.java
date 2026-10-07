@@ -24,12 +24,14 @@ import com.team.dating_backend.recommendation.repository.RecommendationItemRepos
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.LongStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
@@ -72,9 +74,15 @@ class RecommendationItemGetServiceTest {
                 21L,
                 List.of(
                     new ProfileImageAccessResult(
-                        701L, (short) 1, "https://example.com/701"),
+                        701L,
+                        (short) 1,
+                        "https://example.com/701",
+                        Instant.parse("2026-09-27T12:00:00Z")),
                     new ProfileImageAccessResult(
-                        704L, (short) 2, "https://example.com/704"))));
+                        704L,
+                        (short) 2,
+                        "https://example.com/704",
+                        Instant.parse("2026-09-27T12:00:00Z")))));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
 
@@ -89,12 +97,18 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items().getFirst().candidate().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.items().getFirst().candidate().mbti()).isEqualTo(Mbti.INFP);
         assertThat(response.items().getFirst().candidate().images())
-            .extracting("fileId", "displayOrder", "imageUrl")
+            .extracting("fileId", "displayOrder", "imageUrl", "expiresAt")
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(
-                    701L, (short) 1, "https://example.com/701"),
+                    701L,
+                    (short) 1,
+                    "https://example.com/701",
+                    Instant.parse("2026-09-27T12:00:00Z")),
                 org.assertj.core.groups.Tuple.tuple(
-                    704L, (short) 2, "https://example.com/704"));
+                    704L,
+                    (short) 2,
+                    "https://example.com/704",
+                    Instant.parse("2026-09-27T12:00:00Z")));
         assertThat(response.pageInfo().nextCursor()).isEqualTo(120L);
         assertThat(response.pageInfo().hasNext()).isTrue();
         assertThat(response.pageInfo().batchId()).isEqualTo(42L);
@@ -117,6 +131,38 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items().getFirst().candidate().images()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
+    }
+
+    @Test
+    void 페이지_조회_시_추천_후보가_중복되거나_누락되지_않는다() {
+        givenActiveRequesterAndBatch();
+        List<RecommendationItemCandidateRow> firstQueryRows = LongStream.range(0, 21)
+            .mapToObj(index -> row(101L + index, 41L + index))
+            .toList();
+        given(recommendationItemRepository.findEligibleItems(
+            42L, 5L, null, null, PageRequest.of(0, 21)))
+            .willReturn(firstQueryRows);
+        RecommendationItem cursorItem = mock(RecommendationItem.class);
+        given(cursorItem.getRankingOrder()).willReturn(20);
+        given(recommendationItemRepository.findByIdAndRecommendationBatchId(120L, 42L))
+            .willReturn(Optional.of(cursorItem));
+        given(recommendationItemRepository.findEligibleItems(
+            42L, 5L, 20, 120L, PageRequest.of(0, 21)))
+            .willReturn(List.of(row(121L, 61L)));
+
+        RecommendationItemsGetResponse firstPage = service.getRecommendationItems(
+            5L, 42L, null);
+        RecommendationItemsGetResponse secondPage = service.getRecommendationItems(
+            5L, 42L, firstPage.pageInfo().nextCursor());
+
+        assertThat(firstPage.items()).hasSize(20);
+        assertThat(firstPage.pageInfo().nextCursor()).isEqualTo(120L);
+        assertThat(secondPage.pageInfo().nextCursor()).isNull();
+        assertThat(Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+            .map(item -> item.candidate().memberId()))
+            .containsExactlyInAnyOrderElementsOf(
+                LongStream.rangeClosed(41L, 61L).boxed().toList())
+            .doesNotHaveDuplicates();
     }
 
     @Test

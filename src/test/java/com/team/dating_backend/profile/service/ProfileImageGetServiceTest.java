@@ -56,6 +56,11 @@ class ProfileImageGetServiceTest {
         assertThat(result.get(21L))
             .extracting(ProfileImageAccessResult::imageUrl)
             .containsExactly("https://example.com/701", "https://example.com/704");
+        assertThat(result.get(21L))
+            .extracting(ProfileImageAccessResult::expiresAt)
+            .containsExactly(
+                Instant.parse("2026-09-27T12:00:00Z"),
+                Instant.parse("2026-09-27T12:00:00Z"));
         assertThat(result.get(22L))
             .extracting(ProfileImageAccessResult::fileId)
             .containsExactly(801L);

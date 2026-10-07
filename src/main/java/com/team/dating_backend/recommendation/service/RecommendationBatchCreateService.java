@@ -13,6 +13,7 @@ import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -39,13 +40,14 @@ public class RecommendationBatchCreateService {
             throw new RecommendationBusinessException(RecommendationErrorCode.REQUESTER_NOT_ACTIVE);
         }
 
-        List<Long> candidateUserIds = recommendationCandidateRepository
-            .findEligibleCandidateIds(requesterUserId);
+        List<Long> candidateUserIds = new ArrayList<>(recommendationCandidateRepository
+            .findEligibleCandidateIds(requesterUserId));
         LocalDateTime now = LocalDateTime.now();
         if (candidateUserIds.isEmpty()) {
             recommendationBatchRepository.markActiveBatchesDeleted(requesterUserId, now);
             return Optional.empty();
         }
+        Collections.shuffle(candidateUserIds);
 
         RecommendationBatch batch = recommendationBatchRepository
             .save(new RecommendationBatch(requesterUserId, now));

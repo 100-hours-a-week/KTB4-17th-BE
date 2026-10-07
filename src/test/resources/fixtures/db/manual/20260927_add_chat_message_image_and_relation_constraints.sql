@@ -1,4 +1,4 @@
--- Preflight: resolve returned rows before applying the foreign keys.
+-- Test fixture for applying chat constraints to a Hibernate-created schema.
 SELECT participant.id, participant.chat_room_id
 FROM chat_participants AS participant
 LEFT JOIN chat_rooms AS room ON room.id = participant.chat_room_id

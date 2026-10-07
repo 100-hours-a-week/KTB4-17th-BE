@@ -8,6 +8,7 @@ import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import java.time.LocalDate;
@@ -29,6 +30,7 @@ public class MemberProfileGetService {
     private final LikeRepository likeRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final UserBlockRepository userBlockRepository;
+    private final RecommendationItemRepository recommendationItemRepository;
 
     @Transactional(readOnly = true)
     public MemberProfileResponse getMemberProfile(Long viewerUserId, Long memberId) {
@@ -36,7 +38,9 @@ public class MemberProfileGetService {
             || viewerUserId.equals(memberId)
             || userBlockRepository.existsActiveBlockBetween(viewerUserId, memberId)
             || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, memberId)
-                && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, memberId))) {
+                && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, memberId)
+                && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
+                    viewerUserId, memberId))) {
             throw profileNotAvailable();
         }
 
