@@ -45,6 +45,7 @@ public class PersonaOnboardingService {
     private final PersonaAiClient aiClient;
     private final OnboardingCompletionService onboardingCompletionService;
 
+    @Transactional
     public PersonaConversationResponse start(Long userId) {
         Profile profile = requireProfile(userId);
         String nickname = profile.getNickname();
@@ -57,7 +58,9 @@ public class PersonaOnboardingService {
                 nickname,
                 userId.toString(),
                 profile.getMbti() == null ? null : profile.getMbti().name()));
-        return toConversation(response, null, true);
+        PersonaConversationResponse conversation = toConversation(response, null, true);
+        profile.getUser().startPersonaOnboarding(LocalDateTime.now());
+        return conversation;
     }
 
     public PersonaConversationResponse answer(

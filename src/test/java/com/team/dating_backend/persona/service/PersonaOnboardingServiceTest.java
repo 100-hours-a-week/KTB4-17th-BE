@@ -73,6 +73,7 @@ class PersonaOnboardingServiceTest {
         assertThat(captor.getValue().mbti()).isEqualTo("ENFJ");
         assertThat(result.sessionId()).isEqualTo(SESSION_ID);
         assertThat(result.personaDraft()).isNull();
+        verify(user).startPersonaOnboarding(any(LocalDateTime.class));
     }
 
     @Test
@@ -86,6 +87,33 @@ class PersonaOnboardingServiceTest {
 
         assertThat(first.sessionId()).isNotEqualTo(second.sessionId());
         verify(aiClient, times(2)).start(any());
+    }
+
+    @Test
+    void AI_시작_요청이_실패하면_진행_상태를_변경하지_않는다() {
+        given(aiClient.start(any()))
+            .willThrow(new PersonaBusinessException(PersonaErrorCode.AI_SERVER_UNAVAILABLE));
+
+        assertThatThrownBy(() -> service.start(USER_ID))
+            .isInstanceOfSatisfying(
+                PersonaBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(PersonaErrorCode.AI_SERVER_UNAVAILABLE));
+
+        verify(user, never()).startPersonaOnboarding(any(LocalDateTime.class));
+    }
+
+    @Test
+    void AI_시작_응답이_유효하지_않으면_진행_상태를_변경하지_않는다() {
+        given(aiClient.start(any())).willReturn(turn(null, false, false, 0));
+
+        assertThatThrownBy(() -> service.start(USER_ID))
+            .isInstanceOfSatisfying(
+                PersonaBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(PersonaErrorCode.AI_SERVER_RESPONSE_INVALID));
+
+        verify(user, never()).startPersonaOnboarding(any(LocalDateTime.class));
     }
 
     @Test

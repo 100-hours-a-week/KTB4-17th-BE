@@ -24,6 +24,7 @@ import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
@@ -141,6 +142,20 @@ class OnboardingServiceTest {
     @Test
     void 페르소나_온보딩이_완료되지_않으면_다음_단계는_PERSONA이다() {
         User user = givenOnboardingUser();
+        given(user.isPersonaOnboardingComplete()).willReturn(false);
+        givenProfile(completeProfile());
+
+        OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
+
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.PERSONA);
+        assertThat(response.requirements().personaComplete()).isFalse();
+    }
+
+    @Test
+    void 페르소나_문답이_진행_중이면_다음_단계는_PERSONA이다() {
+        User user = givenOnboardingUser();
+        given(user.getPersonaOnboardingStatus())
+            .willReturn(PersonaOnboardingStatus.IN_PROGRESS);
         given(user.isPersonaOnboardingComplete()).willReturn(false);
         givenProfile(completeProfile());
 

@@ -9,10 +9,13 @@ import com.team.dating_backend.onboarding.dto.response.ProfileSaveProfileRespons
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResponse;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
 import com.team.dating_backend.onboarding.exception.NicknameAlreadyInUseException;
+import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedException;
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +42,7 @@ public class ProfileSaveService {
         User user = userRepository
             .findById(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
+        validateProfileUpdate(userId, user);
         Optional<Profile> existingProfile = profileRepository
             .findByUserIdAndDeletedAtIsNull(userId);
         boolean created = existingProfile.isEmpty();
@@ -64,6 +68,14 @@ public class ProfileSaveService {
         ProfileSaveResponse response = new ProfileSaveResponse(
             ProfileSaveProfileResponse.from(savedProfile));
         return new ProfileSaveResult(created, response);
+    }
+
+    private void validateProfileUpdate(Long userId, User user) {
+        if (user.getStatus() == UserStatus.ONBOARDING
+            && user.getPersonaOnboardingStatus() != PersonaOnboardingStatus.PENDING) {
+            throw new ProfileUpdateNotAllowedException(
+                userId, user.getPersonaOnboardingStatus());
+        }
     }
 
     private Profile saveAndFlush(Profile profile) {

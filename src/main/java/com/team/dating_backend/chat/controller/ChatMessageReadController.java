@@ -26,8 +26,6 @@ public class ChatMessageReadController {
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @PathVariable Long chatRoomId,
         @Valid @RequestBody ChatMessageReadRequest request) {
-        // The client sends the last message actually shown to the user, not merely the
-        // last fetched.
         ChatMessageReadResponse response = chatMessageReadService.markAsRead(
             chatRoomId, principal.userId(), request);
         return SuccessResponse.of("chat_message_read_success", response);

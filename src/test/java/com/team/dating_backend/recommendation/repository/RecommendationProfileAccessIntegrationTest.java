@@ -1,6 +1,7 @@
 package com.team.dating_backend.recommendation.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.enums.LikeStatus;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -26,7 +28,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create")
+@DataJpaTest(
+    properties = {
+        "spring.jpa.hibernate.ddl-auto=create",
+        "spring.flyway.enabled=false"
+    }
+)
 @Testcontainers(disabledWithoutDocker = true)
 class RecommendationProfileAccessIntegrationTest {
 
@@ -61,6 +68,27 @@ class RecommendationProfileAccessIntegrationTest {
     @Test
     void 활성_추천_배치의_적격_상대는_상세_조회_권한이_있다() {
         assertThat(hasAccess()).isTrue();
+    }
+
+    @Test
+    void 동일_배치에_같은_추천_순위를_중복_저장할_수_없다() {
+        User otherCandidate = activeUser();
+
+        assertThatThrownBy(() -> {
+            entityManager.persist(
+                new RecommendationItem(batch.getId(), otherCandidate.getId(), 1));
+            entityManager.flush();
+        })
+            .isInstanceOf(ConstraintViolationException.class);
+    }
+
+    @Test
+    void 동일_배치에_같은_추천_후보를_중복_저장할_수_없다() {
+        assertThatThrownBy(() -> {
+            entityManager.persist(new RecommendationItem(batch.getId(), candidate.getId(), 2));
+            entityManager.flush();
+        })
+            .isInstanceOf(ConstraintViolationException.class);
     }
 
     @Test

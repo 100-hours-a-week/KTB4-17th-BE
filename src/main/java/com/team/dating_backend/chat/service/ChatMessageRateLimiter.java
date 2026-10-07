@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class ChatMessageRateLimiter {
 
-    private static final int BURST_CAPACITY = 5;
-    private static final long REFILL_INTERVAL_NANOS = Duration.ofSeconds(2).toNanos();
+    private static final int BURST_CAPACITY = 10;
+    private static final long REFILL_INTERVAL_NANOS = Duration.ofSeconds(1).toNanos();
     private static final long IDLE_TTL_NANOS = Duration.ofMinutes(10).toNanos();
 
     private final ConcurrentHashMap<Long, Bucket> buckets = new ConcurrentHashMap<>();

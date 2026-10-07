@@ -14,6 +14,7 @@ import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
 import com.team.dating_backend.onboarding.exception.NicknameAlreadyInUseException;
+import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedException;
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.BodyType;
@@ -24,12 +25,16 @@ import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.sql.SQLException;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.dao.DataIntegrityViolationException;
 
 class ProfileSaveServiceTest {
@@ -58,6 +63,8 @@ class ProfileSaveServiceTest {
     void 최초_부분_입력을_저장하면_프로필을_생성하고_미선택_필드는_null로_저장한다() {
         User user = mock(User.class);
         ActivityRegion activityRegion = mock(ActivityRegion.class);
+        given(user.getStatus()).willReturn(UserStatus.ONBOARDING);
+        given(user.getPersonaOnboardingStatus()).willReturn(PersonaOnboardingStatus.PENDING);
         given(activityRegion.getId()).willReturn(ACTIVITY_REGION_ID);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
@@ -84,6 +91,48 @@ class ProfileSaveServiceTest {
         assertThat(result.response().profile().drinking()).isNull();
         assertThat(result.response().profile().smoking()).isNull();
         verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = PersonaOnboardingStatus.class,
+        names = {"IN_PROGRESS", "CONFIRMED", "BYPASSED"}
+    )
+    void 온보딩_단계에서_페르소나를_시작한_후에는_프로필을_수정할_수_없다(
+        PersonaOnboardingStatus personaOnboardingStatus) {
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(UserStatus.ONBOARDING);
+        given(user.getPersonaOnboardingStatus()).willReturn(personaOnboardingStatus);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(
+            () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, NICKNAME)))
+            .isInstanceOf(ProfileUpdateNotAllowedException.class);
+
+        verifyNoInteractions(
+            profileRepository, activityRegionRepository, onboardingCompletionService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(PersonaOnboardingStatus.class)
+    void ACTIVE_회원은_페르소나_상태와_관계없이_프로필을_수정할_수_있다(
+        PersonaOnboardingStatus personaOnboardingStatus) {
+        User user = mock(User.class);
+        Profile profile = completeProfile(user);
+        given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(user.getPersonaOnboardingStatus()).willReturn(personaOnboardingStatus);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(profile));
+        given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
+            .willReturn(false);
+        given(profileRepository.saveAndFlush(profile)).willReturn(profile);
+
+        ProfileSaveResult result = profileSaveService.saveProfile(
+            USER_ID, partialRequest(null, NICKNAME));
+
+        assertThat(result.created()).isFalse();
+        assertThat(profile.getNickname()).isEqualTo(NICKNAME);
     }
 
     @Test

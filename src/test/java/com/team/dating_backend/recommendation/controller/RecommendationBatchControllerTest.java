@@ -24,6 +24,7 @@ import com.team.dating_backend.recommendation.service.RecommendationBatchCreateS
 import com.team.dating_backend.recommendation.service.RecommendationBatchGetService;
 import com.team.dating_backend.recommendation.service.RecommendationItemGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -153,9 +154,15 @@ class RecommendationBatchControllerTest {
             null,
             List.of(
                 new RecommendationProfileImageResponse(
-                    701L, (short) 1, "https://example.com/701"),
+                    701L,
+                    (short) 1,
+                    "https://example.com/701",
+                    Instant.parse("2026-09-27T12:05:00Z")),
                 new RecommendationProfileImageResponse(
-                    704L, (short) 2, "https://example.com/704")));
+                    704L,
+                    (short) 2,
+                    "https://example.com/704",
+                    Instant.parse("2026-09-27T12:05:00Z"))));
         given(recommendationItemGetService.getRecommendationItems(5L, 42L, 100L))
             .willReturn(new RecommendationItemsGetResponse(
                 List.of(new RecommendationItemResponse(101L, candidate)),
@@ -176,10 +183,14 @@ class RecommendationBatchControllerTest {
             .andExpect(jsonPath("$.data.items[0].candidate.images[0].displayOrder").value(1))
             .andExpect(jsonPath("$.data.items[0].candidate.images[0].imageUrl")
                 .value("https://example.com/701"))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[0].expiresAt")
+                .value("2026-09-27T12:05:00Z"))
             .andExpect(jsonPath("$.data.items[0].candidate.images[1].fileId").value(704))
             .andExpect(jsonPath("$.data.items[0].candidate.images[1].displayOrder").value(2))
             .andExpect(jsonPath("$.data.items[0].candidate.images[1].imageUrl")
                 .value("https://example.com/704"))
+            .andExpect(jsonPath("$.data.items[0].candidate.images[1].expiresAt")
+                .value("2026-09-27T12:05:00Z"))
             .andExpect(jsonPath("$.data.items[0].capabilities").doesNotExist())
             .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(101))
             .andExpect(jsonPath("$.data.pageInfo.hasNext").value(true))
