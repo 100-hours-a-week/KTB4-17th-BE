@@ -5,6 +5,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -103,7 +104,7 @@ class ProfileImageControllerTest {
                 """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("images"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileImageSaveService);
     }
@@ -117,7 +118,7 @@ class ProfileImageControllerTest {
                 """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("images[0].isFrontal"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileImageSaveService);
     }

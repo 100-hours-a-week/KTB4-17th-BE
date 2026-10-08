@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.activityregion.repository.ActivityRegionRepository;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
@@ -233,7 +234,7 @@ class ProfileSaveServiceTest {
     }
 
     @Test
-    void 존재하지_않는_활동_지역이면_필드_검증_예외가_발생한다() {
+    void 존재하지_않는_활동_지역이면_INVALID_REQUEST_예외가_발생한다() {
         User user = mock(User.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
@@ -245,13 +246,8 @@ class ProfileSaveServiceTest {
                 USER_ID, partialRequest(ACTIVITY_REGION_ID, null)))
             .isInstanceOfSatisfying(
                 RequestValidationException.class,
-                exception -> {
-                    assertThat(exception.getErrors()).hasSize(1);
-                    assertThat(exception.getErrors().getFirst().field())
-                        .isEqualTo("activityRegionId");
-                    assertThat(exception.getErrors().getFirst().reason())
-                        .isEqualTo("must reference an existing activity region");
-                });
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(CommonErrorCode.INVALID_REQUEST));
     }
 
     @Test

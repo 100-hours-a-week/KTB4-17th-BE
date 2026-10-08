@@ -33,8 +33,8 @@ class FlywayJpaIntegrationTest {
 
     @Test
     void Flyway가_생성한_스키마를_전체_JPA_엔티티가_검증한다() {
-        assertThat(entityManager.getMetamodel().getEntities()).hasSize(23);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
+        assertThat(entityManager.getMetamodel().getEntities()).hasSize(24);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("2");
         assertThat(flyway.migrate().migrationsExecuted).isZero();
     }
 }

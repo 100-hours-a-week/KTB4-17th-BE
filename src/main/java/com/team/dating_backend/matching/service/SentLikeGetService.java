@@ -1,6 +1,5 @@
 package com.team.dating_backend.matching.service;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.matching.dto.response.SentLikeItemResponse;
 import com.team.dating_backend.matching.dto.response.SentLikePageInfo;
@@ -71,8 +70,7 @@ public class SentLikeGetService {
 
     private void validateCursor(Long cursor) {
         if (cursor != null && cursor <= 0) {
-            throw new RequestValidationException(
-                List.of(new FieldErrorResponse("cursor", "must be a positive like ID")));
+            throw new RequestValidationException();
         }
     }
 

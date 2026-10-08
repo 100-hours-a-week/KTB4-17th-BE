@@ -2,7 +2,6 @@ package com.team.dating_backend.onboarding.service;
 
 import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.activityregion.repository.ActivityRegionRepository;
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveProfileResponse;
@@ -17,7 +16,6 @@ import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
-import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -29,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProfileSaveService {
 
-    private static final String ACTIVITY_REGION_NOT_FOUND_REASON = "must reference an existing activity region";
     private static final String ACTIVE_NICKNAME_UNIQUE_INDEX = "uk_profiles_active_nickname";
 
     private final UserRepository userRepository;
@@ -120,11 +117,6 @@ public class ProfileSaveService {
 
         return activityRegionRepository
             .findById(activityRegionId)
-            .orElseThrow(
-                () -> new RequestValidationException(
-                    List.of(
-                        new FieldErrorResponse(
-                            "activityRegionId",
-                            ACTIVITY_REGION_NOT_FOUND_REASON))));
+            .orElseThrow(RequestValidationException::new);
     }
 }
