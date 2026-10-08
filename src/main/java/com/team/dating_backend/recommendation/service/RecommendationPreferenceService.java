@@ -32,6 +32,7 @@ public class RecommendationPreferenceService {
 
     private final UserRepository userRepository;
     private final RecommendationPreferenceRepository recommendationPreferenceRepository;
+    private final RecommendationBatchCreateService recommendationBatchCreateService;
 
     @Transactional(readOnly = true)
     public RecommendationPreferenceGetResponse getPreferences(Long userId) {
@@ -69,10 +70,12 @@ public class RecommendationPreferenceService {
         if (preference == null) {
             recommendationPreferenceRepository.save(new RecommendationPreference(
                 user, minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, now));
-        } else {
-            preference.updatePreferences(
-                minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, now);
+        } else if (!preference.updatePreferences(
+            minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, now)) {
+            return;
         }
+
+        recommendationBatchCreateService.createRecommendationBatch(userId);
     }
 
     private void validateActiveUser(User user) {
