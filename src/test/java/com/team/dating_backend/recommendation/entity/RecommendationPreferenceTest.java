@@ -33,11 +33,12 @@ class RecommendationPreferenceTest {
             List.of(Drinking.NEVER, Drinking.SOCIAL),
             List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL), CREATED_AT);
 
-        preference.updatePreferences(null, null, null, null,
+        boolean changed = preference.updatePreferences(null, null, null, null,
             List.of(Religion.NONE, Religion.CATHOLIC),
             List.of(Drinking.SOCIAL, Drinking.NEVER),
             List.of(Smoking.OCCASIONAL, Smoking.NON_SMOKER), CREATED_AT.plusMinutes(10));
 
+        assertThat(changed).isFalse();
         assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getReligion()).containsExactly(Religion.CATHOLIC, Religion.NONE);
         assertThat(preference.getDrinking()).containsExactly(Drinking.NEVER, Drinking.SOCIAL);
@@ -52,9 +53,10 @@ class RecommendationPreferenceTest {
             List.of(Drinking.NEVER), List.of(Smoking.NON_SMOKER), CREATED_AT);
         LocalDateTime resetAt = CREATED_AT.plusMinutes(10);
 
-        preference.updatePreferences(null, null, null, null,
+        boolean changed = preference.updatePreferences(null, null, null, null,
             List.of(), List.of(), List.of(), resetAt);
 
+        assertThat(changed).isTrue();
         assertThat(preference.getMinAge()).isNull();
         assertThat(preference.getMaxAge()).isNull();
         assertThat(preference.getMinHeight()).isNull();
@@ -65,9 +67,10 @@ class RecommendationPreferenceTest {
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isEqualTo(resetAt);
 
-        preference.updatePreferences(null, null, null, null,
+        boolean changedAgain = preference.updatePreferences(null, null, null, null,
             List.of(), List.of(), List.of(), resetAt.plusMinutes(10));
 
+        assertThat(changedAgain).isFalse();
         assertThat(preference.getUpdatedAt()).isEqualTo(resetAt);
     }
 
@@ -91,9 +94,10 @@ class RecommendationPreferenceTest {
             (short) 25, (short) 32, (short) 160, (short) 180,
             List.of(), List.of(), List.of(), CREATED_AT);
 
-        preference.updatePreferences((short) 25, (short) 32, (short) 160, (short) 180,
+        boolean changed = preference.updatePreferences((short) 25, (short) 32, (short) 160, (short) 180,
             List.of(), List.of(), List.of(), CREATED_AT.plusMinutes(10));
 
+        assertThat(changed).isFalse();
         assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
     }
 
@@ -102,9 +106,10 @@ class RecommendationPreferenceTest {
         RecommendationPreference preference = new RecommendationPreference(user(), CREATED_AT);
         LocalDateTime changedAt = CREATED_AT.plusMinutes(10);
 
-        preference.updatePreferences((short) 25, null, null, null,
+        boolean changed = preference.updatePreferences((short) 25, null, null, null,
             List.of(), List.of(), List.of(), changedAt);
 
+        assertThat(changed).isTrue();
         assertThat(preference.getMinAge()).isEqualTo((short) 25);
         assertThat(preference.getMaxAge()).isNull();
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
@@ -116,9 +121,10 @@ class RecommendationPreferenceTest {
         RecommendationPreference preference = new RecommendationPreference(user(), CREATED_AT);
         LocalDateTime changedAt = CREATED_AT.plusMinutes(10);
 
-        preference.updatePreferences(null, null, (short) 170, (short) 190,
+        boolean changed = preference.updatePreferences(null, null, (short) 170, (short) 190,
             List.of(), List.of(), List.of(), changedAt);
 
+        assertThat(changed).isTrue();
         assertThat(preference.getMinHeight()).isEqualTo((short) 170);
         assertThat(preference.getMaxHeight()).isEqualTo((short) 190);
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);

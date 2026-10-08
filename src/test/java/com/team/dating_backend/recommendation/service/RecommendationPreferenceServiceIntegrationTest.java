@@ -31,7 +31,7 @@ import org.testcontainers.mysql.MySQLContainer;
         "spring.jpa.hibernate.ddl-auto=validate"
     }
 )
-@Import(RecommendationPreferenceService.class)
+@Import({RecommendationPreferenceService.class, RecommendationBatchCreateService.class})
 @Testcontainers
 class RecommendationPreferenceServiceIntegrationTest {
 

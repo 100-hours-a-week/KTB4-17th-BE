@@ -17,6 +17,7 @@ import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.recommendation.repository.RecommendationPreferenceRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import com.team.dating_backend.recommendation.service.RecommendationPreferenceService;
+import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -138,10 +139,19 @@ class RecommendationPreferenceFlowIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("delete from recommendation_items");
+        jdbcTemplate.update("delete from recommendation_batches");
+        jdbcTemplate.update("delete from profiles");
         recommendationPreferenceRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
         userId = createActiveUser("사용자");
         otherUserId = createActiveUser("다른회원");
+        jdbcTemplate.update("update users set gender = 'FEMALE' where id = ?", otherUserId);
+        jdbcTemplate.update("""
+            insert into profiles (user_id, nickname, height, religion, drinking, smoking,
+                created_at, updated_at)
+            values (?, '추천상대', 170, 'NONE', 'NEVER', 'NON_SMOKER', now(6), now(6))
+            """, otherUserId);
         token = jwtService.createServiceAuthToken(userId);
     }
 
@@ -194,6 +204,7 @@ class RecommendationPreferenceFlowIntegrationTest {
     void 같은_요청과_선택_순서만_바꾼_요청은_수정_시각을_유지한다() throws Exception {
         assertNoContent(putPreferences(token, SAVED_PREFERENCE));
         Map<String, Object> before = storedPreference();
+        Long batchId = activeBatchId();
         assertNoContent(putPreferences(token, SAVED_PREFERENCE));
         ObjectNode reordered = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
         reordered.set("religion", objectMapper.readTree("[\"CATHOLIC\", \"NONE\"]"));
@@ -203,11 +214,69 @@ class RecommendationPreferenceFlowIntegrationTest {
         assertNoContent(putPreferences(token, reordered.toString()));
         assertPreferenceResponse(getPreferences(token), SAVED_PREFERENCE);
         assertThat(storedPreference()).isEqualTo(before);
+        assertThat(activeBatchId()).isEqualTo(batchId);
+        assertThat(batchCount()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"item_insert", "batch_update"})
+    void 추천_갱신_중간_실패는_조건과_추천_결과를_함께_롤백한다(String failureStage)
+        throws Exception {
+        assertNoContent(putPreferences(token, SAVED_PREFERENCE));
+        Map<String, Object> before = storedPreference();
+        Long batchId = activeBatchId();
+        ObjectNode replacement = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
+        replacement.put("maxHeight", 190);
+        String trigger = failureStage.equals("item_insert") ? """
+            create trigger test_recommendation_write_failure
+            after insert on recommendation_items
+            for each row
+            signal sqlstate '45000' set message_text = 'forced recommendation item failure'
+            """ : """
+            create trigger test_recommendation_write_failure
+            before update on recommendation_batches
+            for each row
+            signal sqlstate '45000' set message_text = 'forced recommendation batch update failure'
+            """;
+
+        try {
+            executeTriggerSql(trigger);
+
+            assertError(putPreferences(token, replacement.toString()), 500, "INTERNAL_SERVER_ERROR");
+            assertThat(storedPreference()).isEqualTo(before);
+            assertThat(activeBatchId()).isEqualTo(batchId);
+            assertThat(batchCount()).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from recommendation_items where recommendation_batch_id = ?",
+                Long.class, batchId)).isEqualTo(1);
+        } finally {
+            executeTriggerSql("drop trigger if exists test_recommendation_write_failure");
+        }
+
+        assertNoContent(putPreferences(token, replacement.toString()));
+        assertThat(activeBatchId()).isNotEqualTo(batchId);
+        assertThat(batchCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 후보가_없으면_조건_저장과_기존_배치_종료를_정상_커밋한다() throws Exception {
+        assertNoContent(putPreferences(token, SAVED_PREFERENCE));
+        assertThat(activeBatchId()).isNotNull();
+        jdbcTemplate.update("update users set status = 'WITHDRAWN' where id = ?", otherUserId);
+        ObjectNode replacement = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
+        replacement.put("maxHeight", 190);
+
+        assertNoContent(putPreferences(token, replacement.toString()));
+
+        assertPreferenceResponse(getPreferences(token), replacement.toString());
+        assertThat(activeBatchId()).isNull();
+        assertThat(batchCount()).isEqualTo(1);
     }
 
     @Test
     void 초기화는_행을_유지하고_null_배열을_빈_배열로_저장한다() throws Exception {
         assertNoContent(putPreferences(token, SAVED_PREFERENCE));
+        assertThat(activeBatchGenerationType()).isEqualTo("PREFERENCE");
         Map<String, Object> before = storedPreference();
         ObjectNode reset = (ObjectNode) objectMapper.readTree(UNRESTRICTED_PREFERENCE);
         reset.putNull("religion");
@@ -215,6 +284,7 @@ class RecommendationPreferenceFlowIntegrationTest {
         reset.putNull("smoking");
 
         assertNoContent(putPreferences(token, reset.toString()));
+        assertThat(activeBatchGenerationType()).isEqualTo("DEFAULT");
         assertPreferenceResponse(getPreferences(token), UNRESTRICTED_PREFERENCE);
         Map<String, Object> after = storedPreference();
         assertThat(after.get("created_at")).isEqualTo(before.get("created_at"));
@@ -229,6 +299,7 @@ class RecommendationPreferenceFlowIntegrationTest {
     @Test
     void 최초_요청이_초기화여도_새_행을_생성한다() throws Exception {
         assertNoContent(putPreferences(token, UNRESTRICTED_PREFERENCE));
+        assertThat(activeBatchGenerationType()).isEqualTo("DEFAULT");
         assertPreferenceResponse(getPreferences(token), UNRESTRICTED_PREFERENCE);
 
         Map<String, Object> stored = storedPreference();
@@ -244,7 +315,6 @@ class RecommendationPreferenceFlowIntegrationTest {
         throws Exception {
         String secondBody = sameConditions ? SAVED_PREFERENCE : UNRESTRICTED_PREFERENCE;
 
-        // 테스트용 연결에서 회원 행을 잠가 두 HTTP 요청이 실제로 겹치도록 만든다.
         try (Connection blocker = DriverManager.getConnection(
             MYSQL.getJdbcUrl(), "root", MYSQL.getPassword())) {
             blocker.setAutoCommit(false);
@@ -285,6 +355,11 @@ class RecommendationPreferenceFlowIntegrationTest {
             Map<String, Object> stored = storedPreference();
             assertThat(stored.get("updated_at")).isEqualTo(stored.get("created_at"));
         }
+        assertThat(batchCount()).isEqualTo(sameConditions ? 1L : 2L);
+        assertThat(jdbcTemplate.queryForObject("""
+            select count(*) from recommendation_batches
+            where user_id = ? and deleted_at is null
+            """, Long.class, userId)).isEqualTo(1L);
     }
 
     @ParameterizedTest(name = "최초 요청이 초기화: {0}")
@@ -431,6 +506,25 @@ class RecommendationPreferenceFlowIntegrationTest {
             "select * from recommendation_preferences where user_id = ?", userId);
     }
 
+    private Long activeBatchId() {
+        return jdbcTemplate.queryForObject("""
+            select max(id) from recommendation_batches
+            where user_id = ? and deleted_at is null
+            """, Long.class, userId);
+    }
+
+    private Long batchCount() {
+        return jdbcTemplate.queryForObject(
+            "select count(*) from recommendation_batches where user_id = ?", Long.class, userId);
+    }
+
+    private String activeBatchGenerationType() {
+        return jdbcTemplate.queryForObject("""
+            select generation_type from recommendation_batches
+            where user_id = ? and deleted_at is null
+            """, String.class, userId);
+    }
+
     private void assertEmptyJsonArrays() {
         for (String column : new String[]{"religion", "drinking", "smoking"}) {
             assertThat(jdbcTemplate.queryForObject(
@@ -473,7 +567,6 @@ class RecommendationPreferenceFlowIntegrationTest {
     }
 
     private void executeTriggerSql(String sql) throws SQLException {
-        // 임시 MySQL의 오류 장치만 설치·제거한다. HTTP 요청의 저장은 기존 앱 연결을 사용한다.
         try (Connection connection = DriverManager.getConnection(
             MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
             Statement statement = connection.createStatement()) {
@@ -482,7 +575,6 @@ class RecommendationPreferenceFlowIntegrationTest {
     }
 
     private void awaitWaitingRequests(Connection observer, int expected) throws Exception {
-        // 한 요청이 여러 잠금에 막혀도 한 번만 세고, 해당 회원의 PK 잠금만 확인한다.
         String sql = """
             select count(distinct waits.REQUESTING_ENGINE_TRANSACTION_ID)
             from performance_schema.data_lock_waits waits
@@ -540,6 +632,7 @@ class RecommendationPreferenceFlowIntegrationTest {
             SecurityConfig.class,
             RecommendationPreferenceController.class,
             RecommendationPreferenceService.class,
+            RecommendationBatchCreateService.class,
             GlobalExceptionHandler.class,
             JwtService.class,
             ApiAuthenticationEntryPoint.class,

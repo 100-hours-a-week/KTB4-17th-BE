@@ -102,7 +102,7 @@ public class RecommendationPreference {
         this.updatedAt = now;
     }
 
-    public void updatePreferences(
+    public boolean updatePreferences(
         Short minAge,
         Short maxAge,
         Short minHeight,
@@ -121,7 +121,7 @@ public class RecommendationPreference {
             && containsSameValues(this.religion, nextReligion)
             && containsSameValues(this.drinking, nextDrinking)
             && containsSameValues(this.smoking, nextSmoking)) {
-            return;
+            return false;
         }
 
         this.minAge = minAge;
@@ -132,6 +132,7 @@ public class RecommendationPreference {
         this.drinking = nextDrinking;
         this.smoking = nextSmoking;
         this.updatedAt = now;
+        return true;
     }
 
     public List<Religion> getReligion() {

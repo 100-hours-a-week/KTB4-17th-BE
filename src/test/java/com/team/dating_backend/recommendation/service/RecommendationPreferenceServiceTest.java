@@ -49,13 +49,16 @@ class RecommendationPreferenceServiceTest {
 
     private UserRepository userRepository;
     private RecommendationPreferenceRepository recommendationPreferenceRepository;
+    private RecommendationBatchCreateService recommendationBatchCreateService;
     private RecommendationPreferenceService service;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         recommendationPreferenceRepository = mock(RecommendationPreferenceRepository.class);
-        service = new RecommendationPreferenceService(userRepository, recommendationPreferenceRepository);
+        recommendationBatchCreateService = mock(RecommendationBatchCreateService.class);
+        service = new RecommendationPreferenceService(
+            userRepository, recommendationPreferenceRepository, recommendationBatchCreateService);
     }
 
     @ParameterizedTest
@@ -324,7 +327,7 @@ class RecommendationPreferenceServiceTest {
 
         assertThat(exception).isNotNull();
         assertThat(exception.getErrorCode()).isEqualTo(errorCode);
-        verifyNoInteractions(userRepository, recommendationPreferenceRepository);
+        verifyNoInteractions(userRepository, recommendationPreferenceRepository, recommendationBatchCreateService);
     }
 
     @Test
@@ -374,6 +377,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getMaxHeight()).isEqualTo((short) 220);
         assertThat(preference.getCreatedAt()).isNotNull();
         assertThat(preference.getUpdatedAt()).isEqualTo(preference.getCreatedAt());
+        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -416,6 +420,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isAfter(CREATED_AT);
         verify(recommendationPreferenceRepository, never()).save(any());
+        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -432,6 +437,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getReligion()).containsExactly(Religion.NONE, Religion.CATHOLIC);
         verify(recommendationPreferenceRepository, never()).save(any());
+        verifyNoInteractions(recommendationBatchCreateService);
     }
 
     @Test
@@ -456,6 +462,30 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isAfter(CREATED_AT);
         verify(recommendationPreferenceRepository, never()).save(any());
+    }
+
+    @Test
+    void 추천_생성_실패를_성공으로_바꾸지_않고_호출자에게_전달한다() {
+        givenActiveUser();
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException(
+            "recommendation generation failed");
+        given(recommendationBatchCreateService.createRecommendationBatch(USER_ID)).willThrow(failure);
+
+        assertThatThrownBy(() -> service.savePreferences(USER_ID, request(25, 30, 160, 180)))
+            .isSameAs(failure);
+    }
+
+    @Test
+    void 기존_미설정_조건을_null_배열로_다시_저장하면_추천을_재생성하지_않는다() {
+        User user = givenActiveUser();
+        RecommendationPreference preference = new RecommendationPreference(user, CREATED_AT);
+        given(recommendationPreferenceRepository.findById(USER_ID)).willReturn(Optional.of(preference));
+
+        service.savePreferences(USER_ID,
+            new RecommendationPreferenceSaveRequest(null, null, null, null, null, null, null));
+
+        assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
+        verifyNoInteractions(recommendationBatchCreateService);
     }
 
     private User givenActiveUser() {
