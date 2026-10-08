@@ -55,6 +55,8 @@ class FlywayMigrationIntegrationTest {
         jdbc = new JdbcTemplate(dataSource);
         flyway = Flyway.configure().dataSource(dataSource)
             .locations("classpath:db/migration")
+            // 공통 초기 스키마와 baseline 채택 절차는 V1을 기준으로 검증한다.
+            .target("1")
             .baselineVersion("1").baselineOnMigrate(false).cleanDisabled(true).load();
     }
 

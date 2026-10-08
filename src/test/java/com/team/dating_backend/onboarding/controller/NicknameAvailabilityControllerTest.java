@@ -4,6 +4,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,7 +46,6 @@ class NicknameAvailabilityControllerTest {
 
     private static final Long USER_ID = 1L;
     private static final String NICKNAME = "하리";
-    private static final String VALIDATION_REASON = "must be 2 to 10 characters using Korean, English letters, or digits";
 
     @Autowired
     private MockMvc mockMvc;
@@ -80,12 +80,11 @@ class NicknameAvailabilityControllerTest {
     }
 
     @Test
-    void 닉네임이_누락되면_400과_검증_오류를_반환한다() throws Exception {
+    void 닉네임이_누락되면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(get("/api/v1/nicknames/availability"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-            .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(nicknameAvailabilityService);
     }
@@ -93,12 +92,11 @@ class NicknameAvailabilityControllerTest {
     @ParameterizedTest
     @EmptySource
     @ValueSource(strings = {"한", "12345678901", " ", "닉네임!", "nick name"})
-    void 닉네임_형식이_올바르지_않으면_400과_검증_오류를_반환한다(String nickname) throws Exception {
+    void 닉네임_형식이_올바르지_않으면_400과_에러_코드만_반환한다(String nickname) throws Exception {
         mockMvc.perform(get("/api/v1/nicknames/availability").param("nickname", nickname))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-            .andExpect(jsonPath("$.errors[0].reason").value(VALIDATION_REASON));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(nicknameAvailabilityService);
     }

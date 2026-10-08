@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchGetResponse;
@@ -222,13 +221,12 @@ class RecommendationBatchControllerTest {
     @Test
     void 추천_Item_목록의_양수가_아닌_커서는_400을_반환한다() throws Exception {
         given(recommendationItemGetService.getRecommendationItems(5L, 42L, 0L))
-            .willThrow(new RequestValidationException(
-                List.of(new FieldErrorResponse("cursor", "must be a positive item ID"))));
+            .willThrow(new RequestValidationException());
 
         mockMvc.perform(get("/api/v1/recommendation-batches/42/items").param("cursor", "0"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("cursor"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
     }
 
     @Test

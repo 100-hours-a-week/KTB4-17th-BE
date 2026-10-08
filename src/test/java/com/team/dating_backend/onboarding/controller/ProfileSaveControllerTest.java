@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveProfileResponse;
@@ -116,48 +115,40 @@ class ProfileSaveControllerTest {
     }
 
     @Test
-    void 닉네임_형식이_올바르지_않으면_400과_필드_오류를_반환한다() throws Exception {
+    void 닉네임_형식이_올바르지_않으면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"nickname\":\"닉네임!\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value(
-                        "must be 2 to 10 characters using Korean, English letters, or digits"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
     }
 
     @Test
-    void 키가_허용_범위를_벗어나면_400과_필드_오류를_반환한다() throws Exception {
+    void 키가_허용_범위를_벗어나면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"height\":221}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("height"))
-            .andExpect(jsonPath("$.errors[0].reason").value("must be between 130 and 220"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
     }
 
     @Test
-    void 직업이_공백이면_400과_필드_오류를_반환한다() throws Exception {
+    void 직업이_공백이면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"job\":\"   \"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("job"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value("must be non-blank and at most 50 characters"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
     }
@@ -176,14 +167,10 @@ class ProfileSaveControllerTest {
     }
 
     @Test
-    void 존재하지_않는_활동_지역이면_400과_필드_오류를_반환한다() throws Exception {
+    void 존재하지_않는_활동_지역이면_400과_에러_코드만_반환한다() throws Exception {
         given(profileSaveService.saveProfile(any(), any(ProfileSaveRequest.class)))
             .willThrow(
-                new RequestValidationException(
-                    List.of(
-                        new FieldErrorResponse(
-                            "activityRegionId",
-                            "must reference an existing activity region"))));
+                new RequestValidationException());
 
         mockMvc.perform(
             authenticatedPut()
@@ -191,10 +178,7 @@ class ProfileSaveControllerTest {
                 .content("{\"activityRegionId\":999}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("activityRegionId"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value("must reference an existing activity region"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
     }
 
     @Test
