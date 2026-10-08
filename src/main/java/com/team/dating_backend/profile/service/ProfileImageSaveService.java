@@ -1,6 +1,5 @@
 package com.team.dating_backend.profile.service;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
@@ -28,8 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ProfileImageSaveService {
-
-    private static final String IMAGES_FIELD = "images";
 
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
@@ -101,7 +98,7 @@ public class ProfileImageSaveService {
             .distinct()
             .count();
         if (distinctFileIdCount != images.size()) {
-            throw invalidImages("must not contain duplicate file IDs");
+            throw new RequestValidationException();
         }
 
         long frontalCount = images.stream()
@@ -112,7 +109,7 @@ public class ProfileImageSaveService {
                 ProfileImageErrorCode.FRONT_PHOTO_REQUIRED);
         }
         if (frontalCount > 1) {
-            throw invalidImages("must contain exactly one frontal photo");
+            throw new RequestValidationException();
         }
     }
 
@@ -125,10 +122,5 @@ public class ProfileImageSaveService {
 
         return files.stream()
             .collect(Collectors.toMap(File::getId, Function.identity()));
-    }
-
-    private RequestValidationException invalidImages(String reason) {
-        return new RequestValidationException(
-            List.of(new FieldErrorResponse(IMAGES_FIELD, reason)));
     }
 }

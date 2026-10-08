@@ -1,6 +1,5 @@
 package com.team.dating_backend.recommendation.service;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.recommendation.dto.response.RecommendationCandidateResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemPageInfo;
@@ -60,9 +59,7 @@ public class RecommendationItemGetService {
         if (cursor != null) {
             RecommendationItem cursorItem = recommendationItemRepository
                 .findByIdAndRecommendationBatchId(cursor, batchId)
-                .orElseThrow(() -> new RequestValidationException(
-                    List.of(
-                        new FieldErrorResponse("cursor", "must reference an item in the batch"))));
+                .orElseThrow(RequestValidationException::new);
             cursorRankingOrder = cursorItem.getRankingOrder();
         }
 
@@ -92,8 +89,7 @@ public class RecommendationItemGetService {
 
     private void validateCursor(Long cursor) {
         if (cursor != null && cursor <= 0) {
-            throw new RequestValidationException(
-                List.of(new FieldErrorResponse("cursor", "must be a positive item ID")));
+            throw new RequestValidationException();
         }
     }
 
