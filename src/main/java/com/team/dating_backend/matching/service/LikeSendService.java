@@ -9,6 +9,7 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.matching.repository.UserPairLockRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -27,6 +28,7 @@ public class LikeSendService {
     private final UserBlockRepository userBlockRepository;
     private final LikeRepository likeRepository;
     private final MatchRepository matchRepository;
+    private final UserPairLockRepository userPairLockRepository;
     private final ChatRoomCreateService chatRoomCreateService;
 
     @Transactional
@@ -34,6 +36,10 @@ public class LikeSendService {
         if (senderId.equals(receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
         }
+
+        Long lowerUserId = Math.min(senderId, receiverId);
+        Long higherUserId = Math.max(senderId, receiverId);
+        userPairLockRepository.acquire(lowerUserId, higherUserId);
 
         User sender = requireMember(senderId);
         User receiver = requireMember(receiverId);
