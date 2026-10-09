@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import com.team.dating_backend.matching.enums.MatchStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.matching.repository.UserPairLockRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -35,6 +37,7 @@ class LikeSendServiceTest {
     private UserBlockRepository userBlockRepository;
     private LikeRepository likeRepository;
     private MatchRepository matchRepository;
+    private UserPairLockRepository userPairLockRepository;
     private ChatRoomCreateService chatRoomCreateService;
     private LikeSendService service;
 
@@ -44,12 +47,14 @@ class LikeSendServiceTest {
         userBlockRepository = mock(UserBlockRepository.class);
         likeRepository = mock(LikeRepository.class);
         matchRepository = mock(MatchRepository.class);
+        userPairLockRepository = mock(UserPairLockRepository.class);
         chatRoomCreateService = mock(ChatRoomCreateService.class);
         service = new LikeSendService(
             userRepository,
             userBlockRepository,
             likeRepository,
             matchRepository,
+            userPairLockRepository,
             chatRoomCreateService);
         User activeSender = user(UserStatus.ACTIVE);
         User activeReceiver = user(UserStatus.ACTIVE);
@@ -71,6 +76,9 @@ class LikeSendServiceTest {
 
         assertThat(response.likeId()).isEqualTo(10L);
         assertThat(response.status()).isEqualTo(LikeStatus.PENDING);
+        var lockOrder = inOrder(userPairLockRepository, userRepository);
+        lockOrder.verify(userPairLockRepository).acquire(1L, 2L);
+        lockOrder.verify(userRepository).findById(2L);
         ArgumentCaptor<Like> likeCaptor = ArgumentCaptor.forClass(Like.class);
         verify(likeRepository).save(likeCaptor.capture());
         assertThat(likeCaptor.getValue().getSenderId()).isEqualTo(2L);
@@ -206,7 +214,11 @@ class LikeSendServiceTest {
     void 자기_자신에게는_전송할_수_없다() {
         assertError(1L, 1L, LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
         verifyNoInteractions(
-            userBlockRepository, likeRepository, matchRepository, chatRoomCreateService);
+            userPairLockRepository,
+            userBlockRepository,
+            likeRepository,
+            matchRepository,
+            chatRoomCreateService);
     }
 
     @Test
