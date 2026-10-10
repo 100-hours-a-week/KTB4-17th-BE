@@ -16,6 +16,23 @@ import org.springframework.data.repository.query.Param;
 
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select room from ChatRoom room
+        join room.match memberMatch
+        where room.status = com.team.dating_backend.chat.enums.ChatRoomStatus.ACTIVE
+          and (
+              (memberMatch.senderId = :firstUserId
+                  and memberMatch.receiverId = :secondUserId)
+              or
+              (memberMatch.senderId = :secondUserId
+                  and memberMatch.receiverId = :firstUserId)
+          )
+        """)
+    Optional<ChatRoom> findActiveBetweenUsersForUpdate(
+        @Param("firstUserId") Long firstUserId,
+        @Param("secondUserId") Long secondUserId);
+
     @Query("""
         select count(room) > 0
         from ChatRoom room
