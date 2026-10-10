@@ -6,12 +6,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.service.ChatRoomBlockTerminationService;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.enums.ErrorCode;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.matching.service.MatchBlockTerminationService;
 import com.team.dating_backend.user.dto.response.UserBlockResult;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.entity.UserBlock;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 class UserBlockServiceTest {
 
@@ -35,13 +39,21 @@ class UserBlockServiceTest {
 
     private UserRepository userRepository;
     private UserBlockRepository userBlockRepository;
+    private MatchBlockTerminationService matchBlockTerminationService;
+    private ChatRoomBlockTerminationService chatRoomBlockTerminationService;
     private UserBlockService service;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         userBlockRepository = mock(UserBlockRepository.class);
-        service = new UserBlockService(userRepository, userBlockRepository);
+        matchBlockTerminationService = mock(MatchBlockTerminationService.class);
+        chatRoomBlockTerminationService = mock(ChatRoomBlockTerminationService.class);
+        service = new UserBlockService(
+            userRepository,
+            userBlockRepository,
+            matchBlockTerminationService,
+            chatRoomBlockTerminationService);
     }
 
     @Test
@@ -60,6 +72,7 @@ class UserBlockServiceTest {
         assertThat(savedBlock.getBlockerUserId()).isEqualTo(BLOCKER_ID);
         assertThat(savedBlock.getBlockedUserId()).isEqualTo(TARGET_ID);
         assertThat(result.response().blockedAt()).isEqualTo(savedBlock.getBlockedAt());
+        verifyRelationshipTermination();
     }
 
     @Test
@@ -76,6 +89,7 @@ class UserBlockServiceTest {
         assertThat(result.created()).isFalse();
         assertThat(result.response().blockedAt()).isEqualTo(originalBlockedAt);
         verify(userBlockRepository, never()).save(any(UserBlock.class));
+        verifyRelationshipTermination();
     }
 
     @Test
@@ -167,5 +181,21 @@ class UserBlockServiceTest {
         assertThatThrownBy(() -> service.block(blockerId, targetId))
             .isInstanceOfSatisfying(UserBlockBusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(expected));
+    }
+
+    private void verifyRelationshipTermination() {
+        ArgumentCaptor<LocalDateTime> endedAtCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        InOrder inOrder = inOrder(matchBlockTerminationService, chatRoomBlockTerminationService);
+        inOrder.verify(matchBlockTerminationService)
+            .terminateBetween(
+                org.mockito.ArgumentMatchers.eq(BLOCKER_ID),
+                org.mockito.ArgumentMatchers.eq(TARGET_ID),
+                endedAtCaptor.capture());
+        inOrder.verify(chatRoomBlockTerminationService)
+            .terminateBetween(
+                org.mockito.ArgumentMatchers.eq(BLOCKER_ID),
+                org.mockito.ArgumentMatchers.eq(TARGET_ID),
+                endedAtCaptor.capture());
+        assertThat(endedAtCaptor.getAllValues()).containsOnly(endedAtCaptor.getValue());
     }
 }

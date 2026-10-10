@@ -2,6 +2,8 @@ package com.team.dating_backend.user.service;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.chat.service.ChatRoomBlockTerminationService;
+import com.team.dating_backend.matching.service.MatchBlockTerminationService;
 import com.team.dating_backend.user.dto.response.UserBlockResult;
 import com.team.dating_backend.user.dto.response.UserBlockResponse;
 import com.team.dating_backend.user.entity.User;
@@ -23,6 +25,8 @@ public class UserBlockService {
 
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
+    private final MatchBlockTerminationService matchBlockTerminationService;
+    private final ChatRoomBlockTerminationService chatRoomBlockTerminationService;
 
     @Transactional
     public UserBlockResult block(Long blockerUserId, Long targetUserId) {
@@ -51,6 +55,9 @@ public class UserBlockService {
             activeBlock = userBlockRepository.save(
                 new UserBlock(blocker.getId(), target.getId(), now));
         }
+
+        matchBlockTerminationService.terminateBetween(blocker.getId(), target.getId(), now);
+        chatRoomBlockTerminationService.terminateBetween(blocker.getId(), target.getId(), now);
 
         return new UserBlockResult(
             new UserBlockResponse(target.getId(), activeBlock.getBlockedAt()),
