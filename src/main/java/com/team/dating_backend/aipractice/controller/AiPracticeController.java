@@ -4,7 +4,6 @@ import com.team.dating_backend.aipractice.dto.request.AiPracticeChatCreateReques
 import com.team.dating_backend.aipractice.dto.request.AiPracticeSessionCreateRequest;
 import com.team.dating_backend.aipractice.dto.response.AiPracticeChatAcceptedResponse;
 import com.team.dating_backend.aipractice.dto.response.AiPracticeChatPageResponse;
-import com.team.dating_backend.aipractice.dto.response.AiPracticeSessionPageResponse;
 import com.team.dating_backend.aipractice.dto.response.AiPracticeSessionResponse;
 import com.team.dating_backend.aipractice.dto.response.AiPracticeUsageResponse;
 import com.team.dating_backend.aipractice.service.AiPracticeChatService;
@@ -51,16 +50,6 @@ public class AiPracticeController {
             ? "ai_practice_session_resumed"
             : "ai_practice_session_started";
         return ResponseEntity.status(status).body(SuccessResponse.of(message, response));
-    }
-
-    @GetMapping("/sessions")
-    public SuccessResponse<AiPracticeSessionPageResponse> listSessions(
-        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @RequestParam(required = false) @Min(1) Long cursor,
-        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return SuccessResponse.of(
-            "ai_practice_session_list_success",
-            sessionService.listSessions(principal.userId(), cursor, size));
     }
 
     @GetMapping("/sessions/{sessionId}/chats")
