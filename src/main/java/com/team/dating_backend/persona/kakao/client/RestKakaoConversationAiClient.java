@@ -86,7 +86,8 @@ public class RestKakaoConversationAiClient implements KakaoConversationAiClient 
             JobCreated body = reply.getBody();
             if (reply.getStatusCode() != HttpStatus.ACCEPTED || body == null
                 || !validIdentifier(body.jobId()) || !"pending".equals(body.status())) {
-                throw failure(KakaoConversationErrorCode.AI_SERVER_RESPONSE_INVALID);
+                // A malformed acceptance reply may still have created a job.
+                throw failure(KakaoConversationErrorCode.AI_SUBMISSION_OUTCOME_UNKNOWN);
             }
             return body;
         } catch (RestClientResponseException exception) {
@@ -152,7 +153,7 @@ public class RestKakaoConversationAiClient implements KakaoConversationAiClient 
     }
 
     private boolean validIdentifier(String value) {
-        return value != null && !value.isBlank() && value.length() <= 128;
+        return value != null && value.matches("[A-Za-z0-9_-]{1,128}");
     }
 
     private KakaoConversationBusinessException failure(KakaoConversationErrorCode code) {

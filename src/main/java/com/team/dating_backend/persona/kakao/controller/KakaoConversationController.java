@@ -2,12 +2,14 @@ package com.team.dating_backend.persona.kakao.controller;
 
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.persona.kakao.dto.response.KakaoConversationInspectResponse;
-import com.team.dating_backend.persona.kakao.dto.response.KakaoConversationSubmissionResponse;
+import com.team.dating_backend.persona.kakao.dto.response.KakaoExtractionJobResponse;
+import com.team.dating_backend.persona.kakao.dto.response.KakaoExtractionResponse;
 import com.team.dating_backend.persona.kakao.service.KakaoConversationService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.net.URI;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,24 +36,25 @@ public class KakaoConversationController {
         return SuccessResponse.of("kakao_conversation_inspected", service.inspect(principal.userId(), file));
     }
 
-    @PostMapping(value = "/submissions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<SuccessResponse<KakaoConversationSubmissionResponse>> submit(
+    @PostMapping(value = "/extract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<SuccessResponse<KakaoExtractionResponse>> extract(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @RequestHeader(value = "Idempotency-Key", required = false) String requestKey,
         @RequestPart MultipartFile file,
         @RequestParam(required = false) String speakerName) {
-        KakaoConversationSubmissionResponse response = service.submit(principal.userId(), requestKey, file,
-            speakerName);
+        KakaoExtractionResponse response = service.extract(principal.userId(), file, speakerName);
         return ResponseEntity.accepted()
-            .location(URI.create("/api/v1/persona/kakao/submissions/" + response.submissionId()))
-            .body(SuccessResponse.of("kakao_conversation_submitted", response));
+            .cacheControl(CacheControl.noStore())
+            .location(URI.create("/api/v1/persona/kakao/jobs/" + response.jobId()))
+            .body(SuccessResponse.of("kakao_extraction_requested", response));
     }
 
-    @GetMapping("/submissions/{submissionId}")
-    public SuccessResponse<KakaoConversationSubmissionResponse> getSubmission(
+    @GetMapping("/jobs/{jobId}")
+    public ResponseEntity<SuccessResponse<KakaoExtractionJobResponse>> getJob(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable String submissionId) {
-        return SuccessResponse.of("kakao_conversation_submission_fetched",
-            service.getSubmission(principal.userId(), submissionId));
+        @PathVariable String jobId,
+        @RequestHeader(value = "X-Kakao-Job-Token", required = false) String jobToken) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(SuccessResponse.of("kakao_extraction_job_fetched",
+                service.getJob(principal.userId(), jobId, jobToken)));
     }
 }

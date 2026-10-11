@@ -26,4 +26,7 @@ public class KakaoConversationProperties {
     private int connectTimeoutMs = 3000;
     @Positive
     private int readTimeoutMs = 30000;
+    @Positive
+    @Max(86400)
+    private int jobTokenTtlSeconds = 3600;
 }
