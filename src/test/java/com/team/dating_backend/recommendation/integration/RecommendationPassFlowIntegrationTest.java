@@ -9,6 +9,7 @@ import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.service.ChatRoomCreateService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
+import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.service.LikeSendService;
@@ -529,6 +530,7 @@ class RecommendationPassFlowIntegrationTest {
             RecommendationBatchGetService.class,
             RecommendationItemGetService.class,
             LikeSendService.class,
+            UserPairLockRepository.class,
             ChatRoomCreateService.class,
             GlobalExceptionHandler.class,
             JwtService.class,

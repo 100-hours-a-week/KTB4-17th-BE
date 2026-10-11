@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
 import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
@@ -24,6 +25,8 @@ import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mockito;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
@@ -52,22 +55,34 @@ class AiSimulationControllerTest {
     }
 
     @Test
-    void 시작하면_201과_전체_대화_리포트를_반환한다() throws Exception {
-        given(simulationService.run(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
-            .willReturn(publicDetail());
+    void 접수하면_202와_세션_ID_상태를_반환한다() throws Exception {
+        given(simulationService.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
+            .willReturn(new AiSimulationResponses.Handle(SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS));
 
         mockMvc.perform(post("/api/v1/ai-simulations")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {"targetMemberId":8}
                 """))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.message").value("ai_simulation_completed"))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.message").value("ai_simulation_accepted"))
             .andExpect(jsonPath("$.data.simulationId").value(SESSION_ID))
-            .andExpect(jsonPath("$.data.transcript.length()").value(20))
-            .andExpect(jsonPath("$.data.report.overall.score").value(78));
+            .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.transcript").doesNotExist());
 
-        verify(simulationService).run(USER_ID, new AiSimulationCreateRequest(TARGET_ID));
+        verify(simulationService).request(USER_ID, new AiSimulationCreateRequest(TARGET_ID));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
+    void 종료된_기존_세션은_200으로_반환한다(AiSimulationSessionStatus sessionStatus) throws Exception {
+        given(simulationService.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
+            .willReturn(new AiSimulationResponses.Handle(SESSION_ID, sessionStatus));
+        mockMvc.perform(post("/api/v1/ai-simulations")
+            .contentType(MediaType.APPLICATION_JSON).content("{\"targetMemberId\":8}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("ai_simulation_existing"))
+            .andExpect(jsonPath("$.data.status").value(sessionStatus.name()));
     }
 
     @Test
@@ -79,7 +94,7 @@ class AiSimulationControllerTest {
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
             .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
-        verify(simulationService, Mockito.never()).run(any(), any());
+        verify(simulationService, Mockito.never()).request(any(), any());
     }
 
     @Test
