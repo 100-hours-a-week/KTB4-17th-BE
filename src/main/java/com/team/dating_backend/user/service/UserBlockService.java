@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,7 +29,7 @@ public class UserBlockService {
     private final MatchBlockTerminationService matchBlockTerminationService;
     private final ChatRoomBlockTerminationService chatRoomBlockTerminationService;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserBlockResult block(Long blockerUserId, Long targetUserId) {
         User blocker = requireAuthenticatedUser(blockerUserId);
         if (blocker.getStatus() != UserStatus.ACTIVE) {

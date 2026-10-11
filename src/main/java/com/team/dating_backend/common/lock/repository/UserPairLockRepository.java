@@ -1,4 +1,4 @@
-package com.team.dating_backend.matching.repository;
+package com.team.dating_backend.common.lock.repository;
 
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;

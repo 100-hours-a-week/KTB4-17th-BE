@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,10 +21,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
     name = "ai_simulation_sessions",
-    indexes = @Index(
+    indexes = {@Index(
         name = "idx_ai_simulation_session_user_status_id",
         columnList = "user_id,status,id"
-    )
+    ), @Index(name = "idx_ai_simulation_session_pair_id", columnList = "user_id,target_user_id,id"),
+        @Index(name = "idx_ai_simulation_session_target_status_id", columnList = "target_user_id,status,id"),
+        @Index(name = "idx_ai_simulation_session_status_created_id", columnList = "status,created_at,id")}
 )
 public class AiSimulationSession {
 
@@ -33,6 +36,9 @@ public class AiSimulationSession {
 
     @Column(name = "user_id", nullable = false, updatable = false)
     private Long userId;
+
+    @Column(name = "target_user_id", updatable = false)
+    private Long targetUserId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -44,8 +50,12 @@ public class AiSimulationSession {
     @Column(name = "finished_at")
     private LocalDateTime finishedAt;
 
-    public AiSimulationSession(Long userId, LocalDateTime createdAt) {
-        this.userId = userId;
+    public AiSimulationSession(Long userId, Long targetUserId, LocalDateTime createdAt) {
+        this.userId = Objects.requireNonNull(userId, "userId must not be null");
+        this.targetUserId = Objects.requireNonNull(targetUserId, "targetUserId must not be null");
+        if (userId.equals(targetUserId)) {
+            throw new IllegalArgumentException("AI simulation requires two different users");
+        }
         this.status = AiSimulationSessionStatus.IN_PROGRESS;
         this.createdAt = createdAt;
     }

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.service.ChatRoomCreateService;
+import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.matching.enums.LikeErrorCode;
@@ -19,7 +20,6 @@ import com.team.dating_backend.matching.enums.MatchStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
-import com.team.dating_backend.matching.repository.UserPairLockRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;

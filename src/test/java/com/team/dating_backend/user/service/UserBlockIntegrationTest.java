@@ -30,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -45,8 +46,8 @@ import org.testcontainers.mysql.MySQLContainer;
 
 @DataJpaTest(
     properties = {
-        "spring.jpa.hibernate.ddl-auto=create",
-        "spring.flyway.enabled=false"
+        "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.flyway.enabled=true"
     }
 )
 @Import(
@@ -169,7 +170,7 @@ class UserBlockIntegrationTest {
         assertThat(userBlockRepository.count()).isEqualTo(1);
     }
 
-    @Test
+    @RepeatedTest(5)
     void 반대_방향_차단을_동시에_요청해도_Match와_Chat의_종료_정보는_한_번만_기록된다()
         throws Exception {
         Relation relation = activeRelation();
