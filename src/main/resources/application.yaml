@@ -94,7 +94,6 @@ app:
     max-size-bytes: ${AI_KAKAO_MAX_SIZE_BYTES:5242880}
     connect-timeout-ms: ${AI_KAKAO_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${AI_KAKAO_READ_TIMEOUT_MS:30000}
-    job-token-ttl-seconds: ${AI_KAKAO_JOB_TOKEN_TTL_SECONDS:3600}
 
   ai-simulation:
     base-url: ${AI_SIMULATION_BASE_URL:}

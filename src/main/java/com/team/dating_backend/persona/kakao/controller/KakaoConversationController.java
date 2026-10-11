@@ -2,20 +2,15 @@ package com.team.dating_backend.persona.kakao.controller;
 
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.persona.kakao.dto.response.KakaoConversationInspectResponse;
-import com.team.dating_backend.persona.kakao.dto.response.KakaoExtractionJobResponse;
 import com.team.dating_backend.persona.kakao.dto.response.KakaoExtractionResponse;
 import com.team.dating_backend.persona.kakao.service.KakaoConversationService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
-import java.net.URI;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -44,17 +39,6 @@ public class KakaoConversationController {
         KakaoExtractionResponse response = service.extract(principal.userId(), file, speakerName);
         return ResponseEntity.accepted()
             .cacheControl(CacheControl.noStore())
-            .location(URI.create("/api/v1/persona/kakao/jobs/" + response.jobId()))
             .body(SuccessResponse.of("kakao_extraction_requested", response));
-    }
-
-    @GetMapping("/jobs/{jobId}")
-    public ResponseEntity<SuccessResponse<KakaoExtractionJobResponse>> getJob(
-        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable String jobId,
-        @RequestHeader(value = "X-Kakao-Job-Token", required = false) String jobToken) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-            .body(SuccessResponse.of("kakao_extraction_job_fetched",
-                service.getJob(principal.userId(), jobId, jobToken)));
     }
 }

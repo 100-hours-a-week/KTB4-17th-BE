@@ -17,8 +17,6 @@ public class KakaoConversationProperties {
     private String baseUrl = "";
     @NotBlank
     private String conversationPath = "/ai/api/v1/persona-extraction/conversation";
-    @NotBlank
-    private String jobPath = "/ai/api/v1/persona-extraction/jobs/{jobId}";
     @Positive
     @Max(5 * 1024 * 1024)
     private int maxSizeBytes = 5 * 1024 * 1024;
@@ -26,7 +24,4 @@ public class KakaoConversationProperties {
     private int connectTimeoutMs = 3000;
     @Positive
     private int readTimeoutMs = 30000;
-    @Positive
-    @Max(86400)
-    private int jobTokenTtlSeconds = 3600;
 }

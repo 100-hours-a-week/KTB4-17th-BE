@@ -2,14 +2,12 @@ package com.team.dating_backend.persona.kakao.client;
 
 import com.team.dating_backend.persona.kakao.config.KakaoConversationProperties;
 import com.team.dating_backend.persona.kakao.dto.ai.KakaoAiPayloads.JobCreated;
-import com.team.dating_backend.persona.kakao.dto.ai.KakaoAiPayloads.JobResponse;
 import com.team.dating_backend.persona.kakao.enums.KakaoConversationErrorCode;
 import com.team.dating_backend.persona.kakao.exception.KakaoConversationBusinessException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.DateTimeException;
 import java.util.Set;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -24,12 +22,9 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
-import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class RestKakaoConversationAiClient implements KakaoConversationAiClient {
-
-    private static final Set<String> JOB_STATUSES = Set.of("pending", "running", "succeeded", "failed");
 
     private final RestClient restClient;
     private final KakaoConversationProperties properties;
@@ -45,8 +40,7 @@ public class RestKakaoConversationAiClient implements KakaoConversationAiClient 
         this.restClient = builder.clone().requestFactory(factory).build();
     }
 
-    @Override
-    public void requireConfigured() {
+    private void requireConfigured() {
         if (properties.getBaseUrl() == null || properties.getBaseUrl().isBlank()) {
             throw failure(KakaoConversationErrorCode.AI_SERVER_NOT_CONFIGURED);
         }
@@ -95,38 +89,6 @@ public class RestKakaoConversationAiClient implements KakaoConversationAiClient 
         } catch (RestClientException exception) {
             // An upload may already have been accepted. Never retry POST automatically.
             throw failure(KakaoConversationErrorCode.AI_SUBMISSION_OUTCOME_UNKNOWN);
-        }
-    }
-
-    @Override
-    public JobResponse getJob(String jobId) {
-        requireConfigured();
-        URI jobUri = UriComponentsBuilder.fromUriString(url(properties.getJobPath()))
-            .buildAndExpand(jobId).encode().toUri();
-        try {
-            JobResponse body = restClient.get().uri(jobUri).accept(MediaType.APPLICATION_JSON)
-                .retrieve().body(JobResponse.class);
-            if (body == null || !jobId.equals(body.jobId()) || !"conversation".equals(body.kind())
-                || body.status() == null || !JOB_STATUSES.contains(body.status())
-                || body.analyzedCount() == null || body.analyzedCount() < 0
-                || body.createdAt() == null
-                || body.personaId() != null && !validIdentifier(body.personaId())
-                || "succeeded".equals(body.status()) && !validIdentifier(body.personaId())) {
-                throw failure(KakaoConversationErrorCode.AI_SERVER_RESPONSE_INVALID);
-            }
-            try {
-                body.createdAtUtc();
-                body.finishedAtUtc();
-            } catch (DateTimeException exception) {
-                throw failure(KakaoConversationErrorCode.AI_SERVER_RESPONSE_INVALID);
-            }
-            return body;
-        } catch (RestClientResponseException exception) {
-            throw failure(exception.getStatusCode().value() == 404
-                ? KakaoConversationErrorCode.AI_JOB_NOT_FOUND
-                : KakaoConversationErrorCode.AI_SERVER_UNAVAILABLE);
-        } catch (RestClientException exception) {
-            throw failure(KakaoConversationErrorCode.AI_SERVER_UNAVAILABLE);
         }
     }
 
