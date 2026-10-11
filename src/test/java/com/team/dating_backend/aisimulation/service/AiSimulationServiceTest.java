@@ -20,6 +20,7 @@ import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 class AiSimulationServiceTest {
 
     private UserRepository userRepository;
+    private UserBlockRepository userBlockRepository;
     private AiSimulationAiClient aiClient;
     private AiSimulationResponseValidator validator;
     private AiSimulationPersistenceService persistenceService;
@@ -36,12 +38,18 @@ class AiSimulationServiceTest {
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
+        userBlockRepository = mock(UserBlockRepository.class);
         aiClient = mock(AiSimulationAiClient.class);
         validator = mock(AiSimulationResponseValidator.class);
         persistenceService = mock(AiSimulationPersistenceService.class);
         responseMapper = mock(AiSimulationResponseMapper.class);
         service = new AiSimulationService(
-            userRepository, aiClient, validator, persistenceService, responseMapper);
+            userRepository,
+            userBlockRepository,
+            aiClient,
+            validator,
+            persistenceService,
+            responseMapper);
     }
 
     @Test
@@ -68,6 +76,22 @@ class AiSimulationServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
 
+        verify(aiClient, never()).run(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void 활성_차단_관계가_있으면_상대가_없는_것처럼_처리한다() {
+        given(userRepository.existsById(TARGET_ID)).willReturn(true);
+        given(userBlockRepository.existsActiveBlockBetween(USER_ID, TARGET_ID)).willReturn(true);
+
+        assertThatThrownBy(() -> service.run(
+            USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
+            .isInstanceOfSatisfying(
+                AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
+
+        verify(persistenceService, never()).begin(org.mockito.ArgumentMatchers.any());
         verify(aiClient, never()).run(org.mockito.ArgumentMatchers.any());
     }
 

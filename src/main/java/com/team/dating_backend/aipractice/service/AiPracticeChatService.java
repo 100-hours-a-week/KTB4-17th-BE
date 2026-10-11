@@ -123,7 +123,7 @@ public class AiPracticeChatService {
     }
 
     private AiPracticeSession lockOwnedSession(Long sessionId, Long userId) {
-        return sessionRepository.findByIdAndUserIdForUpdate(sessionId, userId)
+        return sessionRepository.findAccessibleByIdAndUserIdForUpdate(sessionId, userId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
     }
 

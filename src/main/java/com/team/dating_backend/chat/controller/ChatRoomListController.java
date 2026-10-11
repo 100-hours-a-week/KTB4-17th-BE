@@ -2,6 +2,7 @@ package com.team.dating_backend.chat.controller;
 
 import com.team.dating_backend.chat.dto.read.ChatRoomCursor;
 import com.team.dating_backend.chat.dto.read.ChatRoomPage;
+import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.dto.read.ChatRoomPreview;
 import com.team.dating_backend.chat.dto.read.ChatRoomSummary;
 import com.team.dating_backend.chat.dto.response.ChatRoomListResponse;
@@ -53,11 +54,11 @@ public class ChatRoomListController {
             .map(ChatRoomSummary::otherUserId)
             .distinct()
             .toList();
-        Map<Long, String> nicknames = participantDisplayService.findNicknames(otherUserIds);
-        Map<Long, String> profileImageUrls = participantDisplayService.findProfileImageUrls(otherUserIds);
+        Map<Long, ChatParticipantDisplay> participantDisplays = participantDisplayService
+            .findDisplays(principal.userId(), otherUserIds);
 
         List<ChatRoomListResponse.Item> items = page.items().stream()
-            .map(summary -> toResponseItem(summary, nicknames, profileImageUrls))
+            .map(summary -> toResponseItem(summary, participantDisplays))
             .toList();
         String nextCursor = page.pageInfo().hasNext()
             ? encodeCursor(page.pageInfo().nextCursor())
@@ -73,14 +74,16 @@ public class ChatRoomListController {
 
     private ChatRoomListResponse.Item toResponseItem(
         ChatRoomSummary summary,
-        Map<Long, String> nicknames,
-        Map<Long, String> profileImageUrls) {
+        Map<Long, ChatParticipantDisplay> participantDisplays) {
         ChatRoomPreview preview = summary.preview();
+        ChatParticipantDisplay participantDisplay = participantDisplays.getOrDefault(
+            summary.otherUserId(),
+            new ChatParticipantDisplay(summary.otherUserId(), null, null));
         return new ChatRoomListResponse.Item(
             summary.chatRoomId(),
             summary.chatNotification(),
             new ChatRoomListResponse.OtherParticipant(
-                nicknames.get(summary.otherUserId()), profileImageUrls.get(summary.otherUserId())),
+                participantDisplay.nickname(), participantDisplay.profileImageUrl()),
             new ChatRoomListResponse.Preview(
                 preview.type(), preview.text(), preview.imageFileId()),
             summary.unreadCount(),
