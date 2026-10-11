@@ -8,6 +8,7 @@ import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class AiSimulationService {
     private static final int DEFAULT_TURNS = 10;
 
     private final UserRepository userRepository;
+    private final UserBlockRepository userBlockRepository;
     private final AiSimulationAiClient aiClient;
     private final AiSimulationResponseValidator validator;
     private final AiSimulationPersistenceService persistenceService;
@@ -54,6 +56,10 @@ public class AiSimulationService {
                 AiSimulationErrorCode.INVALID_TARGET_MEMBER);
         }
         if (!userRepository.existsById(targetMemberId)) {
+            throw new AiSimulationBusinessException(
+                AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND);
+        }
+        if (userBlockRepository.existsActiveBlockBetween(userId, targetMemberId)) {
             throw new AiSimulationBusinessException(
                 AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND);
         }

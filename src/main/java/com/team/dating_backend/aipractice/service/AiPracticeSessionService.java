@@ -8,6 +8,7 @@ import com.team.dating_backend.aipractice.enums.AiPracticeErrorCode;
 import com.team.dating_backend.aipractice.enums.AiPracticeSessionStatus;
 import com.team.dating_backend.aipractice.exception.AiPracticeBusinessException;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
+import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class AiPracticeSessionService {
 
     private final AiPracticeSessionRepository sessionRepository;
     private final UserRepository userRepository;
+    private final UserBlockRepository userBlockRepository;
 
     @Transactional
     public AiPracticeSessionResponse startOrResume(
@@ -33,6 +35,9 @@ public class AiPracticeSessionService {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.INVALID_TARGET_MEMBER);
         }
         if (!userRepository.existsById(targetMemberId)) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_NOT_FOUND);
+        }
+        if (userBlockRepository.existsActiveBlockBetween(userId, targetMemberId)) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_NOT_FOUND);
         }
 
@@ -70,7 +75,7 @@ public class AiPracticeSessionService {
 
     @Transactional(readOnly = true)
     public AiPracticeSession requireOwnedSession(Long sessionId, Long userId) {
-        return sessionRepository.findByIdAndUserId(sessionId, userId)
+        return sessionRepository.findAccessibleByIdAndUserId(sessionId, userId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
     }
 
