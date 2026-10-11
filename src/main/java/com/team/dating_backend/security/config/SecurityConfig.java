@@ -70,7 +70,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(
             List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(
-            List.of("Accept", "Content-Type", "Authorization"));
+            List.of("Accept", "Content-Type", "Authorization", "Idempotency-Key"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
