@@ -20,6 +20,7 @@ import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
+import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +34,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class AiSimulationAdmissionServiceTest {
 
     private UserRepository userRepository;
+    private UserBlockRepository userBlockRepository;
     private UserPairLockRepository userPairLockRepository;
     private AiSimulationSessionRepository sessionRepository;
     private AiSimulationPersistenceService persistenceService;
@@ -41,11 +43,13 @@ class AiSimulationAdmissionServiceTest {
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
+        userBlockRepository = mock(UserBlockRepository.class);
         userPairLockRepository = mock(UserPairLockRepository.class);
         sessionRepository = mock(AiSimulationSessionRepository.class);
         persistenceService = mock(AiSimulationPersistenceService.class);
         service = new AiSimulationAdmissionService(
-            new AiSimulationTargetValidator(userRepository), userPairLockRepository, sessionRepository,
+            new AiSimulationTargetValidator(userRepository, userBlockRepository), userPairLockRepository,
+            sessionRepository,
             persistenceService);
     }
 
@@ -112,6 +116,20 @@ class AiSimulationAdmissionServiceTest {
         given(userRepository.existsById(TARGET_ID)).willReturn(false);
 
         assertThatThrownBy(() -> service.admit(USER_ID, TARGET_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
+
+        verifyNoInteractions(userPairLockRepository, sessionRepository, persistenceService);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"7, 8", "8, 7"})
+    void 활성_차단_관계가_있으면_기존_결과_조회와_새_접수를_막는다(Long userId, Long targetUserId) {
+        given(userRepository.existsById(targetUserId)).willReturn(true);
+        given(userBlockRepository.existsActiveBlockBetween(userId, targetUserId)).willReturn(true);
+
+        assertThatThrownBy(() -> service.admit(userId, targetUserId))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
+import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -19,7 +20,6 @@ import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,10 +141,11 @@ class ChatMessageListServiceTest {
         given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
             .willReturn(List.of());
-        given(participantDisplayService.findNicknames(List.of(OTHER_USER_ID)))
-            .willReturn(Map.of(OTHER_USER_ID, "상대방"));
-        given(participantDisplayService.findProfileImageUrls(List.of(OTHER_USER_ID)))
-            .willReturn(Map.of(OTHER_USER_ID, profileImageUrl));
+        given(participantDisplayService.findDisplays(
+            VIEWER_USER_ID, List.of(OTHER_USER_ID)))
+            .willReturn(java.util.Map.of(
+                OTHER_USER_ID,
+                new ChatParticipantDisplay(OTHER_USER_ID, "상대방", profileImageUrl)));
 
         ChatMessageListResponse result = service.listMessages(
             CHAT_ROOM_ID, VIEWER_USER_ID, null, 20);
@@ -152,8 +153,27 @@ class ChatMessageListServiceTest {
         assertThat(result.chatRoom().otherParticipant())
             .isEqualTo(new ChatMessageListResponse.OtherParticipant(
                 OTHER_USER_ID, "상대방", profileImageUrl));
-        verify(participantDisplayService).findNicknames(List.of(OTHER_USER_ID));
-        verify(participantDisplayService).findProfileImageUrls(List.of(OTHER_USER_ID));
+        verify(participantDisplayService).findDisplays(
+            VIEWER_USER_ID, List.of(OTHER_USER_ID));
+    }
+
+    @Test
+    void 차단한_상대는_회원_ID와_프로필_정보를_마스킹한다() {
+        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
+            .willReturn(List.of());
+        given(participantDisplayService.findDisplays(
+            VIEWER_USER_ID, List.of(OTHER_USER_ID)))
+            .willReturn(java.util.Map.of(
+                OTHER_USER_ID,
+                new ChatParticipantDisplay(null, "알 수 없음", null)));
+
+        ChatMessageListResponse result = service.listMessages(
+            CHAT_ROOM_ID, VIEWER_USER_ID, null, 20);
+
+        assertThat(result.chatRoom().otherParticipant())
+            .isEqualTo(new ChatMessageListResponse.OtherParticipant(
+                null, "알 수 없음", null));
     }
 
     @Test

@@ -19,7 +19,8 @@ public class AiPracticeSessionEndService {
 
     @Transactional
     public AiPracticeSessionResponse end(Long userId, Long sessionId) {
-        AiPracticeSession session = sessionRepository.findByIdAndUserIdForUpdate(sessionId, userId)
+        AiPracticeSession session = sessionRepository
+            .findAccessibleByIdAndUserIdForUpdate(sessionId, userId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
         session.end(AiPracticeTime.now());
         endCommandQueue.enqueueIfReady(session);

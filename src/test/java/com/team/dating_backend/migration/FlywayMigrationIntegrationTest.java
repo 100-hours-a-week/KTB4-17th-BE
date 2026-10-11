@@ -249,7 +249,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void 시뮬레이션_상대_ID_컬럼을_추가하면서_기존_세션과_결과를_보존한다() {
         Flyway previous = Flyway.configure().dataSource(dataSource)
-            .locations("classpath:db/migration").target("4")
+            .locations("classpath:db/migration").target("7")
             .baselineOnMigrate(false).cleanDisabled(true).load();
         previous.migrate();
         jdbc.update("""
@@ -275,7 +275,7 @@ class FlywayMigrationIntegrationTest {
         List<Map<String, Object>> messagesBefore = jdbc.queryForList(
             "SELECT * FROM ai_simulation_messages ORDER BY id");
         Flyway next = Flyway.configure().dataSource(dataSource)
-            .locations("classpath:db/migration").target("5")
+            .locations("classpath:db/migration").target("8")
             .baselineOnMigrate(false).cleanDisabled(true).load();
 
         assertThat(next.migrate().migrationsExecuted).isEqualTo(1);
@@ -311,7 +311,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void 과거_리포트의_참가자가_확인되는_경우에만_상대_ID를_복원한다() {
         Flyway previous = Flyway.configure().dataSource(dataSource)
-            .locations("classpath:db/migration").target("5").cleanDisabled(true).load();
+            .locations("classpath:db/migration").target("8").cleanDisabled(true).load();
         previous.migrate();
         insertUser(7);
         insertUser(8);
@@ -329,7 +329,7 @@ class FlywayMigrationIntegrationTest {
             """);
         var reportsBefore = jdbc.queryForList("SELECT * FROM ai_simulation_reports ORDER BY id");
         Flyway next = Flyway.configure().dataSource(dataSource)
-            .locations("classpath:db/migration").target("6").cleanDisabled(true).load();
+            .locations("classpath:db/migration").target("9").cleanDisabled(true).load();
 
         assertThat(next.migrate().migrationsExecuted).isEqualTo(1);
 

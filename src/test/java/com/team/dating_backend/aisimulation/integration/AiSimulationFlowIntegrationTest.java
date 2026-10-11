@@ -44,6 +44,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -110,6 +112,7 @@ class AiSimulationFlowIntegrationTest {
         jdbc.update("DELETE FROM ai_simulation_reports");
         jdbc.update("DELETE FROM ai_simulation_sessions");
         jdbc.update("DELETE FROM user_pair_locks");
+        jdbc.update("DELETE FROM user_blocks");
         jdbc.update("DELETE FROM users");
         for (long id = 7; id <= 12; id++) {
             jdbc.update("""
@@ -122,6 +125,39 @@ class AiSimulationFlowIntegrationTest {
         mvc = MockMvcBuilders.standaloneSetup(new AiSimulationController(service, query))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalResolver()).build();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"7, 8, false", "8, 7, false", "7, 8, true", "8, 7, true"})
+    void 차단_방향과_기존_결과_유무에_관계없이_접수와_상대별_조회를_막는다(
+        Long blockerId, Long blockedId, boolean existingResult) throws Exception {
+        Long existingId = null;
+        if (existingResult) {
+            existingId = persistence.begin(7L, 8L).getId();
+            persistence.complete(existingId, aiResponse());
+        }
+        jdbc.update("INSERT INTO user_blocks (blocker_user_id, blocked_user_id, blocked_at) VALUES (?, ?, NOW(6))",
+            blockerId, blockedId);
+
+        for (long userId : List.of(7L, 8L)) {
+            viewer = userId;
+            long targetId = userId == 7L ? 8L : 7L;
+            mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"targetMemberId\":" + targetId + "}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+            mvc.perform(get("/api/v1/ai-simulations/targets/{targetId}", targetId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+        }
+
+        assertThat(count("ai_simulation_sessions")).isEqualTo(existingResult ? 1 : 0);
+        verify(client, org.mockito.Mockito.never()).run(any());
+        jdbc.update("UPDATE user_blocks SET unblocked_at = NOW(6)");
+        assertThat(query.getPair(7L, 8L).simulationId()).isEqualTo(existingId);
+        if (existingResult) {
+            assertThat(service.request(7L, new AiSimulationCreateRequest(8L)).simulationId()).isEqualTo(existingId);
+        }
     }
 
     @Test
