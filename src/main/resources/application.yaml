@@ -6,6 +6,13 @@ spring:
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 
+  servlet:
+    multipart:
+      # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
+      max-file-size: 5MB
+      max-request-size: 6MB
+      file-size-threshold: 6MB
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -81,6 +88,12 @@ app:
 
   persona-ai:
     base-url: ${AI_PERSONA_BASE_URL:}
+
+  persona-kakao:
+    base-url: ${AI_KAKAO_BASE_URL:${AI_PERSONA_BASE_URL:}}
+    max-size-bytes: ${AI_KAKAO_MAX_SIZE_BYTES:5242880}
+    connect-timeout-ms: ${AI_KAKAO_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_KAKAO_READ_TIMEOUT_MS:30000}
 
   ai-simulation:
     base-url: ${AI_SIMULATION_BASE_URL:}
