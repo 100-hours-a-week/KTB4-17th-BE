@@ -18,6 +18,7 @@ import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.exception.AiSimulationSubmissionRejectedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -77,5 +78,43 @@ class AiSimulationServiceTest {
         assertThatThrownBy(() -> service.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
             .isInstanceOf(AiSimulationBusinessException.class);
         verifyNoInteractions(worker, persistence);
+    }
+
+    @Test
+    void 새_시도는_커밋된_새_ID로만_작업을_제출한다() {
+        given(admission.admitAttempt(TARGET_ID, SESSION_ID))
+            .willReturn(new AdmissionDecision(SESSION_ID + 1, AiSimulationSessionStatus.IN_PROGRESS, true));
+
+        assertThat(service.attempt(TARGET_ID, SESSION_ID))
+            .isEqualTo(new AiSimulationResponses.Handle(SESSION_ID + 1, AiSimulationSessionStatus.IN_PROGRESS));
+        var order = inOrder(admission, worker);
+        order.verify(admission).admitAttempt(TARGET_ID, SESSION_ID);
+        order.verify(worker).generate(SESSION_ID + 1);
+        verifyNoInteractions(persistence);
+    }
+
+    @ParameterizedTest
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 중복_시도는_최신_ID를_반환하고_작업을_제출하지_않는다(AiSimulationSessionStatus status) {
+        given(admission.admitAttempt(USER_ID, SESSION_ID))
+            .willReturn(new AdmissionDecision(SESSION_ID + 1, status, false));
+
+        assertThat(service.attempt(USER_ID, SESSION_ID))
+            .isEqualTo(new AiSimulationResponses.Handle(SESSION_ID + 1, status));
+        verifyNoInteractions(worker, persistence);
+    }
+
+    @Test
+    void 시도_제출_거절은_새_ID를_포함하고_새_세션만_실패시킨다() {
+        given(admission.admitAttempt(USER_ID, SESSION_ID))
+            .willReturn(new AdmissionDecision(SESSION_ID + 1, AiSimulationSessionStatus.IN_PROGRESS, true));
+        doThrow(new TaskRejectedException("Full")).when(worker).generate(SESSION_ID + 1);
+
+        assertThatThrownBy(() -> service.attempt(USER_ID, SESSION_ID))
+            .isInstanceOfSatisfying(AiSimulationSubmissionRejectedException.class, exception -> {
+                assertThat(exception.getSimulationId()).isEqualTo(SESSION_ID + 1);
+                assertThat(exception.getErrorCode()).isEqualTo(AiSimulationErrorCode.SIMULATION_CAPACITY_EXCEEDED);
+            });
+        verify(persistence).fail(SESSION_ID + 1);
     }
 }

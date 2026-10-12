@@ -14,6 +14,28 @@ import org.springframework.data.repository.query.Param;
 
 public interface AiSimulationSessionRepository extends JpaRepository<AiSimulationSession, Long> {
 
+    interface ParticipantPair {
+        Long getUserId();
+
+        Long getTargetUserId();
+    }
+
+    @Query("""
+        select session.userId as userId, session.targetUserId as targetUserId
+        from AiSimulationSession session
+        where session.id = :id and (session.userId = :userId or session.targetUserId = :userId)
+        """)
+    Optional<ParticipantPair> findPairByIdAndParticipant(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Query("""
+        select session from AiSimulationSession session
+        where (session.userId = :userId and session.targetUserId = :targetUserId)
+            or (session.userId = :targetUserId and session.targetUserId = :userId)
+        order by session.id desc
+        """)
+    List<AiSimulationSession> findLatestByUserPair(@Param("userId") Long userId,
+        @Param("targetUserId") Long targetUserId, Pageable pageable);
+
     @Query(
         """
             select session from AiSimulationSession session

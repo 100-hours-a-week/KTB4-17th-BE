@@ -375,6 +375,169 @@ class AiSimulationFlowIntegrationTest {
             .untilAsserted(() -> assertThat(query.getState(7L, id).status().name()).isEqualTo(expected));
     }
 
+    @Test
+    void 양쪽의_동시_재시도는_실패를_보존하고_하나의_새_비동기_작업만_실행한다() throws Exception {
+        Long failedId = persistence.begin(7L, 8L).getId();
+        persistence.fail(failedId);
+        var failedState = query.getState(7L, failedId);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        given(client.run(any())).willAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            started.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("AI release timed out");
+            }
+            return responseFor(invocation.getArgument(0));
+        });
+        CyclicBarrier gate = new CyclicBarrier(2);
+        Long attemptId;
+        try {
+            try (var callers = Executors.newFixedThreadPool(2)) {
+                var first = callers.submit(() -> {
+                    gate.await(10, TimeUnit.SECONDS);
+                    return service.attempt(7L, failedId);
+                });
+                var second = callers.submit(() -> {
+                    gate.await(10, TimeUnit.SECONDS);
+                    return service.attempt(8L, failedId);
+                });
+                var a = first.get(10, TimeUnit.SECONDS);
+                var b = second.get(10, TimeUnit.SECONDS);
+                assertThat(a).isEqualTo(b);
+                attemptId = a.simulationId();
+            }
+            assertThat(attemptId).isGreaterThan(failedId);
+            assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(count("ai_simulation_sessions")).isEqualTo(2);
+            assertThat(count("ai_simulation_reports")).isEqualTo(2);
+            viewer = 8L;
+            mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.simulationId").value(attemptId));
+            mvc.perform(get("/api/v1/ai-simulations/{id}/status", attemptId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+        } finally {
+            release.countDown();
+        }
+        waitFor(attemptId, "COMPLETED");
+        mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.simulationId").value(attemptId))
+            .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+        assertThat(query.getState(7L, failedId)).isEqualTo(failedState);
+        assertThat(query.get(7L, attemptId)).isEqualTo(query.get(8L, attemptId));
+        assertThat(count("ai_simulation_sessions")).isEqualTo(2);
+        assertThat(count("ai_simulation_messages")).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
+            failedId)).isEqualTo("FAILED");
+        verify(client, times(1)).run(new SimulationRequest("7", "8", 10));
+    }
+
+    @Test
+    void 새_시도가_다시_실패해도_이전_ID는_재실행하지_않고_새_ID로만_다음_시도를_만든다() {
+        Long failedId = persistence.begin(7L, 8L).getId();
+        persistence.fail(failedId);
+        var next = admission.admitAttempt(8L, failedId);
+        persistence.fail(next.simulationId());
+
+        assertThat(admission.admitAttempt(7L, failedId).created()).isFalse();
+        assertThat(admission.admitAttempt(8L, failedId).simulationId()).isEqualTo(next.simulationId());
+        assertThat(count("ai_simulation_sessions")).isEqualTo(2);
+        var third = admission.admitAttempt(7L, next.simulationId());
+        assertThat(third.created()).isTrue();
+        assertThat(third.simulationId()).isGreaterThan(next.simulationId());
+        assertThat(query.getState(7L, failedId).status().name()).isEqualTo("FAILED");
+        assertThat(query.getState(7L, next.simulationId()).status().name()).isEqualTo("FAILED");
+        assertThat(query.getState(8L, third.simulationId()).status().name()).isEqualTo("IN_PROGRESS");
+        assertThat(count("ai_simulation_reports")).isEqualTo(3);
+    }
+
+    @Test
+    void 재시도의_진행과_실패는_기존_성공_결과를_유지하고_새_성공만_공유_결과를_교체한다() {
+        Long completedId = persistence.begin(7L, 8L).getId();
+        persistence.complete(completedId, aiResponse());
+        Long failedId = persistence.begin(8L, 7L).getId();
+        persistence.fail(failedId);
+        var next = admission.admitAttempt(7L, failedId);
+        assertThat(query.getPair(7L, 8L).simulationId()).isEqualTo(completedId);
+        persistence.fail(next.simulationId());
+        assertThat(query.getPair(8L, 7L).simulationId()).isEqualTo(completedId);
+        var last = admission.admitAttempt(8L, next.simulationId());
+        persistence.complete(last.simulationId(), responseFor(new SimulationRequest("8", "7", 10)));
+
+        assertThat(query.getPair(7L, 8L).simulationId()).isEqualTo(last.simulationId());
+        assertThat(query.getPair(8L, 7L).simulationId()).isEqualTo(last.simulationId());
+        assertThat(admission.admitAttempt(7L, failedId).simulationId()).isEqualTo(last.simulationId());
+        assertThat(query.get(7L, last.simulationId()).me().userId()).isEqualTo(8L);
+        assertThat(count("ai_simulation_sessions")).isEqualTo(4);
+    }
+
+    @Test
+    void 재시도는_다른_사용자나_차단_관계에서_새_작업을_만들지_않는다() throws Exception {
+        Long failedId = persistence.begin(7L, 8L).getId();
+        persistence.fail(failedId);
+        viewer = 9L;
+        mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("SIMULATION_NOT_FOUND"));
+        jdbc.update("INSERT INTO user_blocks (blocker_user_id, blocked_user_id, blocked_at) VALUES (8, 7, NOW(6))");
+        for (long userId : List.of(7L, 8L)) {
+            viewer = userId;
+            mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+        }
+        assertThat(count("ai_simulation_sessions")).isEqualTo(1);
+        verify(client, org.mockito.Mockito.never()).run(any());
+    }
+
+    @Test
+    void 시도_대기열_초과는_새_실패_ID를_반환하고_그_ID로_후속_재시도가_가능하다() throws Exception {
+        Long failedId = persistence.begin(7L, 10L).getId();
+        persistence.fail(failedId);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        given(client.run(any())).willAnswer(invocation -> {
+            started.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("AI release timed out");
+            }
+            return responseFor(invocation.getArgument(0));
+        });
+        Long first;
+        Long second;
+        Long rejected;
+        try {
+            first = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
+            assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+            second = service.request(7L, new AiSimulationCreateRequest(9L)).simulationId();
+            var response = mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.errorCode").value("SIMULATION_CAPACITY_EXCEEDED"))
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andReturn().getResponse();
+            rejected = new ObjectMapper().readTree(response.getContentAsString()).get("simulationId").asLong();
+            assertThat(rejected).isGreaterThan(failedId);
+            assertThat(query.getState(7L, rejected).status().name()).isEqualTo("FAILED");
+            mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.simulationId").value(rejected))
+                .andExpect(jsonPath("$.data.status").value("FAILED"));
+        } finally {
+            release.countDown();
+        }
+        waitFor(first, "COMPLETED");
+        waitFor(second, "COMPLETED");
+        Long accepted = service.attempt(10L, rejected).simulationId();
+        waitFor(accepted, "COMPLETED");
+        assertThat(query.getState(7L, failedId).status().name()).isEqualTo("FAILED");
+        assertThat(query.getState(7L, rejected).status().name()).isEqualTo("FAILED");
+        assertThat(count("ai_simulation_sessions")).isEqualTo(5);
+        verify(client, times(3)).run(any());
+    }
+
     private int count(String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
     }
