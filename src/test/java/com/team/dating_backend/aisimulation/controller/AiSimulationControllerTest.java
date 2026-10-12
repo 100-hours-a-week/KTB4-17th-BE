@@ -18,6 +18,7 @@ import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.exception.AiSimulationSubmissionRejectedException;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
@@ -131,6 +132,41 @@ class AiSimulationControllerTest {
             new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/ai-simulations/{id}", SESSION_ID))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("SIMULATION_NOT_FOUND"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 본문_없이_시도를_요청하고_최신_ID와_상태를_반환한다(AiSimulationSessionStatus sessionStatus) throws Exception {
+        given(simulationService.attempt(USER_ID, SESSION_ID))
+            .willReturn(new AiSimulationResponses.Handle(SESSION_ID + 1, sessionStatus));
+
+        mockMvc.perform(post("/api/v1/ai-simulations/{id}/attempts", SESSION_ID))
+            .andExpect(status().is(sessionStatus == AiSimulationSessionStatus.IN_PROGRESS ? 202 : 200))
+            .andExpect(jsonPath("$.data.simulationId").value(SESSION_ID + 1))
+            .andExpect(jsonPath("$.data.status").value(sessionStatus.name()));
+        verify(simulationService).attempt(USER_ID, SESSION_ID);
+    }
+
+    @Test
+    void 시도_제출_거절은_503과_다음_재시도에_필요한_실패_ID를_반환한다() throws Exception {
+        given(simulationService.attempt(USER_ID, SESSION_ID))
+            .willThrow(new AiSimulationSubmissionRejectedException(SESSION_ID + 1, new IllegalStateException("Full")));
+
+        mockMvc.perform(post("/api/v1/ai-simulations/{id}/attempts", SESSION_ID))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.errorCode").value("SIMULATION_CAPACITY_EXCEEDED"))
+            .andExpect(jsonPath("$.simulationId").value(SESSION_ID + 1))
+            .andExpect(jsonPath("$.status").value("FAILED"));
+    }
+
+    @Test
+    void 참여하지_않은_세션의_재시도는_404를_반환한다() throws Exception {
+        given(simulationService.attempt(USER_ID, SESSION_ID))
+            .willThrow(new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/ai-simulations/{id}/attempts", SESSION_ID))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("SIMULATION_NOT_FOUND"));
     }

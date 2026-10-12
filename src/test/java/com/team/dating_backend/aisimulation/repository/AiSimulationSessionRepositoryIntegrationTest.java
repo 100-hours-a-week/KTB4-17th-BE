@@ -154,4 +154,28 @@ class AiSimulationSessionRepositoryIntegrationTest {
     void 없는_세션의_잠금_조회는_빈_결과를_반환한다() {
         assertThat(repository.findByIdForUpdate(Long.MAX_VALUE)).isEmpty();
     }
+
+    @Test
+    void 시도_조회는_성공_우선순위_없이_양방향_조합의_최신_ID를_반환한다() {
+        AiSimulationSession completed = repository.saveAndFlush(
+            new AiSimulationSession(USER_ID, TARGET_ID, CREATED_AT));
+        completed.complete(CREATED_AT.plusSeconds(10));
+        AiSimulationSession latest = repository.saveAndFlush(
+            new AiSimulationSession(TARGET_ID, USER_ID, CREATED_AT));
+        latest.fail(CREATED_AT.plusSeconds(20));
+        repository.saveAndFlush(new AiSimulationSession(USER_ID, 99L, CREATED_AT));
+        entityManager.clear();
+
+        for (List<Long> pair : List.of(List.of(USER_ID, TARGET_ID), List.of(TARGET_ID, USER_ID))) {
+            assertThat(repository.findLatestByUserPair(pair.getFirst(), pair.getLast(), PageRequest.of(0, 1)))
+                .extracting(AiSimulationSession::getId).containsExactly(latest.getId());
+        }
+        assertThat(repository.findForReuseByUserPair(USER_ID, TARGET_ID, PageRequest.of(0, 1)))
+            .extracting(AiSimulationSession::getId).containsExactly(completed.getId());
+        var pair = repository.findPairByIdAndParticipant(latest.getId(), USER_ID).orElseThrow();
+        assertThat(pair.getUserId()).isEqualTo(TARGET_ID);
+        assertThat(pair.getTargetUserId()).isEqualTo(USER_ID);
+        assertThat(repository.findPairByIdAndParticipant(latest.getId(), TARGET_ID)).isPresent();
+        assertThat(repository.findPairByIdAndParticipant(latest.getId(), 99L)).isEmpty();
+    }
 }
