@@ -4,8 +4,8 @@ import com.team.dating_backend.common.enums.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum AiSimulationErrorCode implements ErrorCode {
-    TARGET_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND),
-    INVALID_TARGET_MEMBER(HttpStatus.BAD_REQUEST),
+    TARGET_USER_NOT_FOUND(HttpStatus.NOT_FOUND),
+    INVALID_TARGET_USER(HttpStatus.BAD_REQUEST),
     SIMULATION_NOT_FOUND(HttpStatus.NOT_FOUND),
     SIMULATION_RESULT_NOT_READY(HttpStatus.CONFLICT),
     SIMULATION_NOT_IN_PROGRESS(HttpStatus.CONFLICT),

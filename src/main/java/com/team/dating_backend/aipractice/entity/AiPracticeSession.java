@@ -27,7 +27,7 @@ import lombok.NoArgsConstructor;
     ),
     indexes = @Index(
         name = "idx_ai_practice_session_user_target_status",
-        columnList = "user_id,target_member_id,status"
+        columnList = "user_id,target_user_id,status"
     )
 )
 public class AiPracticeSession {
@@ -44,10 +44,10 @@ public class AiPracticeSession {
     private Long userId;
 
     @Column(
-        name = "target_member_id",
+        name = "target_user_id",
         updatable = false
     )
-    private Long targetMemberId;
+    private Long targetUserId;
 
     @Column(
         name = "ai_session_id",
@@ -79,9 +79,9 @@ public class AiPracticeSession {
     )
     private boolean endCommandEnqueued;
 
-    public AiPracticeSession(Long userId, Long targetMemberId, LocalDateTime startedAt) {
+    public AiPracticeSession(Long userId, Long targetUserId, LocalDateTime startedAt) {
         this.userId = userId;
-        this.targetMemberId = targetMemberId;
+        this.targetUserId = targetUserId;
         this.status = AiPracticeSessionStatus.ACTIVE;
         this.startedAt = startedAt;
         this.endCommandEnqueued = false;

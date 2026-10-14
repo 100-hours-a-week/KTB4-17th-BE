@@ -61,7 +61,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Import(LikeControllerTest.TestAuthenticationPrincipalConfig.class)
 class LikeControllerTest {
 
-    private static final Long AUTHENTICATED_MEMBER_ID = 1L;
+    private static final Long AUTHENTICATED_USER_ID = 1L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -123,10 +123,10 @@ class LikeControllerTest {
     @Test
     void 사용할_수_없는_수신자는_404를_반환한다() throws Exception {
         given(likeSendService.sendLike(1L, 2L))
-            .willThrow(new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .willThrow(new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
         mockMvc.perform(authenticatedPost("{\"receiverId\":2}"))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.errorCode").value("MEMBER_NOT_FOUND"));
+            .andExpect(jsonPath("$.errorCode").value("USER_NOT_FOUND"));
     }
 
     @Test
@@ -185,7 +185,7 @@ class LikeControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("sent_like_get_success"))
             .andExpect(jsonPath("$.data.items[0].likeId").value(101))
-            .andExpect(jsonPath("$.data.items[0].receiver.memberId").value(20))
+            .andExpect(jsonPath("$.data.items[0].receiver.userId").value(20))
             .andExpect(jsonPath("$.data.items[0].receiver.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].receiver.profileImageUrl")
                 .value("https://example.com/profile"))
@@ -242,7 +242,7 @@ class LikeControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("received_like_get_success"))
             .andExpect(jsonPath("$.data.items[0].likeId").value(101))
-            .andExpect(jsonPath("$.data.items[0].sender.memberId").value(20))
+            .andExpect(jsonPath("$.data.items[0].sender.userId").value(20))
             .andExpect(jsonPath("$.data.items[0].sender.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].sender.profileImageUrl")
                 .value("https://example.com/profile"))
@@ -304,7 +304,7 @@ class LikeControllerTest {
                     ModelAndViewContainer mavContainer,
                     NativeWebRequest webRequest,
                     WebDataBinderFactory binderFactory) {
-                    return new ServiceAuthenticationPrincipal(AUTHENTICATED_MEMBER_ID);
+                    return new ServiceAuthenticationPrincipal(AUTHENTICATED_USER_ID);
                 }
             });
         }

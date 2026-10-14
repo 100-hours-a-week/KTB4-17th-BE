@@ -4,7 +4,7 @@ import com.team.dating_backend.common.enums.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum LikeErrorCode implements ErrorCode {
-    MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND),
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND),
     SENDER_NOT_ACTIVE(HttpStatus.FORBIDDEN),
     RECEIVER_NOT_ACTIVE(HttpStatus.FORBIDDEN),
     NOT_LIKE_RECEIVER(HttpStatus.FORBIDDEN),

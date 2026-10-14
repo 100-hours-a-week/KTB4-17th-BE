@@ -1,6 +1,6 @@
 package com.team.dating_backend.chat.dto.read;
 
 public record ChatParticipantDisplay(
-    Long memberId,
+    Long userId,
     String nickname,
     String profileImageUrl) {}

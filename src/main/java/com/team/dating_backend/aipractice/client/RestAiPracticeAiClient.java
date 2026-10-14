@@ -34,11 +34,11 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     @Override
-    public String startSession(Long meUserId, Long partnerMemberId) {
+    public String startSession(Long meUserId, Long partnerUserId) {
         StartSessionResponse response = request()
             .uri(uri(properties.getInitialSessionPath()))
             .body(new StartSessionRequest(
-                partnerMemberId == null ? null : partnerMemberId.toString(),
+                partnerUserId == null ? null : partnerUserId.toString(),
                 meUserId == null ? null : meUserId.toString(),
                 null))
             .retrieve()

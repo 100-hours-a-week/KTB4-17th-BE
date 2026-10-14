@@ -74,7 +74,7 @@ class AiSimulationServiceTest {
     @Test
     void 접수_실패는_작업을_제출하지_않는다() {
         given(admission.admit(USER_ID, TARGET_ID))
-            .willThrow(new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_MEMBER));
+            .willThrow(new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_USER));
         assertThatThrownBy(() -> service.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
             .isInstanceOf(AiSimulationBusinessException.class);
         verifyNoInteractions(worker, persistence);

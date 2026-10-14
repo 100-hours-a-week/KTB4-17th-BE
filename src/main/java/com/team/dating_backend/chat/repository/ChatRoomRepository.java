@@ -19,14 +19,14 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select room from ChatRoom room
-        join room.match memberMatch
+        join room.match userMatch
         where room.status = com.team.dating_backend.chat.enums.ChatRoomStatus.ACTIVE
           and (
-              (memberMatch.senderId = :firstUserId
-                  and memberMatch.receiverId = :secondUserId)
+              (userMatch.senderId = :firstUserId
+                  and userMatch.receiverId = :secondUserId)
               or
-              (memberMatch.senderId = :secondUserId
-                  and memberMatch.receiverId = :firstUserId)
+              (userMatch.senderId = :secondUserId
+                  and userMatch.receiverId = :firstUserId)
           )
         """)
     Optional<ChatRoom> findActiveBetweenUsersForUpdate(

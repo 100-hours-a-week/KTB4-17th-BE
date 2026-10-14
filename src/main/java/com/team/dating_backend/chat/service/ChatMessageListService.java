@@ -89,7 +89,7 @@ public class ChatMessageListService {
                 room.getStatus(),
                 viewer.isChatNotification(),
                 new ChatMessageListResponse.OtherParticipant(
-                    participantDisplay.memberId(),
+                    participantDisplay.userId(),
                     participantDisplay.nickname(),
                     participantDisplay.profileImageUrl())),
             messages,

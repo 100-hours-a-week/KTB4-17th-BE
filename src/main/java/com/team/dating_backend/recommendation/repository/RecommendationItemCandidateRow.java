@@ -5,7 +5,7 @@ import java.time.LocalDate;
 
 public record RecommendationItemCandidateRow(
     Long itemId,
-    Long memberId,
+    Long userId,
     LocalDate birthDate,
     String nickname,
     String job,

@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 
 public record SentLikeItem(
     Long likeId,
-    Long memberId,
+    Long userId,
     LocalDate birthDate,
     String nickname,
     String job,

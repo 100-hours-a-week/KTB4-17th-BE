@@ -46,7 +46,7 @@ class ReceivedLikeGetServiceTest {
         profileImageGetService = mock(ProfileImageGetService.class);
         service = new ReceivedLikeGetService(
             userRepository, likeRepository, profileImageGetService);
-        given(profileImageGetService.getProfileImagesByMemberIds(
+        given(profileImageGetService.getProfileImagesByUserIds(
             org.mockito.ArgumentMatchers.anyCollection()))
             .willReturn(Map.of());
     }
@@ -68,7 +68,7 @@ class ReceivedLikeGetServiceTest {
         assertThat(response.items().getLast().likeId()).isEqualTo(102L);
         assertThat(response.pageInfo().nextCursor()).isEqualTo(102L);
         assertThat(response.pageInfo().hasNext()).isTrue();
-        verify(profileImageGetService).getProfileImagesByMemberIds(
+        verify(profileImageGetService).getProfileImagesByUserIds(
             LongStream.rangeClosed(201L, 220L).boxed().toList());
     }
 
@@ -89,7 +89,7 @@ class ReceivedLikeGetServiceTest {
         given(likeRepository.findReceivedPendingLikes(
             RECEIVER_ID, 120L, PageRequest.of(0, 21)))
             .willReturn(List.of(row));
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(20L)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(20L)))
             .willReturn(Map.of(
                 20L,
                 List.of(
@@ -110,7 +110,7 @@ class ReceivedLikeGetServiceTest {
         assertThat(item.likeId()).isEqualTo(101L);
         assertThat(item.status()).isEqualTo(LikeStatus.PENDING);
         assertThat(item.createdAt()).isEqualTo(LocalDateTime.of(2026, 9, 27, 12, 30));
-        assertThat(item.sender().memberId()).isEqualTo(20L);
+        assertThat(item.sender().userId()).isEqualTo(20L);
         assertThat(item.sender().nickname()).isEqualTo("하리");
         assertThat(item.sender().profileImageUrl())
             .isEqualTo("https://example.com/representative");
@@ -133,7 +133,7 @@ class ReceivedLikeGetServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
-        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of());
     }
 
     @Test
@@ -165,10 +165,10 @@ class ReceivedLikeGetServiceTest {
         given(userRepository.findById(RECEIVER_ID)).willReturn(Optional.of(receiver));
     }
 
-    private ReceivedLikeItem row(Long likeId, Long memberId) {
+    private ReceivedLikeItem row(Long likeId, Long userId) {
         return new ReceivedLikeItem(
             likeId,
-            memberId,
+            userId,
             LocalDate.of(1999, 1, 1),
             "하리",
             "개발자",

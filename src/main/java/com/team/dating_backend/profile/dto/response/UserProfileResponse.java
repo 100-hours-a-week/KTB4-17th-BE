@@ -8,8 +8,8 @@ import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import java.util.List;
 
-public record MemberProfileResponse(
-    Long memberId,
+public record UserProfileResponse(
+    Long userId,
     String nickname,
     Integer age,
     String job,

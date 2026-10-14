@@ -27,27 +27,27 @@ public class AiPracticeSessionService {
         userRepository.findByIdForUpdate(userId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.USER_NOT_FOUND));
 
-        Long targetMemberId = request.targetMemberId();
-        if (targetMemberId.equals(userId)) {
-            throw new AiPracticeBusinessException(AiPracticeErrorCode.INVALID_TARGET_MEMBER);
+        Long targetUserId = request.targetUserId();
+        if (targetUserId.equals(userId)) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.INVALID_TARGET_USER);
         }
-        if (!userRepository.existsById(targetMemberId)) {
-            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_NOT_FOUND);
+        if (!userRepository.existsById(targetUserId)) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_USER_NOT_FOUND);
         }
-        if (userBlockRepository.existsActiveBlockBetween(userId, targetMemberId)) {
-            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_NOT_FOUND);
+        if (userBlockRepository.existsActiveBlockBetween(userId, targetUserId)) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_USER_NOT_FOUND);
         }
 
         AiPracticeSession activeSession = sessionRepository
-            .findFirstByUserIdAndTargetMemberIdAndStatusOrderByIdDesc(
-                userId, targetMemberId, AiPracticeSessionStatus.ACTIVE)
+            .findFirstByUserIdAndTargetUserIdAndStatusOrderByIdDesc(
+                userId, targetUserId, AiPracticeSessionStatus.ACTIVE)
             .orElse(null);
         if (activeSession != null) {
             return toResponse(activeSession, true);
         }
 
         AiPracticeSession session = sessionRepository.save(
-            new AiPracticeSession(userId, targetMemberId, AiPracticeTime.now()));
+            new AiPracticeSession(userId, targetUserId, AiPracticeTime.now()));
         return toResponse(session, false);
     }
 
@@ -60,7 +60,7 @@ public class AiPracticeSessionService {
     public AiPracticeSessionResponse toResponse(AiPracticeSession session, boolean resumed) {
         return new AiPracticeSessionResponse(
             session.getId(),
-            session.getTargetMemberId(),
+            session.getTargetUserId(),
             session.getStatus(),
             session.getStartedAt(),
             session.getEndedAt(),

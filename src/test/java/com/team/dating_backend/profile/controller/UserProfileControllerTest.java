@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.profile.dto.response.MemberProfileResponse;
-import com.team.dating_backend.profile.service.MemberProfileGetService;
+import com.team.dating_backend.profile.dto.response.UserProfileResponse;
+import com.team.dating_backend.profile.service.UserProfileGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -30,26 +30,26 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @WebMvcTest(
-    controllers = MemberProfileController.class,
+    controllers = UserProfileController.class,
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
         ServletWebSecurityAutoConfiguration.class
     }
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(MemberProfileControllerTest.TestAuthenticationPrincipalConfig.class)
-class MemberProfileControllerTest {
+@Import(UserProfileControllerTest.TestAuthenticationPrincipalConfig.class)
+class UserProfileControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
-    private MemberProfileGetService memberProfileGetService;
+    private UserProfileGetService userProfileGetService;
 
     @Test
     void 추천_회원_프로필을_반환한다() throws Exception {
-        given(memberProfileGetService.getMemberProfile(5L, 21L))
-            .willReturn(new MemberProfileResponse(
+        given(userProfileGetService.getUserProfile(5L, 21L))
+            .willReturn(new UserProfileResponse(
                 21L,
                 "하리",
                 29,
@@ -62,20 +62,20 @@ class MemberProfileControllerTest {
                 null,
                 null,
                 null,
-                List.of(new MemberProfileResponse.Image(
+                List.of(new UserProfileResponse.Image(
                     701L, (short) 1, "https://example.com/701"))));
 
         mockMvc.perform(get("/api/v1/users/21/profile"))
             .andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store"))
-            .andExpect(jsonPath("$.message").value("member_profile_get_success"))
-            .andExpect(jsonPath("$.data.memberId").value(21))
+            .andExpect(jsonPath("$.message").value("user_profile_get_success"))
+            .andExpect(jsonPath("$.data.userId").value(21))
             .andExpect(jsonPath("$.data.images[0].fileId").value(701))
             .andExpect(jsonPath("$.data.images[0].displayOrder").value(1))
             .andExpect(jsonPath("$.data.images[0].imageUrl")
                 .value("https://example.com/701"))
             .andExpect(jsonPath("$.data.images[0].expiresAt").doesNotExist());
-        verify(memberProfileGetService).getMemberProfile(5L, 21L);
+        verify(userProfileGetService).getUserProfile(5L, 21L);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

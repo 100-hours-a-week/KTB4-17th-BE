@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
-import com.team.dating_backend.profile.dto.response.MemberProfileResponse;
+import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
@@ -30,7 +30,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-class MemberProfileGetServiceTest {
+class UserProfileGetServiceTest {
 
     private ProfileRepository profileRepository;
     private ProfileImageGetService profileImageGetService;
@@ -38,7 +38,7 @@ class MemberProfileGetServiceTest {
     private ChatRoomRepository chatRoomRepository;
     private UserBlockRepository userBlockRepository;
     private RecommendationItemRepository recommendationItemRepository;
-    private MemberProfileGetService service;
+    private UserProfileGetService service;
 
     @BeforeEach
     void setUp() {
@@ -48,7 +48,7 @@ class MemberProfileGetServiceTest {
         chatRoomRepository = mock(ChatRoomRepository.class);
         userBlockRepository = mock(UserBlockRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
-        service = new MemberProfileGetService(profileRepository, profileImageGetService,
+        service = new UserProfileGetService(profileRepository, profileImageGetService,
             likeRepository, chatRoomRepository, userBlockRepository, recommendationItemRepository);
     }
 
@@ -58,13 +58,13 @@ class MemberProfileGetServiceTest {
             .willReturn(true);
         givenActiveProfile(UserStatus.ACTIVE);
 
-        MemberProfileResponse response = service.getMemberProfile(5L, 21L);
+        UserProfileResponse response = service.getUserProfile(5L, 21L);
 
-        assertThat(response.memberId()).isEqualTo(21L);
+        assertThat(response.userId()).isEqualTo(21L);
         assertThat(response.nickname()).isEqualTo("하리");
         assertThat(response.age()).isEqualTo(29);
         assertThat(response.images()).containsExactly(
-            new MemberProfileResponse.Image(
+            new UserProfileResponse.Image(
                 701L,
                 (short) 1,
                 "https://example.com/701"));
@@ -75,7 +75,7 @@ class MemberProfileGetServiceTest {
         given(likeRepository.hasProfileViewAccessBetween(5L, 21L)).willReturn(true);
         givenActiveProfile(UserStatus.ACTIVE);
 
-        assertThat(service.getMemberProfile(5L, 21L).memberId()).isEqualTo(21L);
+        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
         verifyNoInteractions(chatRoomRepository, recommendationItemRepository);
     }
 
@@ -84,7 +84,7 @@ class MemberProfileGetServiceTest {
         given(chatRoomRepository.existsVisibleBetweenUsers(5L, 21L)).willReturn(true);
         givenActiveProfile(UserStatus.ACTIVE);
 
-        assertThat(service.getMemberProfile(5L, 21L).memberId()).isEqualTo(21L);
+        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
         verifyNoInteractions(recommendationItemRepository);
     }
 
@@ -106,8 +106,8 @@ class MemberProfileGetServiceTest {
     @ParameterizedTest
     @NullSource
     @ValueSource(longs = {0L, -1L, 5L})
-    void 잘못된_상대_ID나_본인_조회는_거절한다(Long memberId) {
-        assertUnavailable(memberId);
+    void 잘못된_상대_ID나_본인_조회는_거절한다(Long userId) {
+        assertUnavailable(userId);
         verifyNoInteractions(userBlockRepository, recommendationItemRepository, profileRepository);
     }
 
@@ -131,15 +131,15 @@ class MemberProfileGetServiceTest {
     }
 
     private void givenActiveProfile(UserStatus status) {
-        User member = mock(User.class);
-        given(member.getStatus()).willReturn(status);
-        given(member.getBirthDate()).willReturn(LocalDate.now().minusYears(29));
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(status);
+        given(user.getBirthDate()).willReturn(LocalDate.now().minusYears(29));
         Profile profile = mock(Profile.class);
-        given(profile.getUser()).willReturn(member);
+        given(profile.getUser()).willReturn(user);
         given(profile.getNickname()).willReturn("하리");
         given(profileRepository.findByUserIdAndDeletedAtIsNull(21L))
             .willReturn(Optional.of(profile));
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(21L)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(21L)))
             .willReturn(Map.of(21L,
                 List.of(new ProfileImageAccessResult(
                     701L,
@@ -148,8 +148,8 @@ class MemberProfileGetServiceTest {
                     Instant.parse("2026-09-27T12:00:00Z")))));
     }
 
-    private void assertUnavailable(Long memberId) {
-        assertThatThrownBy(() -> service.getMemberProfile(5L, memberId))
+    private void assertUnavailable(Long userId) {
+        assertThatThrownBy(() -> service.getUserProfile(5L, userId))
             .isInstanceOf(ProfileImageBusinessException.class)
             .satisfies(exception -> assertThat(
                 ((ProfileImageBusinessException) exception).getErrorCode())

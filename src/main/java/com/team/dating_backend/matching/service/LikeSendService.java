@@ -41,15 +41,15 @@ public class LikeSendService {
         Long higherUserId = Math.max(senderId, receiverId);
         userPairLockRepository.acquire(lowerUserId, higherUserId);
 
-        User sender = requireMember(senderId);
-        User receiver = requireMember(receiverId);
+        User sender = requireUser(senderId);
+        User receiver = requireUser(receiverId);
 
         if (sender.getStatus() != UserStatus.ACTIVE) {
             throw new LikeBusinessException(LikeErrorCode.SENDER_NOT_ACTIVE);
         }
         if (receiver.getStatus() != UserStatus.ACTIVE
             || userBlockRepository.existsActiveBlockBetween(senderId, receiverId)) {
-            throw new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND);
+            throw new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND);
         }
         if (matchRepository.existsBetween(senderId, receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.MATCH_ALREADY_EXISTS);
@@ -77,9 +77,9 @@ public class LikeSendService {
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
 
-    private User requireMember(Long userId) {
+    private User requireUser(Long userId) {
         return userRepository
             .findById(userId)
-            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
     }
 }

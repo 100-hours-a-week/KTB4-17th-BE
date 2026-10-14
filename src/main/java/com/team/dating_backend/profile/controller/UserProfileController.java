@@ -1,8 +1,8 @@
 package com.team.dating_backend.profile.controller;
 
 import com.team.dating_backend.common.dto.response.SuccessResponse;
-import com.team.dating_backend.profile.dto.response.MemberProfileResponse;
-import com.team.dating_backend.profile.service.MemberProfileGetService;
+import com.team.dating_backend.profile.dto.response.UserProfileResponse;
+import com.team.dating_backend.profile.service.UserProfileGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -15,19 +15,19 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/users/{memberId}/profile")
-public class MemberProfileController {
+@RequestMapping("/api/v1/users/{userId}/profile")
+public class UserProfileController {
 
-    private final MemberProfileGetService memberProfileGetService;
+    private final UserProfileGetService userProfileGetService;
 
     @GetMapping
-    public ResponseEntity<SuccessResponse<MemberProfileResponse>> getMemberProfile(
+    public ResponseEntity<SuccessResponse<UserProfileResponse>> getUserProfile(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable Long memberId) {
-        MemberProfileResponse profile = memberProfileGetService.getMemberProfile(
-            principal.userId(), memberId);
+        @PathVariable Long userId) {
+        UserProfileResponse profile = userProfileGetService.getUserProfile(
+            principal.userId(), userId);
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
-            .body(SuccessResponse.of("member_profile_get_success", profile));
+            .body(SuccessResponse.of("user_profile_get_success", profile));
     }
 }

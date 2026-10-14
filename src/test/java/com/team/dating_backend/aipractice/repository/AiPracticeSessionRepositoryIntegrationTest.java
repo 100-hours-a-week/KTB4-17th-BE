@@ -27,7 +27,7 @@ import org.testcontainers.mysql.MySQLContainer;
 class AiPracticeSessionRepositoryIntegrationTest {
 
     private static final Long USER_ID = 1L;
-    private static final Long TARGET_MEMBER_ID = 2L;
+    private static final Long TARGET_USER_ID = 2L;
 
     @Container
     @ServiceConnection
@@ -49,7 +49,7 @@ class AiPracticeSessionRepositoryIntegrationTest {
         userBlockRepository.deleteAll();
         sessionRepository.deleteAll();
         sessionId = sessionRepository.save(new AiPracticeSession(
-            USER_ID, TARGET_MEMBER_ID, LocalDateTime.now())).getId();
+            USER_ID, TARGET_USER_ID, LocalDateTime.now())).getId();
     }
 
     @ParameterizedTest
@@ -57,8 +57,8 @@ class AiPracticeSessionRepositoryIntegrationTest {
     void 어느_방향이든_활성_차단이_있으면_세션에_직접_접근할_수_없다(
         boolean requesterBlocksTarget) {
         userBlockRepository.save(new UserBlock(
-            requesterBlocksTarget ? USER_ID : TARGET_MEMBER_ID,
-            requesterBlocksTarget ? TARGET_MEMBER_ID : USER_ID,
+            requesterBlocksTarget ? USER_ID : TARGET_USER_ID,
+            requesterBlocksTarget ? TARGET_USER_ID : USER_ID,
             LocalDateTime.now()));
         entityManager.flush();
         entityManager.clear();

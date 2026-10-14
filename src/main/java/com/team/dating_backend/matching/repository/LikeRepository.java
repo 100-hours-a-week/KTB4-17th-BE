@@ -14,11 +14,11 @@ import org.springframework.data.repository.query.Param;
 public interface LikeRepository extends JpaRepository<Like, Long> {
 
     @Query("""
-        select count(memberLike) > 0
-        from MemberLike memberLike
-        where ((memberLike.senderId = :viewerUserId and memberLike.receiverId = :targetUserId)
-            or (memberLike.senderId = :targetUserId and memberLike.receiverId = :viewerUserId))
-          and memberLike.status in (
+        select count(userLike) > 0
+        from UserLike userLike
+        where ((userLike.senderId = :viewerUserId and userLike.receiverId = :targetUserId)
+            or (userLike.senderId = :targetUserId and userLike.receiverId = :viewerUserId))
+          and userLike.status in (
               com.team.dating_backend.matching.enums.LikeStatus.PENDING,
               com.team.dating_backend.matching.enums.LikeStatus.MATCHED
           )
@@ -35,16 +35,16 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
 
     @Query("""
         SELECT new com.team.dating_backend.matching.repository.SentLikeItem(
-            memberLike.id, receiver.id, receiver.birthDate, profile.nickname, profile.job,
-            region.provinceName, region.regionName, memberLike.status, memberLike.createdAt)
-        FROM MemberLike memberLike
-        JOIN User receiver ON receiver.id = memberLike.receiverId
+            userLike.id, receiver.id, receiver.birthDate, profile.nickname, profile.job,
+            region.provinceName, region.regionName, userLike.status, userLike.createdAt)
+        FROM UserLike userLike
+        JOIN User receiver ON receiver.id = userLike.receiverId
         JOIN Profile profile ON profile.user = receiver AND profile.deletedAt IS NULL
         LEFT JOIN profile.activityRegion region
-        WHERE memberLike.senderId = :senderId
-          AND memberLike.status = com.team.dating_backend.matching.enums.LikeStatus.PENDING
+        WHERE userLike.senderId = :senderId
+          AND userLike.status = com.team.dating_backend.matching.enums.LikeStatus.PENDING
           AND receiver.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
-          AND (:cursor IS NULL OR memberLike.id < :cursor)
+          AND (:cursor IS NULL OR userLike.id < :cursor)
           AND NOT EXISTS (
               SELECT userBlock.id
               FROM UserBlock userBlock
@@ -54,7 +54,7 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
                   OR (userBlock.blockerUserId = receiver.id
                     AND userBlock.blockedUserId = :senderId))
           )
-        ORDER BY memberLike.id DESC
+        ORDER BY userLike.id DESC
         """)
     List<SentLikeItem> findSentPendingLikes(
         @Param("senderId") Long senderId,
@@ -63,16 +63,16 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
 
     @Query("""
         SELECT new com.team.dating_backend.matching.repository.ReceivedLikeItem(
-            memberLike.id, sender.id, sender.birthDate, profile.nickname, profile.job,
-            region.provinceName, region.regionName, memberLike.status, memberLike.createdAt)
-        FROM MemberLike memberLike
-        JOIN User sender ON sender.id = memberLike.senderId
+            userLike.id, sender.id, sender.birthDate, profile.nickname, profile.job,
+            region.provinceName, region.regionName, userLike.status, userLike.createdAt)
+        FROM UserLike userLike
+        JOIN User sender ON sender.id = userLike.senderId
         JOIN Profile profile ON profile.user = sender AND profile.deletedAt IS NULL
         LEFT JOIN profile.activityRegion region
-        WHERE memberLike.receiverId = :receiverId
-          AND memberLike.status = com.team.dating_backend.matching.enums.LikeStatus.PENDING
+        WHERE userLike.receiverId = :receiverId
+          AND userLike.status = com.team.dating_backend.matching.enums.LikeStatus.PENDING
           AND sender.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
-          AND (:cursor IS NULL OR memberLike.id < :cursor)
+          AND (:cursor IS NULL OR userLike.id < :cursor)
           AND NOT EXISTS (
               SELECT userBlock.id
               FROM UserBlock userBlock
@@ -82,7 +82,7 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
                   OR (userBlock.blockerUserId = sender.id
                     AND userBlock.blockedUserId = :receiverId))
           )
-        ORDER BY memberLike.id DESC
+        ORDER BY userLike.id DESC
         """)
     List<ReceivedLikeItem> findReceivedPendingLikes(
         @Param("receiverId") Long receiverId,
@@ -91,10 +91,10 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
 
     @Modifying
     @Query("""
-        update MemberLike memberLike
-           set memberLike.status = :resolvedStatus, memberLike.resolvedAt = :resolvedAt
-        where memberLike.status = :pendingStatus
-          and (memberLike.senderId = :userId or memberLike.receiverId = :userId)
+        update UserLike userLike
+           set userLike.status = :resolvedStatus, userLike.resolvedAt = :resolvedAt
+        where userLike.status = :pendingStatus
+          and (userLike.senderId = :userId or userLike.receiverId = :userId)
         """)
     int resolvePendingForUser(
         @Param("userId") Long userId,

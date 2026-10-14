@@ -4,7 +4,7 @@ import com.team.dating_backend.profile.enums.Mbti;
 import java.util.List;
 
 public record RecommendationCandidateResponse(
-    Long memberId,
+    Long userId,
     String nickname,
     Integer age,
     String job,

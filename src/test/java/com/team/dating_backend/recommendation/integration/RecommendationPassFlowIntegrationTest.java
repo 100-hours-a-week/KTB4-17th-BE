@@ -89,7 +89,7 @@ import tools.jackson.databind.ObjectMapper;
 @Testcontainers
 class RecommendationPassFlowIntegrationTest {
 
-    private static final String ENDPOINT = "/api/v1/members/me/recommendation-passes/";
+    private static final String ENDPOINT = "/api/v1/users/me/recommendation-passes/";
     private static final String TEST_JWT_SECRET = TestJwtSecret.generate();
 
     @Container
@@ -164,9 +164,9 @@ class RecommendationPassFlowIntegrationTest {
         batch(targetId, List.of(userId));
         token = jwtService.createServiceAuthToken(userId);
         targetToken = jwtService.createServiceAuthToken(targetId);
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(nextId)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(nextId)))
             .willReturn(Map.of());
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(userId)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(userId)))
             .willReturn(Map.of());
     }
 
@@ -178,7 +178,7 @@ class RecommendationPassFlowIntegrationTest {
         assertThat(created.statusCode()).isEqualTo(201);
         assertThat(json(created).path("message").asString())
             .isEqualTo("recommendation_pass_success");
-        assertThat(json(created).path("data").path("targetMemberId").asLong()).isEqualTo(targetId);
+        assertThat(json(created).path("data").path("targetUserId").asLong()).isEqualTo(targetId);
         assertThat(json(created).path("data").path("permanent").asBoolean()).isTrue();
         assertThat(json(created).path("data").path("passedAt").asString()).isNotBlank();
         assertThat(repeated.statusCode()).isEqualTo(200);
@@ -198,7 +198,7 @@ class RecommendationPassFlowIntegrationTest {
         assertThat(cards.statusCode()).isEqualTo(200);
         JsonNode items = json(cards).path("data").path("items");
         assertThat(items.size()).isEqualTo(1);
-        assertThat(items.get(0).path("candidate").path("memberId").asLong()).isEqualTo(nextId);
+        assertThat(items.get(0).path("candidate").path("userId").asLong()).isEqualTo(nextId);
         assertThat(itemRepository.existsEligibleCandidateInActiveBatch(userId, targetId)).isFalse();
         assertThat(itemRepository.existsEligibleCandidateInActiveBatch(targetId, userId)).isTrue();
         assertThat(itemRepository.count()).isEqualTo(3);
@@ -250,7 +250,7 @@ class RecommendationPassFlowIntegrationTest {
             "/api/v1/recommendation-batches/" + batchId + "/items?cursor=" + cursor, token);
         assertThat(cards.statusCode()).isEqualTo(200);
         assertThat(json(cards).path("data").path("items").get(0)
-            .path("candidate").path("memberId").asLong()).isEqualTo(nextId);
+            .path("candidate").path("userId").asLong()).isEqualTo(nextId);
     }
 
     @Test

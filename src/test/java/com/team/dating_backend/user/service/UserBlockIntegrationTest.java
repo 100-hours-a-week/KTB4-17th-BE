@@ -129,11 +129,11 @@ class UserBlockIntegrationTest {
             .hasMessage("chat termination failed");
 
         assertThat(userBlockRepository.count()).isZero();
-        Match memberMatch = matchRepository.findById(relation.matchId()).orElseThrow();
+        Match userMatch = matchRepository.findById(relation.matchId()).orElseThrow();
         ChatRoom room = chatRoomRepository.findById(relation.chatRoomId()).orElseThrow();
-        assertThat(memberMatch.getStatus()).isEqualTo(MatchStatus.ACTIVE);
-        assertThat(memberMatch.getEndReason()).isNull();
-        assertThat(memberMatch.getEndedAt()).isNull();
+        assertThat(userMatch.getStatus()).isEqualTo(MatchStatus.ACTIVE);
+        assertThat(userMatch.getEndReason()).isNull();
+        assertThat(userMatch.getEndedAt()).isNull();
         assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.ACTIVE);
         assertThat(room.getEndReason()).isNull();
         assertThat(room.getEndedAt()).isNull();
@@ -213,30 +213,30 @@ class UserBlockIntegrationTest {
 
     private Relation activeRelation() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 1, 11, 0);
-        Match memberMatch = matchRepository.saveAndFlush(new Match(blockerId, targetId, now));
-        ChatRoom room = chatRoomRepository.saveAndFlush(new ChatRoom(memberMatch, now));
-        return new Relation(memberMatch.getId(), room.getId());
+        Match userMatch = matchRepository.saveAndFlush(new Match(blockerId, targetId, now));
+        ChatRoom room = chatRoomRepository.saveAndFlush(new ChatRoom(userMatch, now));
+        return new Relation(userMatch.getId(), room.getId());
     }
 
     private void assertEnded(Relation relation, LocalDateTime expectedEndedAt) {
-        Match memberMatch = matchRepository.findById(relation.matchId()).orElseThrow();
+        Match userMatch = matchRepository.findById(relation.matchId()).orElseThrow();
         ChatRoom room = chatRoomRepository.findById(relation.chatRoomId()).orElseThrow();
-        assertThat(memberMatch.getStatus()).isEqualTo(MatchStatus.ENDED);
-        assertThat(memberMatch.getEndReason()).isEqualTo(MatchEndReason.BLOCKED);
-        assertThat(memberMatch.getEndedAt()).isEqualTo(expectedEndedAt);
+        assertThat(userMatch.getStatus()).isEqualTo(MatchStatus.ENDED);
+        assertThat(userMatch.getEndReason()).isEqualTo(MatchEndReason.BLOCKED);
+        assertThat(userMatch.getEndedAt()).isEqualTo(expectedEndedAt);
         assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.ENDED);
         assertThat(room.getEndReason()).isEqualTo(ChatRoomEndReason.BLOCKED);
         assertThat(room.getEndedAt()).isEqualTo(expectedEndedAt);
     }
 
     private void assertEndedAtSameTime(Relation relation) {
-        Match memberMatch = matchRepository.findById(relation.matchId()).orElseThrow();
+        Match userMatch = matchRepository.findById(relation.matchId()).orElseThrow();
         ChatRoom room = chatRoomRepository.findById(relation.chatRoomId()).orElseThrow();
-        assertThat(memberMatch.getStatus()).isEqualTo(MatchStatus.ENDED);
-        assertThat(memberMatch.getEndReason()).isEqualTo(MatchEndReason.BLOCKED);
+        assertThat(userMatch.getStatus()).isEqualTo(MatchStatus.ENDED);
+        assertThat(userMatch.getEndReason()).isEqualTo(MatchEndReason.BLOCKED);
         assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.ENDED);
         assertThat(room.getEndReason()).isEqualTo(ChatRoomEndReason.BLOCKED);
-        assertThat(room.getEndedAt()).isEqualTo(memberMatch.getEndedAt());
+        assertThat(room.getEndedAt()).isEqualTo(userMatch.getEndedAt());
     }
 
     private User activeUser(String name) {

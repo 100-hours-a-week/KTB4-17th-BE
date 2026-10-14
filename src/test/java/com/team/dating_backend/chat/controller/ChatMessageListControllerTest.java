@@ -69,7 +69,7 @@ class ChatMessageListControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.chatRoom.chatRoomId").value(CHAT_ROOM_ID))
             .andExpect(jsonPath("$.data.chatRoom.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.data.chatRoom.otherParticipant.memberId")
+            .andExpect(jsonPath("$.data.chatRoom.otherParticipant.userId")
                 .value(OTHER_USER_ID))
             .andExpect(jsonPath("$.data.chatRoom.otherParticipant.nickname")
                 .value("상대방"))

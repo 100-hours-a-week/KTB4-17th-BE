@@ -16,17 +16,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/members/me/recommendation-passes")
+@RequestMapping("/api/v1/users/me/recommendation-passes")
 public class RecommendationPassController {
 
     private final RecommendationPassSaveService recommendationPassSaveService;
 
-    @PutMapping("/{targetMemberId}")
+    @PutMapping("/{targetUserId}")
     public ResponseEntity<SuccessResponse<RecommendationPassSaveResponse>> savePass(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable Long targetMemberId) {
+        @PathVariable Long targetUserId) {
         RecommendationPassSaveResult result = recommendationPassSaveService
-            .savePass(principal.userId(), targetMemberId);
+            .savePass(principal.userId(), targetUserId);
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         String message = result.created()
             ? "recommendation_pass_success"
