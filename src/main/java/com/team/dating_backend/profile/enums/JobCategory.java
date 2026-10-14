@@ -23,7 +23,6 @@ public enum JobCategory {
     NOT_EMPLOYED,
     OTHER;
 
-    // Require a code instead of accepting Jackson's numeric enum ordinals.
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static JobCategory fromCode(String code) {
         return JobCategory.valueOf(code);
