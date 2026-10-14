@@ -1,6 +1,8 @@
 package com.team.dating_backend.aisimulation.entity;
 
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,7 +13,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -51,11 +52,11 @@ public class AiSimulationSession {
     private LocalDateTime finishedAt;
 
     public AiSimulationSession(Long userId, Long targetUserId, LocalDateTime createdAt) {
-        this.userId = Objects.requireNonNull(userId, "userId must not be null");
-        this.targetUserId = Objects.requireNonNull(targetUserId, "targetUserId must not be null");
-        if (userId.equals(targetUserId)) {
-            throw new IllegalArgumentException("AI simulation requires two different users");
+        if (userId == null || targetUserId == null || userId.equals(targetUserId)) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_MEMBER);
         }
+        this.userId = userId;
+        this.targetUserId = targetUserId;
         this.status = AiSimulationSessionStatus.IN_PROGRESS;
         this.createdAt = createdAt;
     }
@@ -75,7 +76,7 @@ public class AiSimulationSession {
 
     private void requireInProgress() {
         if (status != AiSimulationSessionStatus.IN_PROGRESS) {
-            throw new IllegalStateException("AI simulation is not in progress");
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS);
         }
     }
 }

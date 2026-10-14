@@ -171,6 +171,25 @@ class AiSimulationControllerTest {
             .andExpect(jsonPath("$.errorCode").value("SIMULATION_NOT_FOUND"));
     }
 
+    @ParameterizedTest
+    @EnumSource(
+        value = AiSimulationErrorCode.class, names = {
+            "INVALID_TARGET_MEMBER",
+            "SIMULATION_NOT_IN_PROGRESS",
+            "SIMULATION_REPORT_NOT_GENERATING",
+            "SIMULATION_TARGET_USER_MISSING"
+        }
+    )
+    void 시뮬레이션_검증_오류는_정의된_HTTP_상태와_errorCode만_반환한다(AiSimulationErrorCode errorCode)
+        throws Exception {
+        given(simulationService.attempt(USER_ID, SESSION_ID))
+            .willThrow(new AiSimulationBusinessException(errorCode));
+
+        mockMvc.perform(post("/api/v1/ai-simulations/{id}/attempts", SESSION_ID))
+            .andExpect(status().is(errorCode.status().value()))
+            .andExpect(content().string("{\"errorCode\":\"" + errorCode.name() + "\"}"));
+    }
+
     private static final class PrincipalArgumentResolver
         implements
             HandlerMethodArgumentResolver {

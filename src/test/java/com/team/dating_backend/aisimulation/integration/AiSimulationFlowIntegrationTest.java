@@ -22,6 +22,8 @@ import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.Person
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationRequest;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationResponse;
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.service.AiSimulationAdmissionService;
 import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
@@ -350,7 +352,9 @@ class AiSimulationFlowIntegrationTest {
         recovery.recoverExpired();
         assertThat(query.getState(7L, expired.simulationId()).finishedAt()).isEqualTo(finished);
         assertThatThrownBy(() -> persistence.complete(expired.simulationId(), aiResponse()))
-            .isInstanceOf(IllegalStateException.class);
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
     }
 
     @Test
