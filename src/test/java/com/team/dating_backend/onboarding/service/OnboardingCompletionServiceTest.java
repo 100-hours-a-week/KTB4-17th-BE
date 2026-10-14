@@ -10,6 +10,7 @@ import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
@@ -210,7 +211,7 @@ class OnboardingCompletionServiceTest {
             (short) 175,
             BodyType.AVERAGE,
             EducationLevel.BACHELOR,
-            "개발자",
+            JobCategory.IT_DATA,
             Religion.NONE,
             Mbti.INTJ,
             Drinking.SOCIAL,

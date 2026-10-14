@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.service.UserProfileGetService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.util.List;
@@ -53,7 +54,7 @@ class UserProfileControllerTest {
                 21L,
                 "하리",
                 29,
-                "개발자",
+                JobCategory.IT_DATA,
                 "서울특별시 강남구",
                 null,
                 null,

@@ -21,6 +21,7 @@ import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
@@ -87,7 +88,7 @@ class ProfileSaveServiceTest {
         assertThat(result.response().profile().height()).isNull();
         assertThat(result.response().profile().bodyType()).isNull();
         assertThat(result.response().profile().educationLevel()).isNull();
-        assertThat(result.response().profile().job()).isNull();
+        assertThat(result.response().profile().job()).isEqualTo(JobCategory.IT_DATA);
         assertThat(result.response().profile().religion()).isNull();
         assertThat(result.response().profile().mbti()).isNull();
         assertThat(result.response().profile().drinking()).isNull();
@@ -169,7 +170,7 @@ class ProfileSaveServiceTest {
         assertThat(profile.getHeight()).isNull();
         assertThat(profile.getBodyType()).isNull();
         assertThat(profile.getEducationLevel()).isNull();
-        assertThat(profile.getJob()).isNull();
+        assertThat(profile.getJob()).isEqualTo(JobCategory.IT_DATA);
         assertThat(profile.getReligion()).isNull();
         assertThat(profile.getMbti()).isNull();
         assertThat(profile.getDrinking()).isNull();
@@ -278,7 +279,7 @@ class ProfileSaveServiceTest {
 
     private ProfileSaveRequest partialRequest(Long activityRegionId, String nickname) {
         return new ProfileSaveRequest(
-            nickname, activityRegionId, null, null, null, null, null, null, null, null);
+            nickname, activityRegionId, null, null, null, JobCategory.IT_DATA, null, null, null, null);
     }
 
     private Profile completeProfile(User user) {
@@ -289,7 +290,7 @@ class ProfileSaveServiceTest {
             (short) 175,
             BodyType.AVERAGE,
             EducationLevel.BACHELOR,
-            "개발자",
+            JobCategory.IT_DATA,
             Religion.NONE,
             Mbti.INTJ,
             Drinking.OCCASIONAL,

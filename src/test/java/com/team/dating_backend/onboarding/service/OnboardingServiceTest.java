@@ -17,11 +17,12 @@ import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
-import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
+import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
@@ -101,10 +102,10 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void 직업이_공백이면_다음_단계는_PROFILE이다() {
+    void 직업이_없으면_다음_단계는_PROFILE이다() {
         givenOnboardingUser();
         Profile profile = completeProfile();
-        given(profile.getJob()).willReturn(" ");
+        given(profile.getJob()).willReturn(null);
         givenProfile(profile);
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
@@ -176,11 +177,13 @@ class OnboardingServiceTest {
         assertThat(response.requirements().profileImageComplete()).isFalse();
     }
 
-    @Test
-    void 모든_온보딩_정보와_정면_프로필_사진이_있으면_다음_단계는_COMPLETE이다() {
+    @ParameterizedTest
+    @EnumSource(value = JobCategory.class, names = {"IT_DATA", "OTHER"})
+    void 기타를_포함해_모든_정보가_있으면_다음_단계는_COMPLETE이다(JobCategory job) {
         givenOnboardingUser();
         Profile profile = completeProfile();
         given(profile.getId()).willReturn(10L);
+        given(profile.getJob()).willReturn(job);
         givenProfile(profile);
         given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(10L))
             .willReturn(true);
@@ -294,7 +297,7 @@ class OnboardingServiceTest {
         given(profile.getHeight()).willReturn((short) 175);
         given(profile.getBodyType()).willReturn(BodyType.AVERAGE);
         given(profile.getEducationLevel()).willReturn(EducationLevel.BACHELOR);
-        given(profile.getJob()).willReturn("개발자");
+        given(profile.getJob()).willReturn(JobCategory.IT_DATA);
         given(profile.getReligion()).willReturn(Religion.NONE);
         given(profile.getDrinking()).willReturn(Drinking.SOCIAL);
         given(profile.getSmoking()).willReturn(Smoking.NON_SMOKER);

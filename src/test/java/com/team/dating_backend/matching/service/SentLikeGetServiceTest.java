@@ -15,6 +15,7 @@ import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.SentLikeItem;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -81,7 +82,7 @@ class SentLikeGetServiceTest {
             20L,
             birthDate,
             "하리",
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시",
             "강남구",
             LikeStatus.PENDING,
@@ -115,7 +116,7 @@ class SentLikeGetServiceTest {
         assertThat(item.receiver().profileImageUrl())
             .isEqualTo("https://example.com/representative");
         assertThat(item.receiver().age()).isEqualTo(29);
-        assertThat(item.receiver().job()).isEqualTo("개발자");
+        assertThat(item.receiver().job()).isEqualTo(JobCategory.IT_DATA);
         assertThat(item.receiver().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
@@ -171,7 +172,7 @@ class SentLikeGetServiceTest {
             userId,
             LocalDate.of(1999, 1, 1),
             "하리",
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시",
             "강남구",
             LikeStatus.PENDING,
