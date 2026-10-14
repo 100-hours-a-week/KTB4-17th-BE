@@ -40,7 +40,7 @@ class AiPracticeChatServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long SESSION_ID = 10L;
     private static final Long CHAT_ID = 20L;
-    private static final Long TARGET_MEMBER_ID = 2L;
+    private static final Long TARGET_USER_ID = 2L;
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 27, 12, 0);
 
     private AiPracticeChatRepository chatRepository;
@@ -64,7 +64,7 @@ class AiPracticeChatServiceTest {
             userRepository,
             new AiPracticeProperties());
 
-        session = new AiPracticeSession(USER_ID, TARGET_MEMBER_ID, CREATED_AT);
+        session = new AiPracticeSession(USER_ID, TARGET_USER_ID, CREATED_AT);
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
         request = new AiPracticeChatCreateRequest(UUID.randomUUID(), "첫 메시지");
 

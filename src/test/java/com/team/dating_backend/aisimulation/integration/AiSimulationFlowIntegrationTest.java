@@ -145,12 +145,12 @@ class AiSimulationFlowIntegrationTest {
             viewer = userId;
             long targetId = userId == 7L ? 8L : 7L;
             mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetMemberId\":" + targetId + "}"))
+                .content("{\"targetUserId\":" + targetId + "}"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+                .andExpect(jsonPath("$.errorCode").value("TARGET_USER_NOT_FOUND"));
             mvc.perform(get("/api/v1/ai-simulations/targets/{targetId}", targetId))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+                .andExpect(jsonPath("$.errorCode").value("TARGET_USER_NOT_FOUND"));
         }
 
         assertThat(count("ai_simulation_sessions")).isEqualTo(existingResult ? 1 : 0);
@@ -223,14 +223,14 @@ class AiSimulationFlowIntegrationTest {
         Long id;
         try {
             mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetMemberId\":8}"))
+                .content("{\"targetUserId\":8}"))
                 .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
             assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
             id = query.getPair(7L, 8L).simulationId();
             assertThat(query.getState(7L, id).status().name()).isEqualTo("IN_PROGRESS");
             viewer = 8L;
             mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetMemberId\":7}"))
+                .content("{\"targetUserId\":7}"))
                 .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.simulationId").value(id));
             mvc.perform(get("/api/v1/ai-simulations/{id}/status", id)).andExpect(status().isOk());
             mvc.perform(get("/api/v1/ai-simulations/{id}", id)).andExpect(status().isConflict());
@@ -251,7 +251,7 @@ class AiSimulationFlowIntegrationTest {
         mvc.perform(get("/api/v1/ai-simulations")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(1));
         mvc.perform(
-            post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON).content("{\"targetMemberId\":7}"))
+            post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON).content("{\"targetUserId\":7}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.simulationId").value(id));
         assertThat(query.get(7L, id)).isEqualTo(query.get(8L, id));
         assertThat(count("ai_simulation_messages")).isEqualTo(20);
@@ -279,7 +279,7 @@ class AiSimulationFlowIntegrationTest {
             assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
             second = service.request(7L, new AiSimulationCreateRequest(9L)).simulationId();
             mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetMemberId\":10}"))
+                .content("{\"targetUserId\":10}"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.errorCode").value("SIMULATION_CAPACITY_EXCEEDED"));
             Long rejected = query.getPair(7L, 10L).simulationId();
@@ -491,7 +491,7 @@ class AiSimulationFlowIntegrationTest {
             viewer = userId;
             mvc.perform(post("/api/v1/ai-simulations/{id}/attempts", failedId))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.errorCode").value("TARGET_MEMBER_NOT_FOUND"));
+                .andExpect(jsonPath("$.errorCode").value("TARGET_USER_NOT_FOUND"));
         }
         assertThat(count("ai_simulation_sessions")).isEqualTo(1);
         verify(client, org.mockito.Mockito.never()).run(any());

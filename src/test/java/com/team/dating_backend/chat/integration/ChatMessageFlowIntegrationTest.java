@@ -135,7 +135,7 @@ class ChatMessageFlowIntegrationTest {
 
     @BeforeEach
     void setUpDatabase() {
-        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+        given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
 

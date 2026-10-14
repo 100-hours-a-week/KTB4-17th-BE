@@ -40,7 +40,7 @@ public class ReceivedLikeGetService {
     public ReceivedLikesGetResponse getReceivedLikes(Long receiverId, Long cursor) {
         validateCursor(cursor);
         User receiver = userRepository.findById(receiverId)
-            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
         if (receiver.getStatus() != UserStatus.ACTIVE) {
             throw new LikeBusinessException(LikeErrorCode.RECEIVER_NOT_ACTIVE);
         }
@@ -51,9 +51,9 @@ public class ReceivedLikeGetService {
         List<ReceivedLikeItem> responseRows = rows.stream()
             .limit(ITEMS_PER_REQUEST)
             .toList();
-        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId = profileImageGetService
-            .getProfileImagesByMemberIds(responseRows.stream()
-                .map(ReceivedLikeItem::memberId)
+        Map<Long, List<ProfileImageAccessResult>> profileImagesByUserId = profileImageGetService
+            .getProfileImagesByUserIds(responseRows.stream()
+                .map(ReceivedLikeItem::userId)
                 .distinct()
                 .toList());
 
@@ -62,7 +62,7 @@ public class ReceivedLikeGetService {
             .map(row -> toItemResponse(
                 row,
                 today,
-                profileImagesByMemberId.getOrDefault(row.memberId(), List.of())))
+                profileImagesByUserId.getOrDefault(row.userId(), List.of())))
             .toList();
         Long nextCursor = hasNext ? items.getLast().likeId() : null;
         return new ReceivedLikesGetResponse(
@@ -95,7 +95,7 @@ public class ReceivedLikeGetService {
         }
 
         ReceivedLikeSenderResponse sender = new ReceivedLikeSenderResponse(
-            row.memberId(),
+            row.userId(),
             row.nickname(),
             profileImageUrl,
             age,

@@ -15,12 +15,12 @@ public interface UserBlockRepository extends JpaRepository<UserBlock, Long> {
     @Query("""
         select count(block) > 0 from UserBlock block
         where block.unblockedAt is null
-          and ((block.blockerUserId = :senderMemberId and block.blockedUserId = :receiverMemberId)
-            or (block.blockerUserId = :receiverMemberId and block.blockedUserId = :senderMemberId))
+          and ((block.blockerUserId = :senderUserId and block.blockedUserId = :receiverUserId)
+            or (block.blockerUserId = :receiverUserId and block.blockedUserId = :senderUserId))
         """)
     boolean existsActiveBlockBetween(
-        @Param("senderMemberId") Long senderMemberId,
-        @Param("receiverMemberId") Long receiverMemberId);
+        @Param("senderUserId") Long senderUserId,
+        @Param("receiverUserId") Long receiverUserId);
 
     @Query("""
         select block.blockerUserId from UserBlock block

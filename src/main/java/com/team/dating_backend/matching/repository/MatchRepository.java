@@ -12,14 +12,14 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        select memberMatch from Match memberMatch
-        where memberMatch.status = com.team.dating_backend.matching.enums.MatchStatus.ACTIVE
+        select userMatch from Match userMatch
+        where userMatch.status = com.team.dating_backend.matching.enums.MatchStatus.ACTIVE
           and (
-              (memberMatch.senderId = :firstUserId
-                  and memberMatch.receiverId = :secondUserId)
+              (userMatch.senderId = :firstUserId
+                  and userMatch.receiverId = :secondUserId)
               or
-              (memberMatch.senderId = :secondUserId
-                  and memberMatch.receiverId = :firstUserId)
+              (userMatch.senderId = :secondUserId
+                  and userMatch.receiverId = :firstUserId)
           )
         """)
     Optional<Match> findActiveBetweenForUpdate(
@@ -28,12 +28,12 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
 
     @Query(
         """
-            select count(memberMatch) > 0 from Match memberMatch
-            where (memberMatch.senderId = :senderMemberId and memberMatch.receiverId = :receiverMemberId)
-               or (memberMatch.senderId = :receiverMemberId and memberMatch.receiverId = :senderMemberId)
+            select count(userMatch) > 0 from Match userMatch
+            where (userMatch.senderId = :senderUserId and userMatch.receiverId = :receiverUserId)
+               or (userMatch.senderId = :receiverUserId and userMatch.receiverId = :senderUserId)
             """
     )
     boolean existsBetween(
-        @Param("senderMemberId") Long senderMemberId,
-        @Param("receiverMemberId") Long receiverMemberId);
+        @Param("senderUserId") Long senderUserId,
+        @Param("receiverUserId") Long receiverUserId);
 }

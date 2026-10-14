@@ -8,10 +8,10 @@ public enum AiPracticeErrorCode implements ErrorCode {
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND),
     CHAT_NOT_FOUND(
         HttpStatus.NOT_FOUND),
-    TARGET_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND),
-    TARGET_MEMBER_UNAVAILABLE(
+    TARGET_USER_NOT_FOUND(HttpStatus.NOT_FOUND),
+    TARGET_USER_UNAVAILABLE(
         HttpStatus.CONFLICT),
-    INVALID_TARGET_MEMBER(HttpStatus.BAD_REQUEST),
+    INVALID_TARGET_USER(HttpStatus.BAD_REQUEST),
     SESSION_ENDED(
         HttpStatus.CONFLICT),
     GENERATION_IN_PROGRESS(HttpStatus.CONFLICT),

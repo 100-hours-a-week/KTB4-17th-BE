@@ -172,7 +172,7 @@ class RecommendationBatchControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("recommendation_items_get_success"))
             .andExpect(jsonPath("$.data.items[0].itemId").value(101))
-            .andExpect(jsonPath("$.data.items[0].candidate.memberId").value(21))
+            .andExpect(jsonPath("$.data.items[0].candidate.userId").value(21))
             .andExpect(jsonPath("$.data.items[0].candidate.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].candidate.age").value(29))
             .andExpect(jsonPath("$.data.items[0].candidate.job").value("개발자"))

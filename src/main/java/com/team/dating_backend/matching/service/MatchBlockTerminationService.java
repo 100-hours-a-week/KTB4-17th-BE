@@ -17,6 +17,6 @@ public class MatchBlockTerminationService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void terminateBetween(Long firstUserId, Long secondUserId, LocalDateTime endedAt) {
         matchRepository.findActiveBetweenForUpdate(firstUserId, secondUserId)
-            .ifPresent(memberMatch -> memberMatch.end(MatchEndReason.BLOCKED, endedAt));
+            .ifPresent(userMatch -> userMatch.end(MatchEndReason.BLOCKED, endedAt));
     }
 }

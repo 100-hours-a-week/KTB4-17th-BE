@@ -106,7 +106,7 @@ class AiSimulationAdmissionServiceTest {
         assertThatThrownBy(() -> service.admit(USER_ID, USER_ID))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_MEMBER));
+                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_USER));
 
         verifyNoInteractions(userRepository, userPairLockRepository, sessionRepository, persistenceService);
     }
@@ -118,7 +118,7 @@ class AiSimulationAdmissionServiceTest {
         assertThatThrownBy(() -> service.admit(USER_ID, TARGET_ID))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
+                    .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
 
         verifyNoInteractions(userPairLockRepository, sessionRepository, persistenceService);
     }
@@ -132,7 +132,7 @@ class AiSimulationAdmissionServiceTest {
         assertThatThrownBy(() -> service.admit(userId, targetUserId))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
+                    .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
 
         verifyNoInteractions(userPairLockRepository, sessionRepository, persistenceService);
     }
@@ -221,7 +221,7 @@ class AiSimulationAdmissionServiceTest {
         assertThatThrownBy(() -> service.admitAttempt(USER_ID, SESSION_ID))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND));
+                    .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
         verifyNoInteractions(userPairLockRepository, persistenceService);
     }
 

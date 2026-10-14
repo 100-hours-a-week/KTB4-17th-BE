@@ -70,9 +70,9 @@ public class RecommendationItemGetService {
         List<RecommendationItemCandidateRow> responseRows = rows.stream()
             .limit(ITEMS_PER_REQUEST)
             .toList();
-        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId = profileImageGetService
-            .getProfileImagesByMemberIds(responseRows.stream()
-                .map(RecommendationItemCandidateRow::memberId)
+        Map<Long, List<ProfileImageAccessResult>> profileImagesByUserId = profileImageGetService
+            .getProfileImagesByUserIds(responseRows.stream()
+                .map(RecommendationItemCandidateRow::userId)
                 .distinct()
                 .toList());
         LocalDate today = LocalDate.now();
@@ -80,7 +80,7 @@ public class RecommendationItemGetService {
             .map(row -> toItemResponse(
                 row,
                 today,
-                profileImagesByMemberId.getOrDefault(row.memberId(), List.of())))
+                profileImagesByUserId.getOrDefault(row.userId(), List.of())))
             .toList();
         Long nextCursor = hasNext ? items.getLast().itemId() : null;
         return new RecommendationItemsGetResponse(
@@ -112,7 +112,7 @@ public class RecommendationItemGetService {
                 image.fileId(), image.displayOrder(), image.imageUrl(), image.expiresAt()))
             .toList();
         RecommendationCandidateResponse candidate = new RecommendationCandidateResponse(
-            row.memberId(), row.nickname(), age, row.job(), region, row.mbti(), images);
+            row.userId(), row.nickname(), age, row.job(), region, row.mbti(), images);
         return new RecommendationItemResponse(row.itemId(), candidate);
     }
 }

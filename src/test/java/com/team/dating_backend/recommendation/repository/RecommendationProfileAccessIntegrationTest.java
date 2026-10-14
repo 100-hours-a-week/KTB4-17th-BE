@@ -112,14 +112,14 @@ class RecommendationProfileAccessIntegrationTest {
 
     @Test
     void 추천_배치에_없는_회원과_본인은_조회_권한이_없다() {
-        User otherMember = activeUser();
-        entityManager.persist(new Profile(otherMember));
+        User otherUser = activeUser();
+        entityManager.persist(new Profile(otherUser));
         entityManager.persist(new RecommendationItem(batch.getId(), requester.getId(), 2));
         entityManager.persist(new Profile(requester));
         entityManager.flush();
 
         assertThat(repository.existsEligibleCandidateInActiveBatch(
-            requester.getId(), otherMember.getId())).isFalse();
+            requester.getId(), otherUser.getId())).isFalse();
         assertThat(repository.existsEligibleCandidateInActiveBatch(
             requester.getId(), requester.getId())).isFalse();
     }

@@ -23,16 +23,16 @@ public class ProfileImageGetService {
     private final FileAccessUrlCreateService fileAccessUrlCreateService;
 
     @Transactional(readOnly = true)
-    public Map<Long, List<ProfileImageAccessResult>> getProfileImagesByMemberIds(
-        Collection<Long> memberIds) {
-        if (memberIds.isEmpty()) {
+    public Map<Long, List<ProfileImageAccessResult>> getProfileImagesByUserIds(
+        Collection<Long> userIds) {
+        if (userIds.isEmpty()) {
             return Map.of();
         }
 
-        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId = new LinkedHashMap<>();
+        Map<Long, List<ProfileImageAccessResult>> profileImagesByUserId = new LinkedHashMap<>();
         for (ProfileImage profileImage : profileImageRepository
-            .findActiveProfileImagesByMemberIds(memberIds)) {
-            Long memberId = profileImage.getProfile().getUser().getId();
+            .findActiveProfileImagesByUserIds(userIds)) {
+            Long userId = profileImage.getProfile().getUser().getId();
             FileAccessUrlResult accessUrl = fileAccessUrlCreateService.createPresignedAccessUrl(
                 profileImage.getImage(), INLINE_DISPOSITION);
             ProfileImageAccessResult image = new ProfileImageAccessResult(
@@ -40,9 +40,9 @@ public class ProfileImageGetService {
                 profileImage.getDisplayOrder(),
                 accessUrl.accessUrl(),
                 accessUrl.expiresAt());
-            profileImagesByMemberId.computeIfAbsent(memberId, ignored -> new java.util.ArrayList<>())
+            profileImagesByUserId.computeIfAbsent(userId, ignored -> new java.util.ArrayList<>())
                 .add(image);
         }
-        return profileImagesByMemberId;
+        return profileImagesByUserId;
     }
 }

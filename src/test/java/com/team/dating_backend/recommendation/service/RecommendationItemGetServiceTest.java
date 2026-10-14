@@ -50,7 +50,7 @@ class RecommendationItemGetServiceTest {
         recommendationBatchRepository = mock(RecommendationBatchRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
         profileImageGetService = mock(ProfileImageGetService.class);
-        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+        given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         service = new RecommendationItemGetService(
             userRepository,
@@ -68,7 +68,7 @@ class RecommendationItemGetServiceTest {
         given(recommendationItemRepository.findEligibleItems(
             42L, 5L, null, null, PageRequest.of(0, 21)))
             .willReturn(rows);
-        given(profileImageGetService.getProfileImagesByMemberIds(
+        given(profileImageGetService.getProfileImagesByUserIds(
             LongStream.rangeClosed(21L, 40L).boxed().toList()))
             .willReturn(Map.of(
                 21L,
@@ -89,7 +89,7 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items()).hasSize(20);
         assertThat(response.items().getFirst().itemId()).isEqualTo(101L);
         assertThat(response.items().getLast().itemId()).isEqualTo(120L);
-        assertThat(response.items().getFirst().candidate().memberId()).isEqualTo(21L);
+        assertThat(response.items().getFirst().candidate().userId()).isEqualTo(21L);
         assertThat(response.items().getFirst().candidate().nickname()).isEqualTo("하리");
         assertThat(response.items().getFirst().candidate().age())
             .isEqualTo(29);
@@ -159,7 +159,7 @@ class RecommendationItemGetServiceTest {
         assertThat(firstPage.pageInfo().nextCursor()).isEqualTo(120L);
         assertThat(secondPage.pageInfo().nextCursor()).isNull();
         assertThat(Stream.concat(firstPage.items().stream(), secondPage.items().stream())
-            .map(item -> item.candidate().memberId()))
+            .map(item -> item.candidate().userId()))
             .containsExactlyInAnyOrderElementsOf(
                 LongStream.rangeClosed(41L, 61L).boxed().toList())
             .doesNotHaveDuplicates();
@@ -177,7 +177,7 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
-        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of());
     }
 
     @Test
@@ -269,9 +269,9 @@ class RecommendationItemGetServiceTest {
         given(recommendationBatchRepository.findById(42L)).willReturn(Optional.of(batch));
     }
 
-    private RecommendationItemCandidateRow row(Long itemId, Long memberId) {
+    private RecommendationItemCandidateRow row(Long itemId, Long userId) {
         return new RecommendationItemCandidateRow(
-            itemId, memberId, LocalDate.now().minusYears(29), "하리", "개발자",
+            itemId, userId, LocalDate.now().minusYears(29), "하리", "개발자",
             Mbti.INFP, "서울특별시", "강남구");
     }
 

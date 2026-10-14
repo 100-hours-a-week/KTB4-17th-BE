@@ -15,13 +15,13 @@ public class AiSimulationTargetValidator {
 
     public void validate(Long userId, Long targetUserId) {
         if (userId.equals(targetUserId)) {
-            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_MEMBER);
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_USER);
         }
         if (!userRepository.existsById(targetUserId)) {
-            throw new AiSimulationBusinessException(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND);
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.TARGET_USER_NOT_FOUND);
         }
         if (userBlockRepository.existsActiveBlockBetween(userId, targetUserId)) {
-            throw new AiSimulationBusinessException(AiSimulationErrorCode.TARGET_MEMBER_NOT_FOUND);
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.TARGET_USER_NOT_FOUND);
         }
     }
 }

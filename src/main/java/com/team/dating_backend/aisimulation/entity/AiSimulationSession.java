@@ -53,7 +53,7 @@ public class AiSimulationSession {
 
     public AiSimulationSession(Long userId, Long targetUserId, LocalDateTime createdAt) {
         if (userId == null || targetUserId == null || userId.equals(targetUserId)) {
-            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_MEMBER);
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_USER);
         }
         this.userId = userId;
         this.targetUserId = targetUserId;

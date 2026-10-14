@@ -85,12 +85,12 @@ public class AiPracticeOutboxPublishJob {
         try {
             String aiSessionId = session.getAiSessionId();
             if (aiSessionId == null) {
-                if (session.getTargetMemberId() == null) {
+                if (session.getTargetUserId() == null) {
                     throw new AiPracticeBusinessException(
-                        AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
+                        AiPracticeErrorCode.TARGET_USER_UNAVAILABLE);
                 }
                 aiSessionId = aiClient.startSession(
-                    session.getUserId(), session.getTargetMemberId());
+                    session.getUserId(), session.getTargetUserId());
                 resultService.attachAiSessionId(outbox.getId(), aiSessionId);
             }
 
@@ -160,7 +160,7 @@ public class AiPracticeOutboxPublishJob {
             case "AI_SERVER_NOT_CONFIGURED",
                 "AI_SERVER_RESPONSE_INVALID",
                 "AI_SESSION_ID_CONFLICT",
-                "TARGET_MEMBER_UNAVAILABLE" -> exception.getErrorCode().name();
+                "TARGET_USER_UNAVAILABLE" -> exception.getErrorCode().name();
             default -> null;
         };
     }

@@ -3,7 +3,7 @@ package com.team.dating_backend.profile.service;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
-import com.team.dating_backend.profile.dto.response.MemberProfileResponse;
+import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class MemberProfileGetService {
+public class UserProfileGetService {
 
     private final ProfileRepository profileRepository;
     private final ProfileImageGetService profileImageGetService;
@@ -33,20 +33,20 @@ public class MemberProfileGetService {
     private final RecommendationItemRepository recommendationItemRepository;
 
     @Transactional(readOnly = true)
-    public MemberProfileResponse getMemberProfile(Long viewerUserId, Long memberId) {
-        if (viewerUserId == null || memberId == null || memberId <= 0
-            || viewerUserId.equals(memberId)
-            || userBlockRepository.existsActiveBlockBetween(viewerUserId, memberId)
-            || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, memberId)
-                && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, memberId)
+    public UserProfileResponse getUserProfile(Long viewerUserId, Long userId) {
+        if (viewerUserId == null || userId == null || userId <= 0
+            || viewerUserId.equals(userId)
+            || userBlockRepository.existsActiveBlockBetween(viewerUserId, userId)
+            || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
+                && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
                 && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
-                    viewerUserId, memberId))) {
+                    viewerUserId, userId))) {
             throw profileNotAvailable();
         }
 
-        Profile profile = profileRepository.findByUserIdAndDeletedAtIsNull(memberId)
+        Profile profile = profileRepository.findByUserIdAndDeletedAtIsNull(userId)
             .filter(candidate -> candidate.getUser().getStatus() == UserStatus.ACTIVE)
-            .orElseThrow(MemberProfileGetService::profileNotAvailable);
+            .orElseThrow(UserProfileGetService::profileNotAvailable);
 
         LocalDate birthDate = profile.getUser().getBirthDate();
         Integer age = birthDate == null ? null : Period.between(birthDate, LocalDate.now()).getYears();
@@ -61,17 +61,17 @@ public class MemberProfileGetService {
             region = null;
         }
 
-        Map<Long, List<ProfileImageAccessResult>> imagesByMemberId = profileImageGetService
-            .getProfileImagesByMemberIds(List.of(memberId));
-        List<MemberProfileResponse.Image> images = imagesByMemberId
-            .getOrDefault(memberId, List.of())
+        Map<Long, List<ProfileImageAccessResult>> imagesByUserId = profileImageGetService
+            .getProfileImagesByUserIds(List.of(userId));
+        List<UserProfileResponse.Image> images = imagesByUserId
+            .getOrDefault(userId, List.of())
             .stream()
-            .map(image -> new MemberProfileResponse.Image(
+            .map(image -> new UserProfileResponse.Image(
                 image.fileId(), image.displayOrder(), image.imageUrl()))
             .toList();
 
-        return new MemberProfileResponse(
-            memberId,
+        return new UserProfileResponse(
+            userId,
             profile.getNickname(),
             age,
             profile.getJob(),

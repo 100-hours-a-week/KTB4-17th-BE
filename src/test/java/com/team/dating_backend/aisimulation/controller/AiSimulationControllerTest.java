@@ -63,7 +63,7 @@ class AiSimulationControllerTest {
         mockMvc.perform(post("/api/v1/ai-simulations")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
-                {"targetMemberId":8}
+                {"targetUserId":8}
                 """))
             .andExpect(status().isAccepted())
             .andExpect(jsonPath("$.message").value("ai_simulation_accepted"))
@@ -80,7 +80,7 @@ class AiSimulationControllerTest {
         given(simulationService.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
             .willReturn(new AiSimulationResponses.Handle(SESSION_ID, sessionStatus));
         mockMvc.perform(post("/api/v1/ai-simulations")
-            .contentType(MediaType.APPLICATION_JSON).content("{\"targetMemberId\":8}"))
+            .contentType(MediaType.APPLICATION_JSON).content("{\"targetUserId\":8}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("ai_simulation_existing"))
             .andExpect(jsonPath("$.data.status").value(sessionStatus.name()));
@@ -174,7 +174,7 @@ class AiSimulationControllerTest {
     @ParameterizedTest
     @EnumSource(
         value = AiSimulationErrorCode.class, names = {
-            "INVALID_TARGET_MEMBER",
+            "INVALID_TARGET_USER",
             "SIMULATION_NOT_IN_PROGRESS",
             "SIMULATION_REPORT_NOT_GENERATING",
             "SIMULATION_TARGET_USER_MISSING"

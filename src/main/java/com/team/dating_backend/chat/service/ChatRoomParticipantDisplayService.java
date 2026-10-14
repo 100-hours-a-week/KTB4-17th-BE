@@ -69,14 +69,14 @@ public class ChatRoomParticipantDisplayService {
             return Map.of();
         }
 
-        Map<Long, List<ProfileImageAccessResult>> profileImagesByMemberId = profileImageGetService
-            .getProfileImagesByMemberIds(userIds);
-        Map<Long, String> profileImageUrlsByMemberId = new LinkedHashMap<>();
-        profileImagesByMemberId.forEach((userId, images) -> images.stream()
+        Map<Long, List<ProfileImageAccessResult>> profileImagesByUserId = profileImageGetService
+            .getProfileImagesByUserIds(userIds);
+        Map<Long, String> profileImageUrlsByUserId = new LinkedHashMap<>();
+        profileImagesByUserId.forEach((userId, images) -> images.stream()
             .filter(image -> image.displayOrder() == REPRESENTATIVE_IMAGE_ORDER)
             .map(ProfileImageAccessResult::imageUrl)
             .findFirst()
-            .ifPresent(imageUrl -> profileImageUrlsByMemberId.put(userId, imageUrl)));
-        return Map.copyOf(profileImageUrlsByMemberId);
+            .ifPresent(imageUrl -> profileImageUrlsByUserId.put(userId, imageUrl)));
+        return Map.copyOf(profileImageUrlsByUserId);
     }
 }

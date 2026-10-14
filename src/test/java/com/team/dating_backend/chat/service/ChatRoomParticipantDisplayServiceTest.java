@@ -48,7 +48,7 @@ class ChatRoomParticipantDisplayServiceTest {
             .willReturn(List.of(2L));
         given(repository.findByUserIds(List.of(3L))).willReturn(List.of(
             new ChatParticipantDisplayRow(3L, "사용자B")));
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(3L)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(3L)))
             .willReturn(Map.of(3L, List.of(new ProfileImageAccessResult(
                 30L, (short) 1, "https://example.com/profile.jpg", Instant.now()))));
 
@@ -59,6 +59,6 @@ class ChatRoomParticipantDisplayServiceTest {
         assertThat(result.get(3L)).isEqualTo(new ChatParticipantDisplay(
             3L, "사용자B", "https://example.com/profile.jpg"));
         verify(repository).findByUserIds(List.of(3L));
-        verify(profileImageGetService).getProfileImagesByMemberIds(List.of(3L));
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of(3L));
     }
 }

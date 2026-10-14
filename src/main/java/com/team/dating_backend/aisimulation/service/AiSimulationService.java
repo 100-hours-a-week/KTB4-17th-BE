@@ -18,7 +18,7 @@ public class AiSimulationService {
     private final AiSimulationPersistenceService persistenceService;
 
     public AiSimulationResponses.Handle request(Long userId, AiSimulationCreateRequest request) {
-        AdmissionDecision decision = admissionService.admit(userId, request.targetMemberId());
+        AdmissionDecision decision = admissionService.admit(userId, request.targetUserId());
         if (decision.created()) {
             try {
                 worker.generate(decision.simulationId());

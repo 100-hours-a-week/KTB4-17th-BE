@@ -41,46 +41,46 @@ public class RecommendationPassSaveService {
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    public RecommendationPassSaveResult savePass(Long requesterUserId, Long targetMemberId) {
-        if (targetMemberId == null || targetMemberId <= 0) {
+    public RecommendationPassSaveResult savePass(Long requesterUserId, Long targetUserId) {
+        if (targetUserId == null || targetUserId <= 0) {
             throw new RequestValidationException();
         }
-        if (requesterUserId.equals(targetMemberId)) {
+        if (requesterUserId.equals(targetUserId)) {
             throw new RecommendationBusinessException(RecommendationErrorCode.SELF_PASS_NOT_ALLOWED);
         }
 
         try {
-            return transactionTemplate.execute(status -> saveInTransaction(requesterUserId, targetMemberId));
+            return transactionTemplate.execute(status -> saveInTransaction(requesterUserId, targetUserId));
         } catch (DataIntegrityViolationException exception) {
             if (!isPassDirectionUniqueViolation(exception)) {
                 throw exception;
             }
             return transactionTemplate.execute(status -> recommendationPassRepository
-                .findByPasserUserIdAndPassedUserId(requesterUserId, targetMemberId)
+                .findByPasserUserIdAndPassedUserId(requesterUserId, targetUserId)
                 .map(existing -> result(existing, false))
                 .orElseThrow(() -> exception));
         }
     }
 
-    private RecommendationPassSaveResult saveInTransaction(Long requesterUserId, Long targetMemberId) {
+    private RecommendationPassSaveResult saveInTransaction(Long requesterUserId, Long targetUserId) {
         Optional<User> requester = userRepository.findById(requesterUserId);
         if (requester.isEmpty() || requester.get().getStatus() != UserStatus.ACTIVE) {
             throw new RecommendationBusinessException(RecommendationErrorCode.REQUESTER_NOT_ACTIVE);
         }
 
         Optional<RecommendationPass> existing = recommendationPassRepository
-            .findByPasserUserIdAndPassedUserId(requesterUserId, targetMemberId);
+            .findByPasserUserIdAndPassedUserId(requesterUserId, targetUserId);
         if (existing.isPresent()) {
             return result(existing.get(), false);
         }
         if (!recommendationItemRepository.existsEligibleCandidateInActiveBatch(
-            requesterUserId, targetMemberId)) {
+            requesterUserId, targetUserId)) {
             throw new RecommendationBusinessException(
                 RecommendationErrorCode.RECOMMENDATION_TARGET_NOT_AVAILABLE);
         }
 
         RecommendationPass recommendationPass = recommendationPassRepository.saveAndFlush(
-            new RecommendationPass(requesterUserId, targetMemberId,
+            new RecommendationPass(requesterUserId, targetUserId,
                 LocalDateTime.now().truncatedTo(ChronoUnit.MICROS)));
         return result(recommendationPass, true);
     }

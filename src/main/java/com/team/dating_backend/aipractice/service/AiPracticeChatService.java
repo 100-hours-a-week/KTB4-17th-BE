@@ -52,8 +52,8 @@ public class AiPracticeChatService {
         }
 
         requireActiveSession(session);
-        if (session.getAiSessionId() == null && session.getTargetMemberId() == null) {
-            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
+        if (session.getAiSessionId() == null && session.getTargetUserId() == null) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_USER_UNAVAILABLE);
         }
         if (chatRepository.existsBySession_IdAndStatus(
             sessionId, AiPracticeChatStatus.GENERATING)) {

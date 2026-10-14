@@ -21,7 +21,7 @@ public class LikeTerminationService {
     public int terminateForWithdrawal(Long userId) {
         userRepository
             .findById(userId)
-            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
         return likeRepository.resolvePendingForUser(
             userId, LikeStatus.PENDING, LikeStatus.WITHDRAWN, LocalDateTime.now());
     }

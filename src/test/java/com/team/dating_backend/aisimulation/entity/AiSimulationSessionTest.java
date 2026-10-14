@@ -22,7 +22,7 @@ class AiSimulationSessionTest {
         assertThatThrownBy(() -> new AiSimulationSession(null, USER_ID, CREATED_AT))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_MEMBER));
+                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_USER));
     }
 
     @Test
@@ -30,7 +30,7 @@ class AiSimulationSessionTest {
         assertThatThrownBy(() -> new AiSimulationSession(USER_ID, null, CREATED_AT))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_MEMBER));
+                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_USER));
     }
 
     @Test
@@ -38,7 +38,7 @@ class AiSimulationSessionTest {
         assertThatThrownBy(() -> new AiSimulationSession(USER_ID, USER_ID, CREATED_AT))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_MEMBER));
+                    .isEqualTo(AiSimulationErrorCode.INVALID_TARGET_USER));
     }
 
     @ParameterizedTest

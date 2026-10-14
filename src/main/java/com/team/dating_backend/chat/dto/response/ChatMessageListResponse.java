@@ -17,7 +17,7 @@ public record ChatMessageListResponse(
         boolean chatNotification,
         OtherParticipant otherParticipant) {}
 
-    public record OtherParticipant(Long memberId, String nickname, String profileImageUrl) {}
+    public record OtherParticipant(Long userId, String nickname, String profileImageUrl) {}
 
     public record Message(
         Long messageId,

@@ -15,12 +15,12 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
         select session from AiPracticeSession session
         where session.id = :sessionId
           and session.userId = :userId
-          and (session.targetMemberId is null or not exists (
+          and (session.targetUserId is null or not exists (
               select block.id from UserBlock block
               where block.unblockedAt is null
                 and ((block.blockerUserId = session.userId
-                      and block.blockedUserId = session.targetMemberId)
-                  or (block.blockerUserId = session.targetMemberId
+                      and block.blockedUserId = session.targetUserId)
+                  or (block.blockerUserId = session.targetUserId
                       and block.blockedUserId = session.userId))
           ))
         """)
@@ -32,12 +32,12 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
         select session from AiPracticeSession session
         where session.id = :sessionId
           and session.userId = :userId
-          and (session.targetMemberId is null or not exists (
+          and (session.targetUserId is null or not exists (
               select block.id from UserBlock block
               where block.unblockedAt is null
                 and ((block.blockerUserId = session.userId
-                      and block.blockedUserId = session.targetMemberId)
-                  or (block.blockerUserId = session.targetMemberId
+                      and block.blockedUserId = session.targetUserId)
+                  or (block.blockerUserId = session.targetUserId
                       and block.blockedUserId = session.userId))
           ))
         """)
@@ -48,6 +48,6 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
     @Query("select session from AiPracticeSession session where session.id = :sessionId")
     Optional<AiPracticeSession> findByIdForUpdate(@Param("sessionId") Long sessionId);
 
-    Optional<AiPracticeSession> findFirstByUserIdAndTargetMemberIdAndStatusOrderByIdDesc(
-        Long userId, Long targetMemberId, AiPracticeSessionStatus status);
+    Optional<AiPracticeSession> findFirstByUserIdAndTargetUserIdAndStatusOrderByIdDesc(
+        Long userId, Long targetUserId, AiPracticeSessionStatus status);
 }

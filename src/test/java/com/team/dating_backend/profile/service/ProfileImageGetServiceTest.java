@@ -36,16 +36,16 @@ class ProfileImageGetServiceTest {
 
     @Test
     void 회원별_프로필_이미지를_순서대로_반환한다() {
-        ProfileImage member21First = profileImage(21L, 701L, (short) 1);
-        ProfileImage member21Second = profileImage(21L, 704L, (short) 2);
-        ProfileImage member22First = profileImage(22L, 801L, (short) 1);
-        given(profileImageRepository.findActiveProfileImagesByMemberIds(List.of(21L, 22L)))
-            .willReturn(List.of(member21First, member21Second, member22First));
-        givenAccessUrl(member21First, "https://example.com/701");
-        givenAccessUrl(member21Second, "https://example.com/704");
-        givenAccessUrl(member22First, "https://example.com/801");
+        ProfileImage user21First = profileImage(21L, 701L, (short) 1);
+        ProfileImage user21Second = profileImage(21L, 704L, (short) 2);
+        ProfileImage user22First = profileImage(22L, 801L, (short) 1);
+        given(profileImageRepository.findActiveProfileImagesByUserIds(List.of(21L, 22L)))
+            .willReturn(List.of(user21First, user21Second, user22First));
+        givenAccessUrl(user21First, "https://example.com/701");
+        givenAccessUrl(user21Second, "https://example.com/704");
+        givenAccessUrl(user22First, "https://example.com/801");
 
-        Map<Long, List<ProfileImageAccessResult>> result = service.getProfileImagesByMemberIds(List.of(21L, 22L));
+        Map<Long, List<ProfileImageAccessResult>> result = service.getProfileImagesByUserIds(List.of(21L, 22L));
 
         assertThat(result.get(21L))
             .extracting(ProfileImageAccessResult::fileId)
@@ -68,7 +68,7 @@ class ProfileImageGetServiceTest {
 
     @Test
     void 회원이_없으면_프로필_이미지를_조회하지_않는다() {
-        Map<Long, List<ProfileImageAccessResult>> result = service.getProfileImagesByMemberIds(List.of());
+        Map<Long, List<ProfileImageAccessResult>> result = service.getProfileImagesByUserIds(List.of());
 
         assertThat(result).isEmpty();
         verifyNoInteractions(profileImageRepository, fileAccessUrlCreateService);
@@ -77,22 +77,22 @@ class ProfileImageGetServiceTest {
     @Test
     void 프로필_이미지_URL_생성에_실패하면_예외를_전파한다() {
         ProfileImage profileImage = profileImage(21L, 701L, (short) 1);
-        given(profileImageRepository.findActiveProfileImagesByMemberIds(List.of(21L)))
+        given(profileImageRepository.findActiveProfileImagesByUserIds(List.of(21L)))
             .willReturn(List.of(profileImage));
         RuntimeException urlCreateException = new RuntimeException("URL create failed");
         given(fileAccessUrlCreateService.createPresignedAccessUrl(
             profileImage.getImage(), "inline"))
             .willThrow(urlCreateException);
 
-        assertThatThrownBy(() -> service.getProfileImagesByMemberIds(List.of(21L)))
+        assertThatThrownBy(() -> service.getProfileImagesByUserIds(List.of(21L)))
             .isSameAs(urlCreateException);
     }
 
-    private ProfileImage profileImage(Long memberId, Long fileId, short displayOrder) {
-        User member = mock(User.class);
-        given(member.getId()).willReturn(memberId);
+    private ProfileImage profileImage(Long userId, Long fileId, short displayOrder) {
+        User user = mock(User.class);
+        given(user.getId()).willReturn(userId);
         Profile profile = mock(Profile.class);
-        given(profile.getUser()).willReturn(member);
+        given(profile.getUser()).willReturn(user);
         File file = mock(File.class);
         given(file.getId()).willReturn(fileId);
         ProfileImage profileImage = mock(ProfileImage.class);

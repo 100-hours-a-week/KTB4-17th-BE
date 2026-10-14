@@ -182,8 +182,8 @@ class LikeSendServiceTest {
     void 차단은_어느_방향이든_전송을_막는다() {
         given(userBlockRepository.existsActiveBlockBetween(1L, 2L)).willReturn(true);
         given(userBlockRepository.existsActiveBlockBetween(2L, 1L)).willReturn(true);
-        assertError(1L, 2L, LikeErrorCode.MEMBER_NOT_FOUND);
-        assertError(2L, 1L, LikeErrorCode.MEMBER_NOT_FOUND);
+        assertError(1L, 2L, LikeErrorCode.USER_NOT_FOUND);
+        assertError(2L, 1L, LikeErrorCode.USER_NOT_FOUND);
     }
 
     @Test
@@ -191,7 +191,7 @@ class LikeSendServiceTest {
         for (UserStatus status : new UserStatus[]{UserStatus.SUSPENDED, UserStatus.WITHDRAWN}) {
             User inactiveReceiver = user(status);
             given(userRepository.findById(2L)).willReturn(Optional.of(inactiveReceiver));
-            assertError(1L, 2L, LikeErrorCode.MEMBER_NOT_FOUND);
+            assertError(1L, 2L, LikeErrorCode.USER_NOT_FOUND);
         }
     }
 
@@ -207,7 +207,7 @@ class LikeSendServiceTest {
     @Test
     void 존재하지_않는_회원에게는_전송할_수_없다() {
         given(userRepository.findById(2L)).willReturn(Optional.empty());
-        assertError(1L, 2L, LikeErrorCode.MEMBER_NOT_FOUND);
+        assertError(1L, 2L, LikeErrorCode.USER_NOT_FOUND);
     }
 
     @Test
