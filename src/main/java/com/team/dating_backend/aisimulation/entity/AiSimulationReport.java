@@ -1,6 +1,8 @@
 package com.team.dating_backend.aisimulation.entity;
 
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.enums.AiSimulationReportStatus;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -89,7 +91,7 @@ public class AiSimulationReport {
         Map<String, Object> detailResult,
         LocalDateTime completedAt) {
         if (status != AiSimulationReportStatus.GENERATING) {
-            throw new IllegalStateException("AI simulation report is not generating");
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_REPORT_NOT_GENERATING);
         }
         this.status = AiSimulationReportStatus.COMPLETED;
         this.overallScore = BigDecimal.valueOf(overallScore);

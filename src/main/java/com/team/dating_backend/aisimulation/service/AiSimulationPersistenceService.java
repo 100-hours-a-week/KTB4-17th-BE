@@ -46,7 +46,7 @@ public class AiSimulationPersistenceService {
             .filter(session -> session.getStatus() == AiSimulationSessionStatus.IN_PROGRESS)
             .map(session -> {
                 if (session.getTargetUserId() == null) {
-                    throw new IllegalStateException("AI simulation target user is missing");
+                    throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING);
                 }
                 return new GenerationInput(session.getId(), session.getUserId(), session.getTargetUserId());
             });
@@ -100,7 +100,7 @@ public class AiSimulationPersistenceService {
         AiSimulationSession session = sessionRepository.findByIdForUpdate(sessionId)
             .orElseThrow(this::notFound);
         if (session.getStatus() != AiSimulationSessionStatus.IN_PROGRESS) {
-            throw new IllegalStateException("AI simulation is not in progress");
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS);
         }
         return session;
     }
