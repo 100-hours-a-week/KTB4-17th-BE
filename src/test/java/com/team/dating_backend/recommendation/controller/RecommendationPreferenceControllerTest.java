@@ -18,6 +18,7 @@ import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.recommendation.dto.request.RecommendationPreferenceSaveRequest;
@@ -87,10 +88,14 @@ class RecommendationPreferenceControllerTest {
     @MockitoBean
     private SecurityProperties securityProperties;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     @BeforeEach
     void setUp() {
         given(securityProperties.getAllowedOrigins()).willReturn(List.of());
         given(jwtService.parseServiceAuthToken("service-token")).willReturn(USER_ID);
+        given(userAuthenticationService.isAuthenticationAllowed(USER_ID)).willReturn(true);
     }
 
     @Test

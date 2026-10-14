@@ -1,6 +1,8 @@
 package com.team.dating_backend.recommendation.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.BDDMockito.given;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -8,6 +10,7 @@ import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.recommendation.controller.RecommendationPreferenceController;
@@ -55,6 +58,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
@@ -130,6 +134,9 @@ class RecommendationPreferenceFlowIntegrationTest {
     @Autowired
     private RecommendationPreferenceRepository recommendationPreferenceRepository;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -139,6 +146,7 @@ class RecommendationPreferenceFlowIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
         jdbcTemplate.update("delete from recommendation_items");
         jdbcTemplate.update("delete from recommendation_batches");
         jdbcTemplate.update("delete from profiles");

@@ -12,6 +12,7 @@ import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedExcep
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -37,8 +38,11 @@ public class ProfileSaveService {
     @Transactional
     public ProfileSaveResult saveProfile(Long userId, ProfileSaveRequest request) {
         User user = userRepository
-            .findById(userId)
+            .findByIdForUpdate(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
+        if (user.getStatus() == UserStatus.WITHDRAWN) {
+            throw new AuthenticationRequiredException();
+        }
         validateProfileUpdate(userId, user);
         Optional<Profile> existingProfile = profileRepository
             .findByUserIdAndDeletedAtIsNull(userId);

@@ -3,6 +3,7 @@ package com.team.dating_backend.auth.controller;
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
 import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.security.UserAuthenticationService;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,7 @@ public class AuthSessionController {
 
     private final AuthCookieFactory authCookieFactory;
     private final JwtService jwtService;
+    private final UserAuthenticationService userAuthenticationService;
 
     @PostMapping("/token/refresh")
     public ResponseEntity<?> refresh(
@@ -29,6 +31,9 @@ public class AuthSessionController {
         ) String refreshToken) {
         try {
             Long userId = jwtService.parseRefreshAuthToken(refreshToken);
+            if (!userAuthenticationService.isAuthenticationAllowed(userId)) {
+                throw new JwtException("Refresh token user is not available");
+            }
             String accessToken = jwtService.createServiceAuthToken(userId);
 
             return new ResponseEntity<>(

@@ -14,6 +14,10 @@ import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProfileImageSaveService {
 
+    private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final FileRepository fileRepository;
@@ -38,6 +43,12 @@ public class ProfileImageSaveService {
         Long userId,
         ProfileImageSaveRequest request) {
         validateRequest(request);
+
+        User user = userRepository.findByIdForUpdate(userId)
+            .orElseThrow(AuthenticationRequiredException::new);
+        if (user.getStatus() == UserStatus.WITHDRAWN) {
+            throw new AuthenticationRequiredException();
+        }
 
         Profile profile = profileRepository.findByUserIdAndDeletedAtIsNull(userId)
             .orElseThrow(

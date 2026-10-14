@@ -125,4 +125,10 @@ public class Profile {
         this.drinking = drinking;
         this.smoking = smoking;
     }
+
+    public void markDeleted(LocalDateTime deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
+        }
+    }
 }
