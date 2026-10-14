@@ -3,6 +3,7 @@ package com.team.dating_backend.auth.controller;
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
 import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.security.UserAuthenticationService;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
@@ -32,18 +33,14 @@ public class AuthSessionController {
         try {
             Long userId = jwtService.parseRefreshAuthToken(refreshToken);
             if (!userAuthenticationService.isAuthenticationAllowed(userId)) {
-                throw new JwtException("Refresh token user is not available");
+                return authenticationRequired();
             }
             String accessToken = jwtService.createServiceAuthToken(userId);
 
             return new ResponseEntity<>(
                 AuthTokenResponse.bearer(accessToken), noStoreHeaders(), HttpStatus.OK);
         } catch (JwtException exception) {
-            HttpHeaders headers = noStoreHeaders();
-            headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteAccessToken().toString());
-            headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteRefreshToken().toString());
-            return new ResponseEntity<>(
-                new AuthErrorResponse("AUTH_REQUIRED"), headers, HttpStatus.UNAUTHORIZED);
+            return authenticationRequired();
         }
     }
 
@@ -56,6 +53,16 @@ public class AuthSessionController {
             HttpHeaders.SET_COOKIE,
             authCookieFactory.deletePendingRegistrationToken().toString());
         return new ResponseEntity<>(headers, HttpStatus.NO_CONTENT);
+    }
+
+    private ResponseEntity<AuthErrorResponse> authenticationRequired() {
+        HttpHeaders headers = noStoreHeaders();
+        headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteAccessToken().toString());
+        headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteRefreshToken().toString());
+        return new ResponseEntity<>(
+            new AuthErrorResponse(CommonErrorCode.AUTH_REQUIRED.name()),
+            headers,
+            CommonErrorCode.AUTH_REQUIRED.status());
     }
 
     private HttpHeaders noStoreHeaders() {

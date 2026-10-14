@@ -2,6 +2,9 @@ package com.team.dating_backend.user.service;
 
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService;
+import com.team.dating_backend.matching.service.LikeTerminationService;
+import com.team.dating_backend.matching.service.MatchWithdrawalTerminationService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
@@ -23,6 +26,9 @@ public class UserWithdrawalService {
     private final UserAuthAccountRepository userAuthAccountRepository;
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
+    private final LikeTerminationService likeTerminationService;
+    private final ChatRoomWithdrawalTerminationService chatRoomWithdrawalTerminationService;
+    private final MatchWithdrawalTerminationService matchWithdrawalTerminationService;
 
     @Transactional
     public void withdraw(Long userId) {
@@ -33,6 +39,9 @@ public class UserWithdrawalService {
         }
 
         LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+        likeTerminationService.terminateForWithdrawal(userId, now);
+        chatRoomWithdrawalTerminationService.terminateForUser(userId, now);
+        matchWithdrawalTerminationService.terminateForUser(userId, now);
         for (UserAuthAccount account : userAuthAccountRepository.findAllByUserId(userId)) {
             account.anonymize(userId);
         }

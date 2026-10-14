@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.common.exception.RequestValidationException;
@@ -12,6 +13,10 @@ import com.team.dating_backend.matching.enums.LikeErrorCode;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,13 +24,18 @@ import org.junit.jupiter.api.Test;
 
 class LikeRejectServiceTest {
 
+    private UserRepository userRepository;
     private LikeRepository likeRepository;
     private LikeRejectService service;
 
     @BeforeEach
     void setUp() {
+        userRepository = mock(UserRepository.class);
         likeRepository = mock(LikeRepository.class);
-        service = new LikeRejectService(likeRepository);
+        service = new LikeRejectService(userRepository, likeRepository);
+        User activeUser = mock(User.class);
+        given(activeUser.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(activeUser));
     }
 
     @Test
@@ -42,6 +52,18 @@ class LikeRejectServiceTest {
             .isInstanceOfSatisfying(LikeBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(LikeErrorCode.LIKE_NOT_FOUND));
+    }
+
+    @Test
+    void 탈퇴한_사용자가_좋아요_거절을_요청하면_AUTH_REQUIRED가_발생하고_좋아요를_조회하지_않는다() {
+        User withdrawnUser = mock(User.class);
+        given(withdrawnUser.getStatus()).willReturn(UserStatus.WITHDRAWN);
+        given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(withdrawnUser));
+
+        assertThatThrownBy(() -> service.rejectLike(1L, 10L))
+            .isInstanceOf(AuthenticationRequiredException.class);
+
+        verify(likeRepository, never()).findById(10L);
     }
 
     @Test
@@ -89,6 +111,7 @@ class LikeRejectServiceTest {
 
         assertThat(like.getStatus()).isEqualTo(LikeStatus.REJECTED);
         assertThat(like.getResolvedAt()).isAfterOrEqualTo(beforeReject);
+        verify(userRepository).findByIdForUpdate(1L);
         verify(likeRepository).findById(10L);
     }
 

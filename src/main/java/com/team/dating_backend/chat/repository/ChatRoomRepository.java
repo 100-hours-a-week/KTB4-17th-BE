@@ -33,6 +33,16 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
         @Param("firstUserId") Long firstUserId,
         @Param("secondUserId") Long secondUserId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select room from ChatRoom room
+        join room.match memberMatch
+        where room.status = com.team.dating_backend.chat.enums.ChatRoomStatus.ACTIVE
+          and (memberMatch.senderId = :userId or memberMatch.receiverId = :userId)
+        order by room.id
+        """)
+    List<ChatRoom> findAllActiveForUserForUpdate(@Param("userId") Long userId);
+
     @Query("""
         select count(room) > 0
         from ChatRoom room

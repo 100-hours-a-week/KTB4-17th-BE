@@ -17,7 +17,7 @@ import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
-import com.team.dating_backend.chat.enums.ChatRoomStatus;
+import com.team.dating_backend.chat.enums.ChatRoomEndReason;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
@@ -240,8 +240,8 @@ class ChatMessageSendServiceTest {
     }
 
     @Test
-    void 종료된_채팅방에는_메시지를_저장하지_않는다() {
-        ReflectionTestUtils.setField(room, "status", ChatRoomStatus.ENDED);
+    void 탈퇴로_종료된_채팅방에는_메시지와_Outbox_이벤트를_생성하지_않는다() {
+        room.end(ChatRoomEndReason.USER_WITHDRAWN, LocalDateTime.now());
 
         assertThatThrownBy(() -> service.sendTextMessage(CHAT_ROOM_ID, SENDER_USER_ID, request))
             .isInstanceOf(ChatBusinessException.class)
