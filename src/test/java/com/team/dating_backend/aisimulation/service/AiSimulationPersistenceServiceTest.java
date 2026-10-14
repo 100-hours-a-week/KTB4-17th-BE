@@ -119,8 +119,9 @@ class AiSimulationPersistenceServiceTest {
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessage("AI simulation is not in progress");
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
 
         assertThat(session.getStatus()).isEqualTo(status);
         assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
@@ -152,7 +153,9 @@ class AiSimulationPersistenceServiceTest {
         LocalDateTime finishedAt = session.getFinishedAt();
 
         assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
-            .isInstanceOf(IllegalStateException.class);
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
 
         assertThat(session.getStatus()).isEqualTo(AiSimulationSessionStatus.COMPLETED);
         assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
@@ -251,8 +254,9 @@ class AiSimulationPersistenceServiceTest {
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
 
         assertThatThrownBy(() -> service.loadGenerationInput(SESSION_ID))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessage("AI simulation target user is missing");
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING));
         verifyNoInteractions(reportRepository, messageRepository);
     }
 
