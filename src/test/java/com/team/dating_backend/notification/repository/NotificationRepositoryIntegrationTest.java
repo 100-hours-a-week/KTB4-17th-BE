@@ -40,10 +40,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-@DataJpaTest(properties = {
-    "spring.flyway.enabled=true",
-    "spring.jpa.hibernate.ddl-auto=validate"
-})
+@DataJpaTest(
+    properties = {
+        "spring.flyway.enabled=true",
+        "spring.jpa.hibernate.ddl-auto=validate"
+    }
+)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
@@ -142,8 +144,8 @@ class NotificationRepositoryIntegrationTest {
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(3572));
         });
 
-        transaction.executeWithoutResult(status ->
-            assertThat(repository.findByIdForUpdate(notificationId)).isPresent());
+        transaction
+            .executeWithoutResult(status -> assertThat(repository.findByIdForUpdate(notificationId)).isPresent());
     }
 
     @ParameterizedTest
