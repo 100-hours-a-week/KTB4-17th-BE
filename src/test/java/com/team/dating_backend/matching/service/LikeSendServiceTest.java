@@ -20,6 +20,7 @@ import com.team.dating_backend.matching.enums.MatchStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -58,8 +59,8 @@ class LikeSendServiceTest {
             chatRoomCreateService);
         User activeSender = user(UserStatus.ACTIVE);
         User activeReceiver = user(UserStatus.ACTIVE);
-        given(userRepository.findById(1L)).willReturn(Optional.of(activeSender));
-        given(userRepository.findById(2L)).willReturn(Optional.of(activeReceiver));
+        given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(activeSender));
+        given(userRepository.findByIdForUpdate(2L)).willReturn(Optional.of(activeReceiver));
     }
 
     @Test
@@ -78,7 +79,8 @@ class LikeSendServiceTest {
         assertThat(response.status()).isEqualTo(LikeStatus.PENDING);
         var lockOrder = inOrder(userPairLockRepository, userRepository);
         lockOrder.verify(userPairLockRepository).acquire(1L, 2L);
-        lockOrder.verify(userRepository).findById(2L);
+        lockOrder.verify(userRepository).findByIdForUpdate(2L);
+        lockOrder.verify(userRepository).findByIdForUpdate(1L);
         ArgumentCaptor<Like> likeCaptor = ArgumentCaptor.forClass(Like.class);
         verify(likeRepository).save(likeCaptor.capture());
         assertThat(likeCaptor.getValue().getSenderId()).isEqualTo(2L);
@@ -190,23 +192,39 @@ class LikeSendServiceTest {
     void 수신자가_정지되거나_탈퇴했으면_전송할_수_없다() {
         for (UserStatus status : new UserStatus[]{UserStatus.SUSPENDED, UserStatus.WITHDRAWN}) {
             User inactiveReceiver = user(status);
-            given(userRepository.findById(2L)).willReturn(Optional.of(inactiveReceiver));
+            given(userRepository.findByIdForUpdate(2L)).willReturn(Optional.of(inactiveReceiver));
             assertError(1L, 2L, LikeErrorCode.USER_NOT_FOUND);
         }
+        verify(likeRepository, never()).save(any());
+        verify(matchRepository, never()).save(any(Match.class));
+        verify(chatRoomCreateService, never())
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
     }
 
     @Test
-    void 발신자가_정지되거나_탈퇴했으면_전송할_수_없다() {
-        for (UserStatus status : new UserStatus[]{UserStatus.SUSPENDED, UserStatus.WITHDRAWN}) {
-            User inactiveSender = user(status);
-            given(userRepository.findById(1L)).willReturn(Optional.of(inactiveSender));
-            assertError(1L, 2L, LikeErrorCode.SENDER_NOT_ACTIVE);
-        }
+    void 발신자가_정지되었으면_전송할_수_없다() {
+        User inactiveSender = user(UserStatus.SUSPENDED);
+        given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(inactiveSender));
+
+        assertError(1L, 2L, LikeErrorCode.SENDER_NOT_ACTIVE);
+    }
+
+    @Test
+    void 탈퇴한_사용자가_좋아요_전송을_요청하면_AUTH_REQUIRED가_발생하고_좋아요를_저장하지_않으며_Match와_채팅방을_생성하지_않는다() {
+        User withdrawnSender = user(UserStatus.WITHDRAWN);
+        given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(withdrawnSender));
+
+        assertThatThrownBy(() -> service.sendLike(1L, 2L))
+            .isInstanceOf(AuthenticationRequiredException.class);
+        verify(likeRepository, never()).save(any());
+        verify(matchRepository, never()).save(any(Match.class));
+        verify(chatRoomCreateService, never())
+            .createChatRoom(any(Match.class), any(LocalDateTime.class));
     }
 
     @Test
     void 존재하지_않는_회원에게는_전송할_수_없다() {
-        given(userRepository.findById(2L)).willReturn(Optional.empty());
+        given(userRepository.findByIdForUpdate(2L)).willReturn(Optional.empty());
         assertError(1L, 2L, LikeErrorCode.USER_NOT_FOUND);
     }
 

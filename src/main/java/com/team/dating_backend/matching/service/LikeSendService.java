@@ -10,6 +10,7 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -37,13 +38,15 @@ public class LikeSendService {
             throw new LikeBusinessException(LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
         }
 
-        Long lowerUserId = Math.min(senderId, receiverId);
-        Long higherUserId = Math.max(senderId, receiverId);
-        userPairLockRepository.acquire(lowerUserId, higherUserId);
+        userPairLockRepository.acquire(
+            Math.min(senderId, receiverId), Math.max(senderId, receiverId));
 
-        User sender = requireUser(senderId);
-        User receiver = requireUser(receiverId);
+        User sender = requireUserForUpdate(senderId);
+        User receiver = requireUserForUpdate(receiverId);
 
+        if (sender.getStatus() == UserStatus.WITHDRAWN) {
+            throw new AuthenticationRequiredException();
+        }
         if (sender.getStatus() != UserStatus.ACTIVE) {
             throw new LikeBusinessException(LikeErrorCode.SENDER_NOT_ACTIVE);
         }
@@ -77,9 +80,9 @@ public class LikeSendService {
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
 
-    private User requireUser(Long userId) {
+    private User requireUserForUpdate(Long userId) {
         return userRepository
-            .findById(userId)
+            .findByIdForUpdate(userId)
             .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
     }
 }

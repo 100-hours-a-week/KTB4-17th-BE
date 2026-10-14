@@ -3,6 +3,8 @@ package com.team.dating_backend.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -10,7 +12,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.chat.enums.ChatErrorCode;
+import com.team.dating_backend.chat.exception.ChatBusinessException;
+import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService;
 import com.team.dating_backend.file.entity.File;
+import com.team.dating_backend.matching.service.LikeTerminationService;
+import com.team.dating_backend.matching.service.MatchWithdrawalTerminationService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.entity.ProfileImage;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
@@ -28,6 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class UserWithdrawalServiceTest {
@@ -38,6 +47,9 @@ class UserWithdrawalServiceTest {
     private UserAuthAccountRepository authAccountRepository;
     private ProfileRepository profileRepository;
     private ProfileImageRepository profileImageRepository;
+    private LikeTerminationService likeTerminationService;
+    private ChatRoomWithdrawalTerminationService chatRoomWithdrawalTerminationService;
+    private MatchWithdrawalTerminationService matchWithdrawalTerminationService;
     private UserWithdrawalService service;
 
     @BeforeEach
@@ -46,8 +58,12 @@ class UserWithdrawalServiceTest {
         authAccountRepository = mock(UserAuthAccountRepository.class);
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
+        likeTerminationService = mock(LikeTerminationService.class);
+        chatRoomWithdrawalTerminationService = mock(ChatRoomWithdrawalTerminationService.class);
+        matchWithdrawalTerminationService = mock(MatchWithdrawalTerminationService.class);
         service = new UserWithdrawalService(userRepository, authAccountRepository,
-            profileRepository, profileImageRepository);
+            profileRepository, profileImageRepository, likeTerminationService,
+            chatRoomWithdrawalTerminationService, matchWithdrawalTerminationService);
     }
 
     @ParameterizedTest
@@ -76,6 +92,22 @@ class UserWithdrawalServiceTest {
         assertThat(profile.getDeletedAt()).isEqualTo(user.getWithdrawnAt());
         assertThat(image.getDeletedAt()).isEqualTo(user.getWithdrawnAt());
         verify(userRepository).findByIdForUpdate(USER_ID);
+        ArgumentCaptor<LocalDateTime> endedAtCaptor = ArgumentCaptor
+            .forClass(LocalDateTime.class);
+        InOrder terminationOrder = inOrder(
+            likeTerminationService,
+            chatRoomWithdrawalTerminationService,
+            matchWithdrawalTerminationService);
+        terminationOrder.verify(likeTerminationService)
+            .terminateForWithdrawal(
+                org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
+        terminationOrder.verify(chatRoomWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
+        terminationOrder.verify(matchWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
+        assertThat(endedAtCaptor.getAllValues()).containsOnly(user.getWithdrawnAt());
     }
 
     @Test
@@ -100,7 +132,34 @@ class UserWithdrawalServiceTest {
 
         service.withdraw(USER_ID);
 
-        verifyNoInteractions(authAccountRepository, profileRepository, profileImageRepository);
+        verifyNoInteractions(
+            authAccountRepository,
+            profileRepository,
+            profileImageRepository,
+            likeTerminationService,
+            chatRoomWithdrawalTerminationService,
+            matchWithdrawalTerminationService);
+    }
+
+    @Test
+    void 채팅방_종료에_실패하면_Match_종료와_사용자_및_소셜계정_비식별화와_프로필_삭제를_실행하지_않고_예외를_전파한다() {
+        User user = user(UserStatus.ACTIVE);
+        ChatBusinessException failure = new ChatBusinessException(
+            ChatErrorCode.INTERNAL_SERVER_ERROR);
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
+        doThrow(failure).when(chatRoomWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID),
+                org.mockito.ArgumentMatchers.any(LocalDateTime.class));
+
+        assertThatThrownBy(() -> service.withdraw(USER_ID)).isSameAs(failure);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        verifyNoInteractions(
+            matchWithdrawalTerminationService,
+            authAccountRepository,
+            profileRepository,
+            profileImageRepository);
     }
 
     @Test
