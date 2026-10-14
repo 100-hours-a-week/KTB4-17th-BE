@@ -22,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserAuthenticationService userAuthenticationService;
 
     @Override
     protected void doFilterInternal(
@@ -41,6 +42,10 @@ public class ServiceJwtAuthenticationFilter extends OncePerRequestFilter {
     private void authenticate(String accessToken, HttpServletRequest request) {
         try {
             Long userId = jwtService.parseServiceAuthToken(accessToken);
+            if (!userAuthenticationService.isAuthenticationAllowed(userId)) {
+                SecurityContextHolder.clearContext();
+                return;
+            }
 
             ServiceAuthenticationPrincipal principal = new ServiceAuthenticationPrincipal(userId);
 

@@ -25,6 +25,7 @@ import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -67,7 +68,7 @@ class ProfileSaveServiceTest {
         given(user.getStatus()).willReturn(UserStatus.ONBOARDING);
         given(user.getPersonaOnboardingStatus()).willReturn(PersonaOnboardingStatus.PENDING);
         given(activityRegion.getId()).willReturn(ACTIVITY_REGION_ID);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -104,7 +105,7 @@ class ProfileSaveServiceTest {
         User user = mock(User.class);
         given(user.getStatus()).willReturn(UserStatus.ONBOARDING);
         given(user.getPersonaOnboardingStatus()).willReturn(personaOnboardingStatus);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
 
         assertThatThrownBy(
             () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, NICKNAME)))
@@ -122,7 +123,7 @@ class ProfileSaveServiceTest {
         Profile profile = completeProfile(user);
         given(user.getStatus()).willReturn(UserStatus.ACTIVE);
         given(user.getPersonaOnboardingStatus()).willReturn(personaOnboardingStatus);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.of(profile));
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -137,10 +138,24 @@ class ProfileSaveServiceTest {
     }
 
     @Test
+    void 탈퇴한_회원은_프로필을_수정할_수_없다() {
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(UserStatus.WITHDRAWN);
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
+
+        assertThatThrownBy(
+            () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, NICKNAME)))
+            .isInstanceOf(AuthenticationRequiredException.class);
+
+        verifyNoInteractions(profileRepository, activityRegionRepository,
+            onboardingCompletionService);
+    }
+
+    @Test
     void 기존_프로필을_수정하면_요청에서_누락된_기존_값을_null로_덮어쓴다() {
         User user = mock(User.class);
         Profile profile = completeProfile(user);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.of(profile));
         given(profileRepository.saveAndFlush(profile)).willReturn(profile);
@@ -167,7 +182,7 @@ class ProfileSaveServiceTest {
     void 같은_사용자의_기존_닉네임은_다시_저장할_수_있다() {
         User user = mock(User.class);
         Profile profile = completeProfile(user);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.of(profile));
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -183,7 +198,7 @@ class ProfileSaveServiceTest {
     @Test
     void 다른_활성_프로필이_닉네임을_사용하면_중복_예외가_발생한다() {
         User user = mock(User.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -201,7 +216,7 @@ class ProfileSaveServiceTest {
     @Test
     void 저장_중_활성_닉네임_UNIQUE_인덱스가_충돌하면_중복_예외가_발생한다() {
         User user = mock(User.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -220,7 +235,7 @@ class ProfileSaveServiceTest {
         User user = mock(User.class);
         DataIntegrityViolationException exception = dataIntegrityViolationException(
             "uk_profiles_user_id");
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
         given(profileRepository.existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID))
@@ -236,7 +251,7 @@ class ProfileSaveServiceTest {
     @Test
     void 존재하지_않는_활동_지역이면_INVALID_REQUEST_예외가_발생한다() {
         User user = mock(User.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
             .willReturn(Optional.empty());
         given(activityRegionRepository.findById(ACTIVITY_REGION_ID)).willReturn(Optional.empty());
@@ -252,7 +267,7 @@ class ProfileSaveServiceTest {
 
     @Test
     void 사용자가_존재하지_않으면_사용자_없음_예외가_발생한다() {
-        given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(
             () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, null)))

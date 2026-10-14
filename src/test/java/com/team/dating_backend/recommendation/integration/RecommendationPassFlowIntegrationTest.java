@@ -3,6 +3,7 @@ package com.team.dating_backend.recommendation.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.anyLong;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -26,6 +27,7 @@ import com.team.dating_backend.recommendation.service.RecommendationItemGetServi
 import com.team.dating_backend.recommendation.service.RecommendationPassSaveService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.user.entity.User;
@@ -132,6 +134,9 @@ class RecommendationPassFlowIntegrationTest {
     @MockitoBean
     private ProfileImageGetService profileImageGetService;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -144,6 +149,7 @@ class RecommendationPassFlowIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
         jdbcTemplate.update("delete from recommendation_passes");
         jdbcTemplate.update("delete from user_blocks");
         jdbcTemplate.update("delete from likes");

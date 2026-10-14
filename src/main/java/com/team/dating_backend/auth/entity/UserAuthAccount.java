@@ -69,4 +69,8 @@ public class UserAuthAccount {
         this.user = user;
         this.linkedAt = now;
     }
+
+    public void anonymize(Long userId) {
+        this.providerUserId = "withdrawn" + userId;
+    }
 }

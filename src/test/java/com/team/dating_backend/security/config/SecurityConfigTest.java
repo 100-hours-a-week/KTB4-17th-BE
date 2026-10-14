@@ -12,6 +12,7 @@ import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import com.team.dating_backend.security.UserAuthenticationService;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,9 +52,13 @@ class SecurityConfigTest {
     @MockitoBean
     private SecurityProperties securityProperties;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     @BeforeEach
     void setUp() {
         given(securityProperties.getAllowedOrigins()).willReturn(List.of("http://localhost:5173"));
+        given(userAuthenticationService.isAuthenticationAllowed(42L)).willReturn(true);
     }
 
     @Test
@@ -106,6 +111,7 @@ class SecurityConfigTest {
     void CORS_설정은_허용된_Origin을_등록한다() {
         SecurityConfig securityConfig = new SecurityConfig(
             jwtService,
+            userAuthenticationService,
             new ApiAuthenticationEntryPoint(new ObjectMapper()),
             new ApiAccessDeniedHandler(new ObjectMapper()),
             securityProperties);

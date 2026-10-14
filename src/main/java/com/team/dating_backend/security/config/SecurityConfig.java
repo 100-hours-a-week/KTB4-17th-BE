@@ -4,6 +4,7 @@ import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceJwtAuthenticationFilter;
+import com.team.dating_backend.security.UserAuthenticationService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +26,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtService jwtService;
+    private final UserAuthenticationService userAuthenticationService;
     private final ApiAuthenticationEntryPoint authenticationEntryPoint;
     private final ApiAccessDeniedHandler accessDeniedHandler;
     private final SecurityProperties securityProperties;
@@ -32,7 +34,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         ServiceJwtAuthenticationFilter jwtAuthenticationFilter = new ServiceJwtAuthenticationFilter(
-            jwtService);
+            jwtService, userAuthenticationService);
 
         http.csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())

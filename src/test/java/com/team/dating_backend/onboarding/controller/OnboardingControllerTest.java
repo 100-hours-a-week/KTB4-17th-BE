@@ -14,6 +14,7 @@ import com.team.dating_backend.onboarding.enums.OnboardingStep;
 import com.team.dating_backend.onboarding.service.OnboardingService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.user.enums.Gender;
@@ -47,9 +48,13 @@ class OnboardingControllerTest {
     @MockitoBean
     private SecurityProperties securityProperties;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     @BeforeEach
     void setUp() {
         given(jwtService.parseServiceAuthToken(ACCESS_TOKEN)).willReturn(USER_ID);
+        given(userAuthenticationService.isAuthenticationAllowed(USER_ID)).willReturn(true);
         given(securityProperties.getAllowedOrigins()).willReturn(List.of());
     }
 

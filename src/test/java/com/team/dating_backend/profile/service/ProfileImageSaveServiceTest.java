@@ -21,6 +21,10 @@ import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +37,7 @@ class ProfileImageSaveServiceTest {
     private static final Long PROFILE_ID = 10L;
 
     private ProfileRepository profileRepository;
+    private UserRepository userRepository;
     private ProfileImageRepository profileImageRepository;
     private FileRepository fileRepository;
     private OnboardingCompletionService onboardingCompletionService;
@@ -40,11 +45,16 @@ class ProfileImageSaveServiceTest {
 
     @BeforeEach
     void setUp() {
+        userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
         fileRepository = mock(FileRepository.class);
         onboardingCompletionService = mock(OnboardingCompletionService.class);
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         service = new ProfileImageSaveService(
+            userRepository,
             profileRepository,
             profileImageRepository,
             fileRepository,
@@ -78,6 +88,21 @@ class ProfileImageSaveServiceTest {
         assertThat(response.images().get(1).isFrontal()).isTrue();
         verify(profileImageRepository).saveAll(any());
         verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+    }
+
+    @Test
+    void 탈퇴한_회원은_프로필_이미지를_수정할_수_없다() {
+        User withdrawnUser = mock(User.class);
+        given(withdrawnUser.getStatus()).willReturn(UserStatus.WITHDRAWN);
+        given(userRepository.findByIdForUpdate(USER_ID))
+            .willReturn(Optional.of(withdrawnUser));
+
+        assertThatThrownBy(() -> service.saveProfileImages(
+            USER_ID, request(new ProfileImageSaveItemRequest(701L, true))))
+            .isInstanceOf(AuthenticationRequiredException.class);
+
+        verifyNoInteractions(profileRepository, profileImageRepository, fileRepository,
+            onboardingCompletionService);
     }
 
     @Test

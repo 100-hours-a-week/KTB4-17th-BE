@@ -21,6 +21,7 @@ import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import java.util.concurrent.BlockingQueue;
@@ -37,6 +38,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -92,6 +94,9 @@ class ChatWebSocketHandshakeTest {
 
     @Autowired
     private SimpUserRegistry simpUserRegistry;
+
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
 
     @Test
     void 유효한_ACCESS_TOKEN이면_STOMP에_인증사용자가_전달된다() throws Exception {
