@@ -1,6 +1,7 @@
 package com.team.dating_backend.matching.repository;
 
 import com.team.dating_backend.matching.enums.LikeStatus;
+import com.team.dating_backend.profile.enums.JobCategory;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -9,7 +10,7 @@ public record ReceivedLikeItem(
     Long userId,
     LocalDate birthDate,
     String nickname,
-    String job,
+    JobCategory job,
     String provinceName,
     String regionName,
     LikeStatus status,

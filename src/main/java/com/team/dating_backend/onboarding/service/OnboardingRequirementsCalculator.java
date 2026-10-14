@@ -15,7 +15,7 @@ public class OnboardingRequirementsCalculator {
         boolean basicInfoComplete = profile.getHeight() != null
             && profile.getBodyType() != null
             && profile.getEducationLevel() != null
-            && StringUtils.hasText(profile.getJob());
+            && profile.getJob() != null;
         boolean lifestyleComplete = profile.getReligion() != null
             && profile.getDrinking() != null
             && profile.getSmoking() != null;

@@ -2,24 +2,25 @@ package com.team.dating_backend.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.common.exception.RequestValidationException;
-import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.enums.JobCategory;
+import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
-import com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow;
 import com.team.dating_backend.recommendation.entity.RecommendationBatch;
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
+import com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow;
 import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -93,7 +94,7 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items().getFirst().candidate().nickname()).isEqualTo("하리");
         assertThat(response.items().getFirst().candidate().age())
             .isEqualTo(29);
-        assertThat(response.items().getFirst().candidate().job()).isEqualTo("개발자");
+        assertThat(response.items().getFirst().candidate().job()).isEqualTo(JobCategory.IT_DATA);
         assertThat(response.items().getFirst().candidate().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.items().getFirst().candidate().mbti()).isEqualTo(Mbti.INFP);
         assertThat(response.items().getFirst().candidate().images())
@@ -187,7 +188,7 @@ class RecommendationItemGetServiceTest {
             42L, 5L, null, null, PageRequest.of(0, 21)))
             .willReturn(List.of(new RecommendationItemCandidateRow(
                 101L, 21L, LocalDate.now().minusYears(30).plusDays(1),
-                "하리", "개발자", Mbti.INFP, "서울특별시", "강남구")));
+                "하리", JobCategory.IT_DATA, Mbti.INFP, "서울특별시", "강남구")));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
 
@@ -271,7 +272,7 @@ class RecommendationItemGetServiceTest {
 
     private RecommendationItemCandidateRow row(Long itemId, Long userId) {
         return new RecommendationItemCandidateRow(
-            itemId, userId, LocalDate.now().minusYears(29), "하리", "개발자",
+            itemId, userId, LocalDate.now().minusYears(29), "하리", JobCategory.IT_DATA,
             Mbti.INFP, "서울특별시", "강남구");
     }
 

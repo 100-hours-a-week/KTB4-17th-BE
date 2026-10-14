@@ -3,11 +3,13 @@ package com.team.dating_backend.onboarding.dto.request;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
@@ -26,10 +28,7 @@ public record ProfileSaveRequest(
     ) Integer height,
     BodyType bodyType,
     EducationLevel educationLevel,
-    @Pattern(
-        regexp = "^(?=.{1,50}$).*\\S.*$",
-        message = "must be non-blank and at most 50 characters"
-    ) String job,
+    @NotNull(message = "must select a job category") JobCategory job,
     Religion religion,
     Drinking drinking,
     Smoking smoking,

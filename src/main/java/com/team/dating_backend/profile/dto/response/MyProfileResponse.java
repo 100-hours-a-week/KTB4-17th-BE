@@ -3,6 +3,7 @@ package com.team.dating_backend.profile.dto.response;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
@@ -17,7 +18,7 @@ public record MyProfileResponse(
     Short height,
     BodyType bodyType,
     EducationLevel educationLevel,
-    String job,
+    JobCategory job,
     Religion religion,
     Mbti mbti,
     Drinking drinking,

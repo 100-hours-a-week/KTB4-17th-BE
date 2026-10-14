@@ -3,6 +3,7 @@ package com.team.dating_backend.profile.dto.response;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
@@ -12,7 +13,7 @@ public record UserProfileResponse(
     Long userId,
     String nickname,
     Integer age,
-    String job,
+    JobCategory job,
     String region,
     Short height,
     BodyType bodyType,

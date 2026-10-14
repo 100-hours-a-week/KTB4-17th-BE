@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchGetResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationCandidateResponse;
@@ -148,7 +149,7 @@ class RecommendationBatchControllerTest {
             21L,
             "하리",
             29,
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시 강남구",
             null,
             List.of(
@@ -175,7 +176,7 @@ class RecommendationBatchControllerTest {
             .andExpect(jsonPath("$.data.items[0].candidate.userId").value(21))
             .andExpect(jsonPath("$.data.items[0].candidate.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].candidate.age").value(29))
-            .andExpect(jsonPath("$.data.items[0].candidate.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].candidate.job").value("IT_DATA"))
             .andExpect(jsonPath("$.data.items[0].candidate.region").value("서울특별시 강남구"))
             .andExpect(jsonPath("$.data.items[0].candidate.mbti").value(nullValue()))
             .andExpect(jsonPath("$.data.items[0].candidate.images[0].fileId").value(701))
