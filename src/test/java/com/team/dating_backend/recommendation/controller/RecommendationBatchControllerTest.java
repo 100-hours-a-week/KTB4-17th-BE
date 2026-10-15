@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
@@ -59,6 +60,9 @@ class RecommendationBatchControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private RecommendationBatchCreateService service;

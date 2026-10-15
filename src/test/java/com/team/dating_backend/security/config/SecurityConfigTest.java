@@ -9,10 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.UserAuthenticationService;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +26,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,6 +51,9 @@ class SecurityConfigTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private FilterChainProxy securityFilterChain;
+
     @MockitoBean
     private JwtService jwtService;
 
@@ -54,6 +62,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private UserAuthenticationService userAuthenticationService;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @BeforeEach
     void setUp() {
@@ -128,6 +139,29 @@ class SecurityConfigTest {
     }
 
     @Test
+    void 최초_SSE_구독_요청은_인증이_필요하다() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications/stream"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+    }
+
+    @Test
+    void SSE의_GET_ASYNC_재디스패치만_인증없이_후속_처리를_허용한다() throws Exception {
+        assertEquals(204, asyncStatus("GET", "/api/v1/notifications/stream"));
+        assertEquals(401, asyncStatus("GET", "/api/v1/security/protected"));
+        assertEquals(401, asyncStatus("POST", "/api/v1/notifications/stream"));
+    }
+
+    private int asyncStatus(String method, String path) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        request.setDispatcherType(DispatcherType.ASYNC);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        securityFilterChain.doFilter(request, response,
+            (currentRequest, currentResponse) -> ((HttpServletResponse) currentResponse).setStatus(204));
+        return response.getStatus();
+    }
+
+    @Test
     void WebSocket_핸드셰이크는_STOMP_인증전에_허용된다() throws Exception {
         mockMvc.perform(
             get("/ws/chat")
@@ -140,6 +174,11 @@ class SecurityConfigTest {
 
     @RestController
     static class SecurityProbeController {
+
+        @GetMapping("/api/v1/notifications/stream")
+        ResponseEntity<Void> notificationStreamProbe() {
+            return ResponseEntity.ok().build();
+        }
 
         @GetMapping("/api/v1/security/protected")
         Map<String, Long> protectedEndpoint(

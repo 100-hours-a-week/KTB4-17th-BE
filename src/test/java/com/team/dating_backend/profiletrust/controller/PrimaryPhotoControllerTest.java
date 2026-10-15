@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.profiletrust.dto.PrimaryPhotoCheckResult;
 import com.team.dating_backend.profiletrust.service.PrimaryPhotoCheckService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -31,6 +32,9 @@ class PrimaryPhotoControllerTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private PrimaryPhotoCheckService service;

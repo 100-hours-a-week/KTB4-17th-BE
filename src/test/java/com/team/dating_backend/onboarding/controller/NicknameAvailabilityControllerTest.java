@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.onboarding.dto.response.NicknameAvailabilityResponse;
 import com.team.dating_backend.onboarding.service.NicknameAvailabilityService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -49,6 +50,9 @@ class NicknameAvailabilityControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private NicknameAvailabilityService nicknameAvailabilityService;
