@@ -15,6 +15,16 @@ public interface FileUploadIntentRepository {
 
     FileUploadIntentClaim claimForCompletion(Long intentId, Long ownerUserId, LocalDateTime now);
 
+    FileUploadIntentClaim claimForPrimaryPhotoCheck(
+        Long intentId,
+        Long ownerUserId,
+        LocalDateTime now);
+
+    void completePrimaryPhotoCheck(
+        Long intentId,
+        Long ownerUserId,
+        String versionToken);
+
     File complete(Long intentId, Long ownerUserId, File file);
 
     void releaseForRetry(Long intentId, Long ownerUserId);

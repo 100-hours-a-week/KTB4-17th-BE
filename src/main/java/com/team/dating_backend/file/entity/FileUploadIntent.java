@@ -69,6 +69,9 @@ public class FileUploadIntent {
     @Column(name = "completed_file_id")
     private Long completedFileId;
 
+    @Column(name = "primary_photo_check_version_token", length = 255)
+    private String primaryPhotoCheckVersionToken;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -126,6 +129,13 @@ public class FileUploadIntent {
 
         this.completedFileId = fileId;
         this.status = FileUploadIntentStatus.COMPLETED;
+    }
+
+    public void markPrimaryPhotoCheckPassed(String versionToken) {
+        if (versionToken == null || versionToken.isBlank()) {
+            throw new FileBusinessException(FileErrorCode.FILE_INVALID_STATE);
+        }
+        this.primaryPhotoCheckVersionToken = versionToken;
     }
 
     public void markFailed() {

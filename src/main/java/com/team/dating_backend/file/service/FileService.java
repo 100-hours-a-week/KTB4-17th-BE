@@ -175,6 +175,11 @@ public class FileService {
             rejectAndCleanup(intent, FileErrorCode.FILE_INVALID_CONTENT);
         }
 
+        if (intent.getPrimaryPhotoCheckVersionToken() != null
+            && !intent.getPrimaryPhotoCheckVersionToken().equals(uploadedObject.versionToken())) {
+            rejectAndCleanup(intent, FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
+        }
+
         try {
             fileStorage.promote(
                 intent.getStagingKey(),

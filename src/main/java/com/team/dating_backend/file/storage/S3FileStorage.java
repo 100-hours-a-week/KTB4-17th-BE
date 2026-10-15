@@ -102,6 +102,30 @@ public class S3FileStorage implements FileStorage {
     }
 
     @Override
+    public byte[] readUploadedObject(String storageKey, String versionToken) {
+        try {
+            return s3Client.getObject(
+                GetObjectRequest.builder()
+                    .bucket(s3Properties.getBucket())
+                    .key(storageKey)
+                    .ifMatch(versionToken)
+                    .build(),
+                ResponseTransformer.toBytes()).asByteArray();
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) {
+                throw new FileStorageException(FileErrorCode.FILE_UPLOAD_NOT_COMPLETE, exception);
+            }
+            if (exception.statusCode() == 412) {
+                throw new FileStorageException(
+                    FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT, exception);
+            }
+            throw new FileStorageException(FileErrorCode.FILE_UPLOAD_FAILED, exception);
+        } catch (SdkException exception) {
+            throw new FileStorageException(FileErrorCode.FILE_UPLOAD_FAILED, exception);
+        }
+    }
+
+    @Override
     public void promote(
         String sourceKey,
         String destinationKey,

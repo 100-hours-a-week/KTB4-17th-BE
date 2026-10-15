@@ -37,6 +37,15 @@ public final class FakeFileStorage implements FileStorage {
     }
 
     @Override
+    public byte[] readUploadedObject(String storageKey, String versionToken) {
+        StoredObjectInfo object = objects.get(storageKey);
+        if (object == null || !object.versionToken().equals(versionToken)) {
+            throw new IllegalStateException("source object changed");
+        }
+        return Arrays.copyOf(object.signatureBytes(), object.signatureBytes().length);
+    }
+
+    @Override
     public void promote(
         String sourceKey,
         String destinationKey,
