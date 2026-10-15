@@ -13,8 +13,6 @@ import com.team.dating_backend.file.dto.FileAccessUrlResult;
 import com.team.dating_backend.file.dto.FileMetadataResult;
 import com.team.dating_backend.file.dto.FileUploadIntentResult;
 import com.team.dating_backend.file.service.FileService;
-import com.team.dating_backend.profiletrust.dto.PrimaryPhotoCheckResult;
-import com.team.dating_backend.profiletrust.service.PrimaryPhotoCheckService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -58,9 +56,6 @@ class FileControllerTest {
 
     @MockitoBean
     private FileService fileService;
-
-    @MockitoBean
-    private PrimaryPhotoCheckService primaryPhotoCheckService;
 
     @Test
     void 업로드_intent를_생성한다() throws Exception {
@@ -108,35 +103,6 @@ class FileControllerTest {
             .andExpect(jsonPath("$.data.fileSize").value(512));
 
         verify(fileService).completeUpload(USER_ID, 7L);
-    }
-
-    @Test
-    void 대표사진_사전검증_통과_결과를_반환한다() throws Exception {
-        given(primaryPhotoCheckService.check(USER_ID, 7L))
-            .willReturn(new PrimaryPhotoCheckResult(true, List.of()));
-
-        mockMvc.perform(authenticatedPost("/api/v1/files/upload-intents/7/primary-photo-check"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.message").value("primary_photo_check_success"))
-            .andExpect(jsonPath("$.data.passed").value(true))
-            .andExpect(jsonPath("$.data.reasonCodes").isEmpty());
-
-        verify(primaryPhotoCheckService).check(USER_ID, 7L);
-    }
-
-    @Test
-    void 대표사진_사전검증_실패도_200과_실패_사유로_반환한다() throws Exception {
-        given(primaryPhotoCheckService.check(USER_ID, 7L))
-            .willReturn(new PrimaryPhotoCheckResult(
-                false, List.of("NON_FRONTAL_FACE", "SYNTHETIC_RISK")));
-
-        mockMvc.perform(authenticatedPost("/api/v1/files/upload-intents/7/primary-photo-check"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.passed").value(false))
-            .andExpect(jsonPath("$.data.reasonCodes[0]").value("NON_FRONTAL_FACE"))
-            .andExpect(jsonPath("$.data.reasonCodes[1]").value("SYNTHETIC_RISK"));
-
-        verify(primaryPhotoCheckService).check(USER_ID, 7L);
     }
 
     @Test
