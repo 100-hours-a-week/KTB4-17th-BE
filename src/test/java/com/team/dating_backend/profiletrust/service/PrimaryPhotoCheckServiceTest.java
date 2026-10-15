@@ -41,8 +41,8 @@ class PrimaryPhotoCheckServiceTest {
 
     private final FileStorage storage = mock(FileStorage.class);
     private final PrimaryPhotoAiClient aiClient = mock(PrimaryPhotoAiClient.class);
-    private final FakeFileUploadIntentRepository repository =
-        new FakeFileUploadIntentRepository(new FakeFileRepository());
+    private final FakeFileUploadIntentRepository repository = new FakeFileUploadIntentRepository(
+        new FakeFileRepository());
     private FileUploadIntent intent;
     private PrimaryPhotoCheckService service;
 

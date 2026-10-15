@@ -25,10 +25,8 @@ import org.springframework.web.client.RestClientResponseException;
 public class RestPrimaryPhotoAiClient implements PrimaryPhotoAiClient {
 
     private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
-    private static final String FRONTAL_CHECK_PATH =
-        "/ai/api/v1/profile-trust/photos/primary/frontal-check";
-    private static final String SYNTHETIC_CHECK_PATH =
-        "/ai/api/v1/profile-trust/photos/primary/synthetic-check";
+    private static final String FRONTAL_CHECK_PATH = "/ai/api/v1/profile-trust/photos/primary/frontal-check";
+    private static final String SYNTHETIC_CHECK_PATH = "/ai/api/v1/profile-trust/photos/primary/synthetic-check";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
 
