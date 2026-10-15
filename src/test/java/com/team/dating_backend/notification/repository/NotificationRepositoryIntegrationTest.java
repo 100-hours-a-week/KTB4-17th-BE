@@ -7,6 +7,8 @@ import com.team.dating_backend.notification.dto.event.NotificationCreatedEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.entity.Notification;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.service.NotificationAccessService;
+import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -18,6 +20,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -26,9 +33,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,6 +56,7 @@ import org.testcontainers.mysql.MySQLContainer;
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@Import({NotificationAccessService.class, NotificationDeleteService.class})
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
 
@@ -74,14 +84,20 @@ class NotificationRepositoryIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private NotificationDeleteService deleteService;
+
     private TransactionTemplate transaction;
     private Long userId;
 
     @BeforeEach
     void setUp() {
         transaction = new TransactionTemplate(transactionManager);
-        userId = transaction.execute(status -> userRepository.saveAndFlush(
-            User.create("테스트", LocalDate.of(2000, 1, 1), Gender.FEMALE, NOW)).getId());
+        userId = transaction.execute(status -> {
+            User user = User.create("테스트", LocalDate.of(2000, 1, 1), Gender.FEMALE, NOW);
+            user.activate(NOW);
+            return userRepository.saveAndFlush(user).getId();
+        });
     }
 
     @AfterEach
@@ -257,6 +273,68 @@ class NotificationRepositoryIntegrationTest {
             detached.markAsRead(NOW.plusMinutes(1));
             assertThat(event.notification().readAt()).isNull();
         });
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 삭제_Service는_읽음_상태를_유지하고_반복_요청에도_최초_삭제_시각을_보존한다(
+        boolean read) {
+        Long notificationId = saveNotification();
+        LocalDateTime readAt = read ? NOW.plusMinutes(1) : null;
+        if (read) {
+            transaction.executeWithoutResult(status -> repository
+                .findByIdForUpdate(notificationId).orElseThrow().markAsRead(readAt));
+        }
+
+        deleteService.deleteNotification(userId, notificationId);
+        Notification first = repository.findById(notificationId).orElseThrow();
+        LocalDateTime deletedAt = first.getDeletedAt();
+        assertThat(deletedAt).isNotNull();
+        assertThat(first.getReadAt()).isEqualTo(readAt);
+
+        deleteService.deleteNotification(userId, notificationId);
+        Notification repeated = repository.findById(notificationId).orElseThrow();
+
+        assertThat(repeated.getDeletedAt()).isEqualTo(deletedAt);
+        assertThat(repeated.getReadAt()).isEqualTo(readAt);
+        assertThat(repeated.getCreatedAt()).isEqualTo(NOW);
+        assertThat(repeated.getTitle()).isEqualTo("관심");
+        assertThat(repeated.getBody()).isEqualTo("관심 도착");
+        assertThat(repeated.getType()).isEqualTo(NotificationType.LIKE);
+    }
+
+    @Test
+    void 두_삭제_Service_요청이_동시에_시작해도_같은_최초_삭제_시각을_확인한다()
+        throws Exception {
+        Long notificationId = saveNotification();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<LocalDateTime>> results = List.of(0, 1).stream()
+                .map(index -> executor.submit(() -> {
+                    ready.countDown();
+                    assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
+                    deleteService.deleteNotification(userId, notificationId);
+                    return jdbc.queryForObject(
+                        "SELECT deleted_at FROM notifications WHERE id = ?",
+                        LocalDateTime.class, notificationId);
+                }))
+                .toList();
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            LocalDateTime first = results.getFirst().get(10, TimeUnit.SECONDS);
+            LocalDateTime second = results.getLast().get(10, TimeUnit.SECONDS);
+
+            assertThat(first).isNotNull().isEqualTo(second);
+            assertThat(jdbc.queryForObject("SELECT deleted_at FROM notifications WHERE id = ?",
+                LocalDateTime.class, notificationId)).isEqualTo(first);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     private Long saveNotification() {

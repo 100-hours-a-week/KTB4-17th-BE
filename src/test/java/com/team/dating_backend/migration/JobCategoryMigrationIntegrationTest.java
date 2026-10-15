@@ -44,7 +44,8 @@ class JobCategoryMigrationIntegrationTest {
         var usersBefore = jdbc.queryForList("SELECT id, status, persona_onboarding_status FROM users ORDER BY id");
 
         Flyway flyway = Flyway.configure()
-            .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()).load();
+            .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+            .target("12").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(jdbc.queryForList("SELECT job FROM profiles ORDER BY id", String.class))
             .containsExactly("OTHER", "OTHER", "OTHER", "OTHER");
