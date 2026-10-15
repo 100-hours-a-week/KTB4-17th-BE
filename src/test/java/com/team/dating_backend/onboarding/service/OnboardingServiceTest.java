@@ -42,6 +42,7 @@ class OnboardingServiceTest {
     private UserRepository userRepository;
     private ProfileRepository profileRepository;
     private ProfileImageRepository profileImageRepository;
+    private OnboardingTrustRequirement trustRequirement;
     private OnboardingService onboardingService;
 
     @BeforeEach
@@ -49,11 +50,13 @@ class OnboardingServiceTest {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
+        trustRequirement = mock(OnboardingTrustRequirement.class);
         onboardingService = new OnboardingService(
             userRepository,
             profileRepository,
             profileImageRepository,
-            new OnboardingRequirementsCalculator());
+            new OnboardingRequirementsCalculator(),
+            trustRequirement);
     }
 
     @Test
@@ -187,6 +190,7 @@ class OnboardingServiceTest {
         givenProfile(profile);
         given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(10L))
             .willReturn(true);
+        given(trustRequirement.isSatisfied(USER_ID, 10L)).willReturn(true);
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
@@ -284,9 +288,24 @@ class OnboardingServiceTest {
 
     private User user(UserStatus status) {
         User user = mock(User.class);
+        given(user.getId()).willReturn(USER_ID);
         given(user.getStatus()).willReturn(status);
         given(user.isPersonaOnboardingComplete()).willReturn(true);
         return user;
+    }
+
+    @Test
+    void 사진이_있어도_AI_검증이_없으면_FACE_VERIFICATION을_반환한다() {
+        givenOnboardingUser();
+        givenProfile(completeProfile());
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(10L))
+            .willReturn(true);
+
+        OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
+
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.FACE_VERIFICATION);
+        assertThat(response.requirements().profileTrustComplete()).isFalse();
+        assertThat(response.requirements().isComplete()).isFalse();
     }
 
     private Profile completeProfile() {

@@ -7,14 +7,15 @@ public record OnboardingRequirementsResponse(
     boolean lifestyleComplete,
     boolean mbtiComplete,
     boolean personaComplete,
-    boolean profileImageComplete) {
+    boolean profileImageComplete,
+    boolean profileTrustComplete) {
 
     public static OnboardingRequirementsResponse complete() {
-        return new OnboardingRequirementsResponse(true, true, true, true, true, true, true);
+        return new OnboardingRequirementsResponse(true, true, true, true, true, true, true, true);
     }
 
     public static OnboardingRequirementsResponse incomplete() {
-        return new OnboardingRequirementsResponse(false, false, false, false, false, false, false);
+        return new OnboardingRequirementsResponse(false, false, false, false, false, false, false, false);
     }
 
     public boolean isComplete() {
@@ -24,6 +25,7 @@ public record OnboardingRequirementsResponse(
             && lifestyleComplete
             && mbtiComplete
             && personaComplete
-            && profileImageComplete;
+            && profileImageComplete
+            && profileTrustComplete;
     }
 }

@@ -24,6 +24,7 @@ public class OnboardingService {
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final OnboardingRequirementsCalculator requirementsCalculator;
+    private final OnboardingTrustRequirement trustRequirement;
 
     @Transactional(readOnly = true)
     public OnboardingStatusResponse getOnboardingStatus(Long userId) {
@@ -67,7 +68,8 @@ public class OnboardingService {
         boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
             profile.getId());
         return requirementsCalculator.calculate(
-            profile, user.isPersonaOnboardingComplete(), profileImageComplete);
+            profile, user.isPersonaOnboardingComplete(), profileImageComplete,
+            profileImageComplete && trustRequirement.isSatisfied(user.getId(), profile.getId()));
     }
 
     private OnboardingStep determineNextStep(OnboardingRequirementsResponse requirements) {
@@ -85,6 +87,9 @@ public class OnboardingService {
         }
         if (!requirements.profileImageComplete()) {
             return OnboardingStep.PROFILE_IMAGE;
+        }
+        if (!requirements.profileTrustComplete()) {
+            return OnboardingStep.FACE_VERIFICATION;
         }
         return OnboardingStep.COMPLETE;
     }

@@ -38,6 +38,7 @@ class OnboardingCompletionServiceTest {
     private UserRepository userRepository;
     private ProfileRepository profileRepository;
     private ProfileImageRepository profileImageRepository;
+    private OnboardingTrustRequirement trustRequirement;
     private OnboardingCompletionService onboardingCompletionService;
 
     @BeforeEach
@@ -45,15 +46,17 @@ class OnboardingCompletionServiceTest {
         userRepository = mock(UserRepository.class);
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
+        trustRequirement = mock(OnboardingTrustRequirement.class);
         onboardingCompletionService = new OnboardingCompletionService(
             userRepository,
             profileRepository,
             profileImageRepository,
-            new OnboardingRequirementsCalculator());
+            new OnboardingRequirementsCalculator(),
+            trustRequirement);
     }
 
     @Test
-    void 모든_프로필_조건과_정면_사진이_있으면_회원이_ACTIVE가_된다() {
+    void 모든_프로필_조건과_AI_검증을_충족하면_회원이_ACTIVE가_된다() {
         User user = onboardingUser();
         Profile profile = completeProfile(user);
         givenUser(user);
@@ -61,6 +64,7 @@ class OnboardingCompletionServiceTest {
             .willReturn(Optional.of(profile));
         given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
             .willReturn(true);
+        given(trustRequirement.isSatisfied(USER_ID, PROFILE_ID)).willReturn(true);
 
         onboardingCompletionService.activateIfCompleted(USER_ID);
 
@@ -113,6 +117,7 @@ class OnboardingCompletionServiceTest {
             .willReturn(Optional.of(profile));
         given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
             .willReturn(true);
+        given(trustRequirement.isSatisfied(USER_ID, PROFILE_ID)).willReturn(true);
 
         onboardingCompletionService.activateIfCompleted(USER_ID);
 
@@ -199,7 +204,21 @@ class OnboardingCompletionServiceTest {
     }
 
     private void givenUser(User user) {
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
+    }
+
+    @Test
+    void 정면사진을_등록해도_AI_검증이_없으면_활성화하지_않는다() {
+        User user = onboardingUser();
+        givenUser(user);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(completeProfile(user)));
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(PROFILE_ID))
+            .willReturn(true);
+
+        onboardingCompletionService.activateIfCompleted(USER_ID);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ONBOARDING);
     }
 
     private Profile completeProfile(User user) {
