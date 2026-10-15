@@ -26,9 +26,12 @@ public class AiSimulationAdmissionService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public AdmissionDecision admit(Long userId, Long targetUserId) {
-        targetValidator.validate(userId, targetUserId);
+        if (userId.equals(targetUserId)) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.INVALID_TARGET_USER);
+        }
 
         userPairLockRepository.acquire(userId, targetUserId);
+        targetValidator.validateForUpdate(userId, targetUserId);
 
         List<AiSimulationSession> sessions = sessionRepository.findForReuseByUserPair(
             userId, targetUserId, PageRequest.of(0, 1));
@@ -46,9 +49,9 @@ public class AiSimulationAdmissionService {
             .filter(participants -> participants.getTargetUserId() != null)
             .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
         Long targetUserId = userId.equals(pair.getUserId()) ? pair.getTargetUserId() : pair.getUserId();
-        targetValidator.validate(userId, targetUserId);
 
         userPairLockRepository.acquire(userId, targetUserId);
+        targetValidator.validateForUpdate(userId, targetUserId);
         AiSimulationSession latest = sessionRepository.findLatestByUserPair(
             userId, targetUserId, PageRequest.of(0, 1)).stream().findFirst()
             .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));

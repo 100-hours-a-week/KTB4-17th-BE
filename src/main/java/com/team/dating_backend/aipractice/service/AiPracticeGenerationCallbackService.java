@@ -39,8 +39,7 @@ public class AiPracticeGenerationCallbackService {
         if (chat.getStatus() == AiPracticeChatStatus.COMPLETED) {
             return;
         }
-        if (chat.getStatus() == AiPracticeChatStatus.FAILED
-            && request.status() == AiPracticeCallbackStatus.FAILED) {
+        if (chat.getStatus() == AiPracticeChatStatus.FAILED) {
             endCommandQueue.enqueueIfReady(session);
             return;
         }

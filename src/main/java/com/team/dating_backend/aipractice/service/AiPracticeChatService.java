@@ -16,6 +16,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeChatRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.user.repository.UserRepository;
+import com.team.dating_backend.user.enums.UserStatus;
 import java.time.LocalDate;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -123,7 +124,8 @@ public class AiPracticeChatService {
     }
 
     private AiPracticeSession lockOwnedSession(Long sessionId, Long userId) {
-        return sessionRepository.findAccessibleByIdAndUserIdForUpdate(sessionId, userId)
+        return sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            sessionId, userId, UserStatus.WITHDRAWN)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
     }
 

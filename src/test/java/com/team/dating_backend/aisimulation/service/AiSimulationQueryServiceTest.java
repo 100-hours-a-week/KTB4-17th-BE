@@ -19,6 +19,7 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.repository.AiSimulationMessageRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
+import com.team.dating_backend.user.enums.UserStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +57,7 @@ class AiSimulationQueryServiceTest {
         AiSimulationSession session = session();
         AiSimulationReport report = report();
         given(sessionRepository.findByIdAndParticipant(
-            SESSION_ID, USER_ID))
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.of(session));
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID))
             .willReturn(Optional.of(report));
@@ -74,7 +75,7 @@ class AiSimulationQueryServiceTest {
     @Test
     void 다른_사용자의_결과는_존재하지_않는_것처럼_처리한다() {
         given(sessionRepository.findByIdAndParticipant(
-            SESSION_ID, 999L))
+            SESSION_ID, 999L, UserStatus.WITHDRAWN))
             .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.get(999L, SESSION_ID))
@@ -89,7 +90,7 @@ class AiSimulationQueryServiceTest {
         AiSimulationSession session = session();
         AiSimulationReport report = report();
         given(sessionRepository.findVisibleCompletedByParticipant(
-            USER_ID, PageRequest.of(0, 20)))
+            USER_ID, UserStatus.WITHDRAWN, PageRequest.of(0, 20)))
             .willReturn(List.of(session));
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID))
             .willReturn(Optional.of(report));
@@ -107,7 +108,8 @@ class AiSimulationQueryServiceTest {
     void 저장된_메시지_수가_같아도_내용이_다르면_완료_결과로_반환하지_않는다() {
         AiSimulationSession session = session();
         AiSimulationReport report = report();
-        given(sessionRepository.findByIdAndParticipant(SESSION_ID, USER_ID)).willReturn(Optional.of(session));
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(session));
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
         List<AiSimulationMessage> messages = new ArrayList<>(messages());
         AiSimulationMessage changed = mock(AiSimulationMessage.class);
@@ -124,7 +126,8 @@ class AiSimulationQueryServiceTest {
     void 상대_ID가_복원되지_않은_과거_결과도_생성자는_조회한다() {
         AiSimulationSession legacy = session();
         given(legacy.getTargetUserId()).willReturn(null);
-        given(sessionRepository.findByIdAndParticipant(SESSION_ID, USER_ID)).willReturn(Optional.of(legacy));
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(legacy));
         AiSimulationReport report = report();
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
         List<AiSimulationMessage> messages = messages();
@@ -136,7 +139,8 @@ class AiSimulationQueryServiceTest {
     void 저장된_리포트의_상대_ID가_세션과_다르면_반환하지_않는다() {
         AiSimulationSession invalid = session();
         given(invalid.getTargetUserId()).willReturn(999L);
-        given(sessionRepository.findByIdAndParticipant(SESSION_ID, USER_ID)).willReturn(Optional.of(invalid));
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(invalid));
         AiSimulationReport report = report();
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
         assertThatThrownBy(() -> service.getReport(USER_ID, SESSION_ID))

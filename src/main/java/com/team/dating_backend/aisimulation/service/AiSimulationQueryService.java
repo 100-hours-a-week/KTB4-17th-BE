@@ -13,6 +13,7 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.repository.AiSimulationMessageRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
+import com.team.dating_backend.user.enums.UserStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +39,7 @@ public class AiSimulationQueryService {
     public List<AiSimulationResponses.Summary> list(Long userId) {
         return sessionRepository.findVisibleCompletedByParticipant(
             userId,
+            UserStatus.WITHDRAWN,
             PageRequest.of(0, LIST_LIMIT)).stream()
             .map(session -> responseMapper.toSummary(
                 session.getId(),
@@ -96,7 +98,8 @@ public class AiSimulationQueryService {
     }
 
     private AiSimulationSession participantSession(Long userId, Long simulationId) {
-        return sessionRepository.findByIdAndParticipant(simulationId, userId).orElseThrow(this::notFound);
+        return sessionRepository.findByIdAndParticipant(
+            simulationId, userId, UserStatus.WITHDRAWN).orElseThrow(this::notFound);
     }
 
     private AiSimulationReport completedReport(Long simulationId) {

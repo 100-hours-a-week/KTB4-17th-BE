@@ -19,9 +19,15 @@ import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.Gender;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,6 +52,8 @@ class AiSimulationAdmissionServiceTest {
         userPairLockRepository = mock(UserPairLockRepository.class);
         sessionRepository = mock(AiSimulationSessionRepository.class);
         persistenceService = mock(AiSimulationPersistenceService.class);
+        given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user(UserStatus.ACTIVE)));
+        given(userRepository.findByIdForUpdate(TARGET_ID)).willReturn(Optional.of(user(UserStatus.ACTIVE)));
         service = new AiSimulationAdmissionService(
             new AiSimulationTargetValidator(userRepository, userBlockRepository), userPairLockRepository,
             sessionRepository,
@@ -58,7 +66,6 @@ class AiSimulationAdmissionServiceTest {
         Long userId, Long targetUserId) {
         AiSimulationSession session = new AiSimulationSession(userId, targetUserId, CREATED_AT);
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
-        given(userRepository.existsById(targetUserId)).willReturn(true);
         given(sessionRepository.findForReuseByUserPair(
             userId, targetUserId, PageRequest.of(0, 1))).willReturn(List.of());
         given(persistenceService.begin(userId, targetUserId)).willReturn(session);
@@ -81,8 +88,6 @@ class AiSimulationAdmissionServiceTest {
     void 기존_세션은_상태와_요청_방향에_관계없이_재사용하고_새로_생성하지_않는다(
         AiSimulationSessionStatus status) {
         AiSimulationSession session = existingSession(SESSION_ID, status);
-        given(userRepository.existsById(USER_ID)).willReturn(true);
-        given(userRepository.existsById(TARGET_ID)).willReturn(true);
         given(sessionRepository.findForReuseByUserPair(
             USER_ID, TARGET_ID, PageRequest.of(0, 1))).willReturn(List.of(session));
         given(sessionRepository.findForReuseByUserPair(
@@ -112,21 +117,21 @@ class AiSimulationAdmissionServiceTest {
     }
 
     @Test
-    void 존재하지_않는_상대방은_잠금이나_저장_없이_거부한다() {
-        given(userRepository.existsById(TARGET_ID)).willReturn(false);
+    void 존재하지_않는_상대방은_세션을_조회하거나_저장하지_않는다() {
+        given(userRepository.findByIdForUpdate(TARGET_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.admit(USER_ID, TARGET_ID))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
 
-        verifyNoInteractions(userPairLockRepository, sessionRepository, persistenceService);
+        verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
+        verifyNoInteractions(sessionRepository, persistenceService);
     }
 
     @ParameterizedTest
     @CsvSource({"7, 8", "8, 7"})
     void 활성_차단_관계가_있으면_기존_결과_조회와_새_접수를_막는다(Long userId, Long targetUserId) {
-        given(userRepository.existsById(targetUserId)).willReturn(true);
         given(userBlockRepository.existsActiveBlockBetween(userId, targetUserId)).willReturn(true);
 
         assertThatThrownBy(() -> service.admit(userId, targetUserId))
@@ -134,7 +139,8 @@ class AiSimulationAdmissionServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
 
-        verifyNoInteractions(userPairLockRepository, sessionRepository, persistenceService);
+        verify(userPairLockRepository).acquire(userId, targetUserId);
+        verifyNoInteractions(sessionRepository, persistenceService);
     }
 
     @ParameterizedTest
@@ -144,7 +150,6 @@ class AiSimulationAdmissionServiceTest {
         AiSimulationSession next = existingSession(SESSION_ID + 1, AiSimulationSessionStatus.IN_PROGRESS);
         given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, userId))
             .willReturn(java.util.Optional.of(pair()));
-        given(userRepository.existsById(targetUserId)).willReturn(true);
         given(sessionRepository.findLatestByUserPair(userId, targetUserId, PageRequest.of(0, 1)))
             .willReturn(List.of(failed));
         given(persistenceService.begin(USER_ID, TARGET_ID)).willReturn(next);
@@ -164,7 +169,6 @@ class AiSimulationAdmissionServiceTest {
     void 이전_ID로_반복된_시도는_새_세션의_상태와_관계없이_최신_세션을_반환한다(AiSimulationSessionStatus status) {
         given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
             .willReturn(java.util.Optional.of(pair()));
-        given(userRepository.existsById(TARGET_ID)).willReturn(true);
         given(sessionRepository.findLatestByUserPair(USER_ID, TARGET_ID, PageRequest.of(0, 1)))
             .willReturn(List.of(existingSession(SESSION_ID + 1, status)));
 
@@ -178,7 +182,6 @@ class AiSimulationAdmissionServiceTest {
     void 최신_세션이_실패가_아니면_새_시도를_만들지_않는다(AiSimulationSessionStatus status) {
         given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
             .willReturn(java.util.Optional.of(pair()));
-        given(userRepository.existsById(TARGET_ID)).willReturn(true);
         given(sessionRepository.findLatestByUserPair(USER_ID, TARGET_ID, PageRequest.of(0, 1)))
             .willReturn(List.of(existingSession(SESSION_ID, status)));
 
@@ -215,14 +218,38 @@ class AiSimulationAdmissionServiceTest {
     void 차단된_상대와의_재시도는_거부한다() {
         given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
             .willReturn(java.util.Optional.of(pair()));
-        given(userRepository.existsById(TARGET_ID)).willReturn(true);
         given(userBlockRepository.existsActiveBlockBetween(USER_ID, TARGET_ID)).willReturn(true);
 
         assertThatThrownBy(() -> service.admitAttempt(USER_ID, SESSION_ID))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
-        verifyNoInteractions(userPairLockRepository, persistenceService);
+        verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
+        verifyNoInteractions(persistenceService);
+    }
+
+    @Test
+    void 탈퇴한_상대방과는_시뮬레이션을_시작하지_않는다() {
+        given(userRepository.findByIdForUpdate(TARGET_ID))
+            .willReturn(Optional.of(user(UserStatus.WITHDRAWN)));
+
+        assertThatThrownBy(() -> service.admit(USER_ID, TARGET_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
+
+        verifyNoInteractions(sessionRepository, persistenceService);
+    }
+
+    @Test
+    void 탈퇴한_요청자는_시뮬레이션을_시작할_수_없다() {
+        given(userRepository.findByIdForUpdate(USER_ID))
+            .willReturn(Optional.of(user(UserStatus.WITHDRAWN)));
+
+        assertThatThrownBy(() -> service.admit(USER_ID, TARGET_ID))
+            .isInstanceOf(AuthenticationRequiredException.class);
+
+        verifyNoInteractions(sessionRepository, persistenceService);
     }
 
     private AiSimulationSessionRepository.ParticipantPair pair() {
@@ -244,5 +271,11 @@ class AiSimulationAdmissionServiceTest {
         ReflectionTestUtils.setField(session, "id", id);
         ReflectionTestUtils.setField(session, "status", status);
         return session;
+    }
+
+    private User user(UserStatus status) {
+        User user = User.create("사용자", LocalDate.of(2000, 1, 1), Gender.MALE, CREATED_AT);
+        ReflectionTestUtils.setField(user, "status", status);
+        return user;
     }
 }

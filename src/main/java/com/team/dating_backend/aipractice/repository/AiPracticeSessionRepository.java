@@ -2,7 +2,9 @@ package com.team.dating_backend.aipractice.repository;
 
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
 import com.team.dating_backend.aipractice.enums.AiPracticeSessionStatus;
+import com.team.dating_backend.user.enums.UserStatus;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,6 +17,12 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
         select session from AiPracticeSession session
         where session.id = :sessionId
           and session.userId = :userId
+          and not exists (
+              select participant.id from User participant
+              where participant.status = :withdrawnStatus
+                and (participant.id = session.userId
+                  or participant.id = session.targetUserId)
+          )
           and (session.targetUserId is null or not exists (
               select block.id from UserBlock block
               where block.unblockedAt is null
@@ -25,13 +33,21 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
           ))
         """)
     Optional<AiPracticeSession> findAccessibleByIdAndUserId(
-        @Param("sessionId") Long sessionId, @Param("userId") Long userId);
+        @Param("sessionId") Long sessionId,
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select session from AiPracticeSession session
         where session.id = :sessionId
           and session.userId = :userId
+          and not exists (
+              select participant.id from User participant
+              where participant.status = :withdrawnStatus
+                and (participant.id = session.userId
+                  or participant.id = session.targetUserId)
+          )
           and (session.targetUserId is null or not exists (
               select block.id from UserBlock block
               where block.unblockedAt is null
@@ -42,7 +58,20 @@ public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSes
           ))
         """)
     Optional<AiPracticeSession> findAccessibleByIdAndUserIdForUpdate(
-        @Param("sessionId") Long sessionId, @Param("userId") Long userId);
+        @Param("sessionId") Long sessionId,
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select session from AiPracticeSession session
+        where session.status = :status
+          and (session.userId = :userId or session.targetUserId = :userId)
+        order by session.id
+        """)
+    List<AiPracticeSession> findAllForUserByStatusForUpdate(
+        @Param("userId") Long userId,
+        @Param("status") AiPracticeSessionStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from AiPracticeSession session where session.id = :sessionId")

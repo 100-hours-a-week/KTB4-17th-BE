@@ -17,6 +17,6 @@ public class MatchWithdrawalTerminationService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void terminateForUser(Long userId, LocalDateTime endedAt) {
         matchRepository.findAllActiveForUserForUpdate(userId)
-            .forEach(memberMatch -> memberMatch.end(MatchEndReason.USER_WITHDRAWN, endedAt));
+            .forEach(match -> match.end(MatchEndReason.USER_WITHDRAWN, endedAt));
     }
 }
