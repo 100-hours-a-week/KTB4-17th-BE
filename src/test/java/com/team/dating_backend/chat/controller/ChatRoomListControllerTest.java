@@ -112,6 +112,30 @@ class ChatRoomListControllerTest {
     }
 
     @Test
+    void 마스킹된_상대의_닉네임과_프로필_이미지를_채팅방_목록에서_숨긴다() throws Exception {
+        ChatRoomSummary summary = new ChatRoomSummary(
+            100L,
+            55L,
+            false,
+            new ChatRoomPreview(ChatRoomPreviewType.EMPTY, null, null),
+            0L,
+            ACTIVITY_AT);
+        given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
+            .willReturn(new ChatRoomPage(
+                List.of(summary), 0L, new ChatRoomPageInfo(null, false)));
+        given(participantDisplayService.findDisplays(AUTHENTICATED_USER_ID, List.of(55L)))
+            .willReturn(Map.of(55L, new ChatParticipantDisplay(
+                null, "알 수 없음", null)));
+
+        mockMvc.perform(get("/api/v1/chat-rooms"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items[0].otherParticipant.nickname")
+                .value("알 수 없음"))
+            .andExpect(jsonPath("$.data.items[0].otherParticipant.profileImageUrl")
+                .value(nullValue()));
+    }
+
+    @Test
     void 조회_결과가_없으면_빈_목록과_다음_페이지_없음을_반환한다() throws Exception {
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
             .willReturn(emptyPage());
