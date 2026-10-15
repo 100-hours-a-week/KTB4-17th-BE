@@ -68,6 +68,11 @@ app:
   security:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
+  notification:
+    sse:
+      timeout-ms: ${APP_NOTIFICATION_SSE_TIMEOUT_MS:1800000}
+      heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
+
   chat:
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
