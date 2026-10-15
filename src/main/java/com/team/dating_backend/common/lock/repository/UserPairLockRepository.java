@@ -11,11 +11,13 @@ public class UserPairLockRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public void acquire(Long lowerUserId, Long higherUserId) {
-        if (lowerUserId >= higherUserId) {
-            throw new IllegalArgumentException("User pair IDs must be ordered");
+    public void acquire(Long requesterUserId, Long targetUserId) {
+        if (requesterUserId.equals(targetUserId)) {
+            throw new IllegalArgumentException("User pair IDs must be different");
         }
 
+        Long lowerUserId = Math.min(requesterUserId, targetUserId);
+        Long higherUserId = Math.max(requesterUserId, targetUserId);
         jdbcTemplate.update(
             """
                 INSERT INTO user_pair_locks (lower_user_id, higher_user_id, created_at)
