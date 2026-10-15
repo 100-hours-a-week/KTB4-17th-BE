@@ -10,6 +10,9 @@ import com.team.dating_backend.file.dto.response.FileAccessUrlResponse;
 import com.team.dating_backend.file.dto.response.FileMetadataResponse;
 import com.team.dating_backend.file.dto.response.FileUploadIntentResponse;
 import com.team.dating_backend.file.service.FileService;
+import com.team.dating_backend.profiletrust.dto.PrimaryPhotoCheckResult;
+import com.team.dating_backend.profiletrust.dto.response.PrimaryPhotoCheckResponse;
+import com.team.dating_backend.profiletrust.service.PrimaryPhotoCheckService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class FileController {
 
     private final FileService fileService;
+    private final PrimaryPhotoCheckService primaryPhotoCheckService;
 
     @PostMapping("/upload-intents")
     public ResponseEntity<SuccessResponse<FileUploadIntentResponse>> createUploadIntent(
@@ -53,6 +57,17 @@ public class FileController {
         FileMetadataResult result = fileService.completeUpload(principal.userId(), uploadIntentId);
         return SuccessResponse.of("file_upload_complete_success",
             FileMetadataResponse.from(result));
+    }
+
+    @PostMapping("/upload-intents/{uploadIntentId}/primary-photo-check")
+    public SuccessResponse<PrimaryPhotoCheckResponse> checkPrimaryPhoto(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long uploadIntentId) {
+        PrimaryPhotoCheckResult result = primaryPhotoCheckService.check(
+            principal.userId(), uploadIntentId);
+        return SuccessResponse.of(
+            "primary_photo_check_success",
+            PrimaryPhotoCheckResponse.from(result));
     }
 
     @GetMapping("/{fileId}/metadata")
