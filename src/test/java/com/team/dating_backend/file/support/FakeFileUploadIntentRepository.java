@@ -63,6 +63,24 @@ public final class FakeFileUploadIntentRepository implements FileUploadIntentRep
     }
 
     @Override
+    public FileUploadIntentClaim claimForPrimaryPhotoCheck(
+        Long intentId,
+        Long ownerUserId,
+        LocalDateTime now) {
+        return claimForCompletion(intentId, ownerUserId, now);
+    }
+
+    @Override
+    public void completePrimaryPhotoCheck(Long intentId, Long ownerUserId, String versionToken) {
+        FileUploadIntent intent = findForOwner(intentId, ownerUserId);
+        if (intent.getStatus() != FileUploadIntentStatus.PROCESSING) {
+            throw new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
+        }
+        intent.markPrimaryPhotoCheckPassed(versionToken);
+        intent.markPending();
+    }
+
+    @Override
     public File complete(Long intentId, Long ownerUserId, File file) {
         FileUploadIntent intent = findForOwner(intentId, ownerUserId);
         if (nextCompleteException != null) {

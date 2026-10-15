@@ -9,6 +9,8 @@ public interface FileStorage {
 
     Optional<StoredObjectInfo> inspectUploadedObject(String storageKey);
 
+    byte[] readUploadedObject(String storageKey, String versionToken);
+
     void promote(
         String sourceKey,
         String destinationKey,
