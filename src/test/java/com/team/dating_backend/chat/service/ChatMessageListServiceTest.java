@@ -158,7 +158,7 @@ class ChatMessageListServiceTest {
     }
 
     @Test
-    void 차단한_상대는_회원_ID와_프로필_정보를_마스킹한다() {
+    void 마스킹된_상대는_사용자_ID와_프로필_정보를_노출하지_않는다() {
         given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
             CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
             .willReturn(List.of());

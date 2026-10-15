@@ -5,10 +5,12 @@ import com.team.dating_backend.chat.repository.ChatParticipantDisplayRow;
 import com.team.dating_backend.chat.repository.ChatRoomParticipantDisplayRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
+import com.team.dating_backend.user.repository.UserRepository;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +29,7 @@ public class ChatRoomParticipantDisplayService {
     private final ChatRoomParticipantDisplayRepository participantDisplayRepository;
     private final ProfileImageGetService profileImageGetService;
     private final UserBlockRepository userBlockRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public Map<Long, ChatParticipantDisplay> findDisplays(
@@ -36,8 +39,10 @@ public class ChatRoomParticipantDisplayService {
         }
 
         Set<Long> distinctUserIds = new LinkedHashSet<>(userIds);
-        Set<Long> maskedUserIds = Set.copyOf(userBlockRepository.findActiveBlockerUserIds(
-            viewerUserId, distinctUserIds));
+        Set<Long> maskedUserIds = new LinkedHashSet<>(
+            userBlockRepository.findActiveBlockerUserIds(viewerUserId, distinctUserIds));
+        maskedUserIds.addAll(userRepository.findIdsByStatus(
+            distinctUserIds, UserStatus.WITHDRAWN));
         List<Long> visibleUserIds = distinctUserIds.stream()
             .filter(userId -> !maskedUserIds.contains(userId))
             .toList();
