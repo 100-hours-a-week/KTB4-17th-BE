@@ -5,12 +5,14 @@ import com.team.dating_backend.file.entity.FileUploadIntent;
 import com.team.dating_backend.file.enums.FileErrorCode;
 import com.team.dating_backend.file.enums.FileUploadIntentStatus;
 import com.team.dating_backend.file.dto.FileUploadIntentClaim;
+import com.team.dating_backend.file.dto.FileUploadCompletedEvent;
 import com.team.dating_backend.file.exception.FileBusinessException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,7 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
 
     private final FileUploadIntentJpaRepository uploadIntentJpaRepository;
     private final FileJpaRepository fileJpaRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -89,6 +92,8 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
         File savedFile = fileJpaRepository.saveAndFlush(file);
         intent.markCompleted(savedFile.getId());
         uploadIntentJpaRepository.saveAndFlush(intent);
+        eventPublisher.publishEvent(new FileUploadCompletedEvent(ownerUserId, intentId,
+            savedFile.getId(), intent.getValidatedVersionToken()));
         return savedFile;
     }
 

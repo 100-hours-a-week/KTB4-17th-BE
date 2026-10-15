@@ -83,6 +83,14 @@ public class User {
         }
     }
 
+    public void updateFaceVerificationStatus(boolean verified, LocalDateTime now) {
+        FaceVerificationStatus next = verified ? FaceVerificationStatus.VERIFIED : FaceVerificationStatus.NOT_VERIFIED;
+        if (faceVerificationStatus != next) {
+            faceVerificationStatus = next;
+            updatedAt = now;
+        }
+    }
+
     public void startPersonaOnboarding(LocalDateTime now) {
         if (personaOnboardingStatus == PersonaOnboardingStatus.PENDING) {
             personaOnboardingStatus = PersonaOnboardingStatus.IN_PROGRESS;

@@ -43,6 +43,9 @@ public class FaceVerificationSession {
     @Column(name = "photo_version_token", nullable = false, updatable = false, length = 255)
     private String photoVersionToken;
 
+    @Column(name = "verified_file_id")
+    private Long verifiedFileId;
+
     @Column(name = "challenge_token", nullable = false, updatable = false, length = 2048)
     private String challengeToken;
 
