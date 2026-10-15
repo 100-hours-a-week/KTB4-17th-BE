@@ -43,7 +43,7 @@ public final class FakeFileUploadIntentRepository implements FileUploadIntentRep
     }
 
     @Override
-    public FileUploadIntentClaim claimForCompletion(
+    public FileUploadIntentClaim claimForProcessing(
         Long intentId,
         Long ownerUserId,
         LocalDateTime now) {
@@ -63,20 +63,12 @@ public final class FakeFileUploadIntentRepository implements FileUploadIntentRep
     }
 
     @Override
-    public FileUploadIntentClaim claimForPrimaryPhotoCheck(
-        Long intentId,
-        Long ownerUserId,
-        LocalDateTime now) {
-        return claimForCompletion(intentId, ownerUserId, now);
-    }
-
-    @Override
-    public void completePrimaryPhotoCheck(Long intentId, Long ownerUserId, String versionToken) {
+    public void completeValidation(Long intentId, Long ownerUserId, String versionToken) {
         FileUploadIntent intent = findForOwner(intentId, ownerUserId);
         if (intent.getStatus() != FileUploadIntentStatus.PROCESSING) {
             throw new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
         }
-        intent.markPrimaryPhotoCheckPassed(versionToken);
+        intent.bindValidatedVersion(versionToken);
         intent.markPending();
     }
 

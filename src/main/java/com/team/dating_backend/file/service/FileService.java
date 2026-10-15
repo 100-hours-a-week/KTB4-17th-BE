@@ -107,7 +107,7 @@ public class FileService {
         validateOwner(ownerUserId);
         validateId(uploadIntentId);
 
-        FileUploadIntentClaim claim = uploadIntentRepository.claimForCompletion(
+        FileUploadIntentClaim claim = uploadIntentRepository.claimForProcessing(
             uploadIntentId,
             ownerUserId,
             LocalDateTime.now());
@@ -175,8 +175,8 @@ public class FileService {
             rejectAndCleanup(intent, FileErrorCode.FILE_INVALID_CONTENT);
         }
 
-        if (intent.getPrimaryPhotoCheckVersionToken() != null
-            && !intent.getPrimaryPhotoCheckVersionToken().equals(uploadedObject.versionToken())) {
+        if (intent.getValidatedVersionToken() != null
+            && !intent.getValidatedVersionToken().equals(uploadedObject.versionToken())) {
             rejectAndCleanup(intent, FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
         }
 

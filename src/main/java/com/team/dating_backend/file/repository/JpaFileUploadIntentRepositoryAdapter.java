@@ -35,23 +35,7 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
 
     @Override
     @Transactional
-    public FileUploadIntentClaim claimForCompletion(
-        Long intentId,
-        Long ownerUserId,
-        LocalDateTime now) {
-        return claimPending(intentId, ownerUserId, now);
-    }
-
-    @Override
-    @Transactional
-    public FileUploadIntentClaim claimForPrimaryPhotoCheck(
-        Long intentId,
-        Long ownerUserId,
-        LocalDateTime now) {
-        return claimPending(intentId, ownerUserId, now);
-    }
-
-    private FileUploadIntentClaim claimPending(
+    public FileUploadIntentClaim claimForProcessing(
         Long intentId,
         Long ownerUserId,
         LocalDateTime now) {
@@ -73,7 +57,7 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
 
     @Override
     @Transactional
-    public void completePrimaryPhotoCheck(
+    public void completeValidation(
         Long intentId,
         Long ownerUserId,
         String versionToken) {
@@ -81,7 +65,7 @@ public class JpaFileUploadIntentRepositoryAdapter implements FileUploadIntentRep
         if (intent.getStatus() != FileUploadIntentStatus.PROCESSING) {
             throw new FileBusinessException(FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
         }
-        intent.markPrimaryPhotoCheckPassed(versionToken);
+        intent.bindValidatedVersion(versionToken);
         intent.markPending();
         uploadIntentJpaRepository.saveAndFlush(intent);
     }

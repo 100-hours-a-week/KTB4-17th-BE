@@ -13,14 +13,9 @@ public interface FileUploadIntentRepository {
 
     Optional<FileUploadIntent> findOwned(Long intentId, Long ownerUserId);
 
-    FileUploadIntentClaim claimForCompletion(Long intentId, Long ownerUserId, LocalDateTime now);
+    FileUploadIntentClaim claimForProcessing(Long intentId, Long ownerUserId, LocalDateTime now);
 
-    FileUploadIntentClaim claimForPrimaryPhotoCheck(
-        Long intentId,
-        Long ownerUserId,
-        LocalDateTime now);
-
-    void completePrimaryPhotoCheck(
+    void completeValidation(
         Long intentId,
         Long ownerUserId,
         String versionToken);
