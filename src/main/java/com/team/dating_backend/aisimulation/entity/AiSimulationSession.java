@@ -74,6 +74,13 @@ public class AiSimulationSession {
         }
     }
 
+    public void cancel(LocalDateTime finishedAt) {
+        if (status == AiSimulationSessionStatus.IN_PROGRESS) {
+            this.status = AiSimulationSessionStatus.CANCELED;
+            this.finishedAt = finishedAt;
+        }
+    }
+
     private void requireInProgress() {
         if (status != AiSimulationSessionStatus.IN_PROGRESS) {
             throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS);

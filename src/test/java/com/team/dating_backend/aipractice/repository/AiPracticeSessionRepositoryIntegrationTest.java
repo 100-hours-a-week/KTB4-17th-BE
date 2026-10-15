@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
 import com.team.dating_backend.user.entity.UserBlock;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
@@ -63,9 +64,11 @@ class AiPracticeSessionRepositoryIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        assertThat(sessionRepository.findAccessibleByIdAndUserId(sessionId, USER_ID))
+        assertThat(sessionRepository.findAccessibleByIdAndUserId(
+            sessionId, USER_ID, UserStatus.WITHDRAWN))
             .isEmpty();
-        assertThat(sessionRepository.findAccessibleByIdAndUserIdForUpdate(sessionId, USER_ID))
+        assertThat(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            sessionId, USER_ID, UserStatus.WITHDRAWN))
             .isEmpty();
     }
 }

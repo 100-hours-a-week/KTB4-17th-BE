@@ -2,6 +2,7 @@ package com.team.dating_backend.aisimulation.repository;
 
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
+import com.team.dating_backend.user.enums.UserStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -55,6 +56,17 @@ public interface AiSimulationSessionRepository extends JpaRepository<AiSimulatio
     @Query("select session from AiSimulationSession session where session.id = :sessionId")
     Optional<AiSimulationSession> findByIdForUpdate(@Param("sessionId") Long sessionId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select session from AiSimulationSession session
+        where session.status = :status
+          and (session.userId = :userId or session.targetUserId = :userId)
+        order by session.id
+        """)
+    List<AiSimulationSession> findAllForUserByStatusForUpdate(
+        @Param("userId") Long userId,
+        @Param("status") AiSimulationSessionStatus status);
+
     @Query("""
         select session from AiSimulationSession session
         join AiSimulationReport report on report.session = session
@@ -62,15 +74,33 @@ public interface AiSimulationSessionRepository extends JpaRepository<AiSimulatio
             and session.status = com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus.COMPLETED
             and report.status = com.team.dating_backend.aisimulation.enums.AiSimulationReportStatus.COMPLETED
             and report.deletedAt is null
+            and not exists (
+                select participant.id from User participant
+                where participant.status = :withdrawnStatus
+                  and (participant.id = session.userId
+                    or participant.id = session.targetUserId)
+            )
         order by session.id desc
         """)
-    List<AiSimulationSession> findVisibleCompletedByParticipant(@Param("userId") Long userId, Pageable pageable);
+    List<AiSimulationSession> findVisibleCompletedByParticipant(
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus,
+        Pageable pageable);
 
     @Query("""
         select session from AiSimulationSession session
         where session.id = :id and (session.userId = :userId or session.targetUserId = :userId)
+          and not exists (
+              select participant.id from User participant
+              where participant.status = :withdrawnStatus
+                and (participant.id = session.userId
+                  or participant.id = session.targetUserId)
+          )
         """)
-    Optional<AiSimulationSession> findByIdAndParticipant(@Param("id") Long id, @Param("userId") Long userId);
+    Optional<AiSimulationSession> findByIdAndParticipant(
+        @Param("id") Long id,
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus);
 
     @Query("""
         select session.id from AiSimulationSession session

@@ -25,6 +25,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeChatRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -69,7 +70,8 @@ class AiPracticeChatServiceTest {
         request = new AiPracticeChatCreateRequest(UUID.randomUUID(), "첫 메시지");
 
         given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(mock(User.class)));
-        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(SESSION_ID, USER_ID))
+        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.of(session));
         given(chatRepository.findBySession_IdAndClientMessageId(
             SESSION_ID, request.clientMessageId())).willReturn(Optional.empty());
@@ -197,7 +199,8 @@ class AiPracticeChatServiceTest {
 
     @Test
     void 접근할_수_없는_세션은_메시지_전송과_재시도를_모두_거절한다() {
-        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(SESSION_ID, USER_ID))
+        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.sendMessage(USER_ID, SESSION_ID, request))

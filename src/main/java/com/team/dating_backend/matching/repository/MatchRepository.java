@@ -29,10 +29,10 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        select memberMatch from Match memberMatch
-        where memberMatch.status = com.team.dating_backend.matching.enums.MatchStatus.ACTIVE
-          and (memberMatch.senderId = :userId or memberMatch.receiverId = :userId)
-        order by memberMatch.id
+        select userMatch from Match userMatch
+        where userMatch.status = com.team.dating_backend.matching.enums.MatchStatus.ACTIVE
+          and (userMatch.senderId = :userId or userMatch.receiverId = :userId)
+        order by userMatch.id
         """)
     List<Match> findAllActiveForUserForUpdate(@Param("userId") Long userId);
 

@@ -5,6 +5,7 @@ import com.team.dating_backend.aipractice.entity.AiPracticeSession;
 import com.team.dating_backend.aipractice.enums.AiPracticeErrorCode;
 import com.team.dating_backend.aipractice.exception.AiPracticeBusinessException;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
+import com.team.dating_backend.user.enums.UserStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +21,8 @@ public class AiPracticeSessionEndService {
     @Transactional
     public AiPracticeSessionResponse end(Long userId, Long sessionId) {
         AiPracticeSession session = sessionRepository
-            .findAccessibleByIdAndUserIdForUpdate(sessionId, userId)
+            .findAccessibleByIdAndUserIdForUpdate(
+                sessionId, userId, UserStatus.WITHDRAWN)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
         session.end(AiPracticeTime.now());
         endCommandQueue.enqueueIfReady(session);

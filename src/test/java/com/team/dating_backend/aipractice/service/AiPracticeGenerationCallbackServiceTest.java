@@ -15,6 +15,7 @@ import com.team.dating_backend.aipractice.entity.AiPracticeSession;
 import com.team.dating_backend.aipractice.enums.AiPracticeCallbackStatus;
 import com.team.dating_backend.aipractice.enums.AiPracticeChatStatus;
 import com.team.dating_backend.aipractice.enums.AiPracticeErrorCode;
+import com.team.dating_backend.aipractice.enums.AiPracticeFailureCode;
 import com.team.dating_backend.aipractice.exception.AiPracticeBusinessException;
 import com.team.dating_backend.aipractice.repository.AiPracticeChatRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
@@ -116,6 +117,19 @@ class AiPracticeGenerationCallbackServiceTest {
         assertThat(chat.getAiResponse()).isEqualTo("이미 저장된 응답");
         verifyNoInteractions(eventPublisher);
         verify(endCommandQueue, never()).enqueueIfReady(session);
+    }
+
+    @Test
+    void 탈퇴로_실패한_대화는_늦은_완료콜백으로_다시_완료되지_않는다() {
+        chat.fail(AiPracticeFailureCode.USER_WITHDRAWN.name());
+
+        service.receive(callback(1, AiPracticeCallbackStatus.COMPLETED, "늦은 응답"));
+
+        assertThat(chat.getStatus()).isEqualTo(AiPracticeChatStatus.FAILED);
+        assertThat(chat.getFailureCode()).isEqualTo(AiPracticeFailureCode.USER_WITHDRAWN.name());
+        assertThat(chat.getAiResponse()).isNull();
+        verifyNoInteractions(eventPublisher);
+        verify(endCommandQueue).enqueueIfReady(session);
     }
 
     @Test

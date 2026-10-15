@@ -12,6 +12,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.aipractice.service.AiPracticeWithdrawalTerminationService;
+import com.team.dating_backend.aisimulation.service.AiSimulationWithdrawalTerminationService;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService;
@@ -50,6 +52,8 @@ class UserWithdrawalServiceTest {
     private LikeTerminationService likeTerminationService;
     private ChatRoomWithdrawalTerminationService chatRoomWithdrawalTerminationService;
     private MatchWithdrawalTerminationService matchWithdrawalTerminationService;
+    private AiPracticeWithdrawalTerminationService aiPracticeWithdrawalTerminationService;
+    private AiSimulationWithdrawalTerminationService aiSimulationWithdrawalTerminationService;
     private UserWithdrawalService service;
 
     @BeforeEach
@@ -61,9 +65,12 @@ class UserWithdrawalServiceTest {
         likeTerminationService = mock(LikeTerminationService.class);
         chatRoomWithdrawalTerminationService = mock(ChatRoomWithdrawalTerminationService.class);
         matchWithdrawalTerminationService = mock(MatchWithdrawalTerminationService.class);
+        aiPracticeWithdrawalTerminationService = mock(AiPracticeWithdrawalTerminationService.class);
+        aiSimulationWithdrawalTerminationService = mock(AiSimulationWithdrawalTerminationService.class);
         service = new UserWithdrawalService(userRepository, authAccountRepository,
             profileRepository, profileImageRepository, likeTerminationService,
-            chatRoomWithdrawalTerminationService, matchWithdrawalTerminationService);
+            chatRoomWithdrawalTerminationService, matchWithdrawalTerminationService,
+            aiPracticeWithdrawalTerminationService, aiSimulationWithdrawalTerminationService);
     }
 
     @ParameterizedTest
@@ -97,7 +104,9 @@ class UserWithdrawalServiceTest {
         InOrder terminationOrder = inOrder(
             likeTerminationService,
             chatRoomWithdrawalTerminationService,
-            matchWithdrawalTerminationService);
+            matchWithdrawalTerminationService,
+            aiPracticeWithdrawalTerminationService,
+            aiSimulationWithdrawalTerminationService);
         terminationOrder.verify(likeTerminationService)
             .terminateForWithdrawal(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
@@ -105,6 +114,12 @@ class UserWithdrawalServiceTest {
             .terminateForUser(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
         terminationOrder.verify(matchWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
+        terminationOrder.verify(aiPracticeWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
+        terminationOrder.verify(aiSimulationWithdrawalTerminationService)
             .terminateForUser(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
         assertThat(endedAtCaptor.getAllValues()).containsOnly(user.getWithdrawnAt());
@@ -138,7 +153,9 @@ class UserWithdrawalServiceTest {
             profileImageRepository,
             likeTerminationService,
             chatRoomWithdrawalTerminationService,
-            matchWithdrawalTerminationService);
+            matchWithdrawalTerminationService,
+            aiPracticeWithdrawalTerminationService,
+            aiSimulationWithdrawalTerminationService);
     }
 
     @Test
@@ -157,6 +174,8 @@ class UserWithdrawalServiceTest {
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         verifyNoInteractions(
             matchWithdrawalTerminationService,
+            aiPracticeWithdrawalTerminationService,
+            aiSimulationWithdrawalTerminationService,
             authAccountRepository,
             profileRepository,
             profileImageRepository);

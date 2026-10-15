@@ -36,10 +36,10 @@ class MatchWithdrawalTerminationServiceTest {
 
         service.terminateForUser(1L, endedAt);
 
-        assertThat(List.of(first, second)).allSatisfy(memberMatch -> {
-            assertThat(memberMatch.getStatus()).isEqualTo(MatchStatus.ENDED);
-            assertThat(memberMatch.getEndReason()).isEqualTo(MatchEndReason.USER_WITHDRAWN);
-            assertThat(memberMatch.getEndedAt()).isEqualTo(endedAt);
+        assertThat(List.of(first, second)).allSatisfy(match -> {
+            assertThat(match.getStatus()).isEqualTo(MatchStatus.ENDED);
+            assertThat(match.getEndReason()).isEqualTo(MatchEndReason.USER_WITHDRAWN);
+            assertThat(match.getEndedAt()).isEqualTo(endedAt);
         });
         verify(matchRepository).findAllActiveForUserForUpdate(1L);
     }
