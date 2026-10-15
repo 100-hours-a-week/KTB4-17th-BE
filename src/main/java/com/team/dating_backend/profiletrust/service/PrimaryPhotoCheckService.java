@@ -54,7 +54,7 @@ public class PrimaryPhotoCheckService {
 
     public PrimaryPhotoCheckResult check(Long ownerUserId, Long uploadIntentId) {
         validateIds(ownerUserId, uploadIntentId);
-        FileUploadIntentClaim claim = uploadIntentRepository.claimForPrimaryPhotoCheck(
+        FileUploadIntentClaim claim = uploadIntentRepository.claimForProcessing(
             uploadIntentId, ownerUserId, LocalDateTime.now());
         FileUploadIntent intent = claim.intent();
         validateClaim(claim);
@@ -63,8 +63,8 @@ public class PrimaryPhotoCheckService {
             StoredObjectInfo object = inspect(intent);
             validateImage(intent, object);
 
-            if (Objects.equals(intent.getPrimaryPhotoCheckVersionToken(), object.versionToken())) {
-                uploadIntentRepository.completePrimaryPhotoCheck(
+            if (Objects.equals(intent.getValidatedVersionToken(), object.versionToken())) {
+                uploadIntentRepository.completeValidation(
                     intent.getId(), ownerUserId, object.versionToken());
                 return passed();
             }
@@ -75,7 +75,7 @@ public class PrimaryPhotoCheckService {
                 return reject(intent, reasonCodes);
             }
 
-            uploadIntentRepository.completePrimaryPhotoCheck(
+            uploadIntentRepository.completeValidation(
                 intent.getId(), ownerUserId, object.versionToken());
             return passed();
         } catch (BusinessException exception) {

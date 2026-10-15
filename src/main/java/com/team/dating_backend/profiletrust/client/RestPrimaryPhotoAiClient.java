@@ -1,6 +1,6 @@
 package com.team.dating_backend.profiletrust.client;
 
-import com.team.dating_backend.aipractice.config.AiPracticeProperties;
+import com.team.dating_backend.profiletrust.config.ProfileTrustAiConnectionProperties;
 import com.team.dating_backend.profiletrust.dto.ai.PrimaryPhotoAiPayloads.FrontalCheckResponse;
 import com.team.dating_backend.profiletrust.dto.ai.PrimaryPhotoAiPayloads.SyntheticCheckResponse;
 import com.team.dating_backend.profiletrust.enums.ProfileTrustErrorCode;
@@ -31,12 +31,12 @@ public class RestPrimaryPhotoAiClient implements PrimaryPhotoAiClient {
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
 
     private final RestClient restClient;
-    private final AiPracticeProperties properties;
+    private final ProfileTrustAiConnectionProperties properties;
 
     @Autowired
     public RestPrimaryPhotoAiClient(
         RestClient.Builder restClientBuilder,
-        AiPracticeProperties properties) {
+        ProfileTrustAiConnectionProperties properties) {
         this(createRestClient(restClientBuilder), properties);
     }
 
@@ -50,7 +50,7 @@ public class RestPrimaryPhotoAiClient implements PrimaryPhotoAiClient {
         return restClientBuilder.requestFactory(requestFactory).build();
     }
 
-    RestPrimaryPhotoAiClient(RestClient restClient, AiPracticeProperties properties) {
+    RestPrimaryPhotoAiClient(RestClient restClient, ProfileTrustAiConnectionProperties properties) {
         this.restClient = restClient;
         this.properties = properties;
     }

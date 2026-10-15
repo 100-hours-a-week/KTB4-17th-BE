@@ -78,7 +78,7 @@ class PrimaryPhotoCheckServiceTest {
 
         assertThat(result.passed()).isTrue();
         assertThat(result.reasonCodes()).isEmpty();
-        assertThat(intent.getPrimaryPhotoCheckVersionToken()).isEqualTo(VERSION_TOKEN);
+        assertThat(intent.getValidatedVersionToken()).isEqualTo(VERSION_TOKEN);
         assertThat(intent.getStatus()).isEqualTo(FileUploadIntentStatus.PENDING);
     }
 
@@ -94,7 +94,7 @@ class PrimaryPhotoCheckServiceTest {
         assertThat(result.passed()).isFalse();
         assertThat(result.reasonCodes()).containsExactly("NON_FRONTAL_FACE", "SYNTHETIC_RISK");
         assertThat(intent.getStatus()).isEqualTo(FileUploadIntentStatus.FAILED);
-        assertThat(intent.getPrimaryPhotoCheckVersionToken()).isNull();
+        assertThat(intent.getValidatedVersionToken()).isNull();
         verify(storage).delete(intent.getStagingKey());
         verify(storage).delete(intent.getFinalStorageKey());
     }
@@ -112,7 +112,7 @@ class PrimaryPhotoCheckServiceTest {
 
         assertThat(failure.getMessage()).isNull();
         assertThat(intent.getStatus()).isEqualTo(FileUploadIntentStatus.PENDING);
-        assertThat(intent.getPrimaryPhotoCheckVersionToken()).isNull();
+        assertThat(intent.getValidatedVersionToken()).isNull();
         verify(aiClient).checkFrontal(IMAGE, CONTENT_TYPE);
         verify(aiClient).checkSynthetic(IMAGE, CONTENT_TYPE);
         verify(storage, never()).delete(anyString());
