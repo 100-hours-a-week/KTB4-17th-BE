@@ -38,8 +38,7 @@ public class LikeSendService {
             throw new LikeBusinessException(LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
         }
 
-        userPairLockRepository.acquire(
-            Math.min(senderId, receiverId), Math.max(senderId, receiverId));
+        userPairLockRepository.acquire(senderId, receiverId);
 
         User sender = requireUserForUpdate(senderId);
         User receiver = requireUserForUpdate(receiverId);

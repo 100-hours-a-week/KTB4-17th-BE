@@ -28,9 +28,7 @@ public class AiSimulationAdmissionService {
     public AdmissionDecision admit(Long userId, Long targetUserId) {
         targetValidator.validate(userId, targetUserId);
 
-        Long lowerUserId = Math.min(userId, targetUserId);
-        Long higherUserId = Math.max(userId, targetUserId);
-        userPairLockRepository.acquire(lowerUserId, higherUserId);
+        userPairLockRepository.acquire(userId, targetUserId);
 
         List<AiSimulationSession> sessions = sessionRepository.findForReuseByUserPair(
             userId, targetUserId, PageRequest.of(0, 1));
@@ -50,7 +48,7 @@ public class AiSimulationAdmissionService {
         Long targetUserId = userId.equals(pair.getUserId()) ? pair.getTargetUserId() : pair.getUserId();
         targetValidator.validate(userId, targetUserId);
 
-        userPairLockRepository.acquire(Math.min(userId, targetUserId), Math.max(userId, targetUserId));
+        userPairLockRepository.acquire(userId, targetUserId);
         AiSimulationSession latest = sessionRepository.findLatestByUserPair(
             userId, targetUserId, PageRequest.of(0, 1)).stream().findFirst()
             .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));

@@ -78,7 +78,7 @@ class LikeSendServiceTest {
         assertThat(response.likeId()).isEqualTo(10L);
         assertThat(response.status()).isEqualTo(LikeStatus.PENDING);
         var lockOrder = inOrder(userPairLockRepository, userRepository);
-        lockOrder.verify(userPairLockRepository).acquire(1L, 2L);
+        lockOrder.verify(userPairLockRepository).acquire(2L, 1L);
         lockOrder.verify(userRepository).findByIdForUpdate(2L);
         lockOrder.verify(userRepository).findByIdForUpdate(1L);
         ArgumentCaptor<Like> likeCaptor = ArgumentCaptor.forClass(Like.class);

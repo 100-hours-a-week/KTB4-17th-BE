@@ -9,7 +9,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -71,7 +70,7 @@ class AiSimulationAdmissionServiceTest {
         assertThat(session.getUserId()).isEqualTo(userId);
         assertThat(session.getTargetUserId()).isEqualTo(targetUserId);
         var order = inOrder(userPairLockRepository, sessionRepository, persistenceService);
-        order.verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
+        order.verify(userPairLockRepository).acquire(userId, targetUserId);
         order.verify(sessionRepository).findForReuseByUserPair(
             userId, targetUserId, PageRequest.of(0, 1));
         order.verify(persistenceService).begin(userId, targetUserId);
@@ -97,7 +96,8 @@ class AiSimulationAdmissionServiceTest {
         assertThat(session.getUserId()).isEqualTo(USER_ID);
         assertThat(session.getTargetUserId()).isEqualTo(TARGET_ID);
         assertThat(session.getStatus()).isEqualTo(status);
-        verify(userPairLockRepository, times(2)).acquire(USER_ID, TARGET_ID);
+        verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
+        verify(userPairLockRepository).acquire(TARGET_ID, USER_ID);
         verifyNoInteractions(persistenceService);
     }
 
@@ -154,7 +154,7 @@ class AiSimulationAdmissionServiceTest {
         assertThat(result).isEqualTo(new AdmissionDecision(next.getId(), AiSimulationSessionStatus.IN_PROGRESS, true));
         assertThat(failed.getStatus()).isEqualTo(AiSimulationSessionStatus.FAILED);
         var order = inOrder(userPairLockRepository, sessionRepository, persistenceService);
-        order.verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
+        order.verify(userPairLockRepository).acquire(userId, targetUserId);
         order.verify(sessionRepository).findLatestByUserPair(userId, targetUserId, PageRequest.of(0, 1));
         order.verify(persistenceService).begin(USER_ID, TARGET_ID);
     }
