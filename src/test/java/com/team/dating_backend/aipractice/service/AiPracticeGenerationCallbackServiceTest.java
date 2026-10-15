@@ -120,7 +120,7 @@ class AiPracticeGenerationCallbackServiceTest {
     }
 
     @Test
-    void 탈퇴로_실패한_대화는_늦은_완료콜백으로_다시_완료되지_않는다() {
+    void 탈퇴_처리_후_도착한_AI_완료_콜백은_실패한_대화를_완료_상태로_변경하지_않는다() {
         chat.fail(AiPracticeFailureCode.USER_WITHDRAWN.name());
 
         service.receive(callback(1, AiPracticeCallbackStatus.COMPLETED, "늦은 응답"));

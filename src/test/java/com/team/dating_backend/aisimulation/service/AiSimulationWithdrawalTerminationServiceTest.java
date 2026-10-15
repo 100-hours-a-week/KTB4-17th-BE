@@ -34,7 +34,7 @@ class AiSimulationWithdrawalTerminationServiceTest {
     }
 
     @Test
-    void 실행자이거나_상대방인_진행중_시뮬레이션과_리포트를_종료한다() {
+    void 사용자가_탈퇴하면_실행자나_상대방으로_참여한_진행_중_시뮬레이션을_취소하고_생성_중인_리포트를_실패_처리한다() {
         AiSimulationSession ownedSession = session(10L, USER_ID, 2L);
         AiSimulationSession targetedSession = session(11L, 2L, USER_ID);
         AiSimulationReport ownedReport = new AiSimulationReport(ownedSession, ENDED_AT.minusHours(1));

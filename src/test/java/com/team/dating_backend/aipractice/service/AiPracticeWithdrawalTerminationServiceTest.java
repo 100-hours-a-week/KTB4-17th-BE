@@ -39,7 +39,7 @@ class AiPracticeWithdrawalTerminationServiceTest {
     }
 
     @Test
-    void 실행자이거나_상대방인_활성_세션과_생성중_대화를_종료한다() {
+    void 사용자가_탈퇴하면_실행자나_상대방으로_참여한_활성_세션을_종료하고_생성_중인_대화를_실패_처리한다() {
         AiPracticeSession ownedSession = session(10L, USER_ID, 2L);
         AiPracticeSession targetedSession = session(11L, 2L, USER_ID);
         AiPracticeChat ownedChat = chat(ownedSession);
