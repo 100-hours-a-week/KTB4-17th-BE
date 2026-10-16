@@ -12,12 +12,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.profiletrust.dto.response.FaceVerificationResponse;
+import com.team.dating_backend.profiletrust.entity.FaceVerificationAttempt;
 import com.team.dating_backend.profiletrust.entity.FaceVerificationSession;
 import com.team.dating_backend.profiletrust.enums.ProfileTrustErrorCode;
+import com.team.dating_backend.profiletrust.enums.VerificationDecision;
+import com.team.dating_backend.profiletrust.enums.VerificationReasonCode;
 import com.team.dating_backend.profiletrust.exception.ProfileTrustBusinessException;
 import com.team.dating_backend.profiletrust.service.FaceVerificationService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +74,7 @@ class FaceVerificationControllerTest {
             .andExpect(jsonPath("$.data.sessionId").value(9))
             .andExpect(jsonPath("$.data.maxAttempts").value(5))
             .andExpect(jsonPath("$.data.nextAttemptNo").value(1))
+            .andExpect(jsonPath("$.data.attempts").isEmpty())
             .andExpect(jsonPath("$.data.challenges[0]").value("LOOK_STRAIGHT"))
             .andExpect(jsonPath("$.data.challengeToken").doesNotExist());
         verify(service).create(41L, 7L);
@@ -84,6 +89,51 @@ class FaceVerificationControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("face_verification_attempt_success"));
         verify(service).submit(41L, 9L, 1, video);
+    }
+
+    @Test
+    void 첫_불일치에도_다음_시도번호와_사유를_반환한다() throws Exception {
+        given(service.submit(eq(41L), eq(9L), eq(1), any()))
+            .willReturn(response(List.of(VerificationDecision.NOT_VERIFIED)));
+        mvc.perform(multipart(BASE + "/9/attempts")
+            .file(new MockMultipartFile("video", "clip.webm", "video/webm", new byte[]{1}))
+            .param("attemptNo", "1").requestAttr("principal", PRINCIPAL))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("READY"))
+            .andExpect(jsonPath("$.data.canRetry").value(true))
+            .andExpect(jsonPath("$.data.nextAttemptNo").value(2))
+            .andExpect(jsonPath("$.data.attempt.decision").value("NOT_VERIFIED"))
+            .andExpect(jsonPath("$.data.attempt.reasonCodes[0]").value("FACE_MISMATCH"));
+    }
+
+    @Test
+    void 다섯번째_미통과_응답과_조회에_모든_시도결과를_포함한다() throws Exception {
+        var exhausted = response(List.of(VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY,
+            VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY, VerificationDecision.NOT_VERIFIED));
+        given(service.submit(eq(41L), eq(9L), eq(5), any())).willReturn(exhausted);
+        given(service.get(41L, 9L)).willReturn(exhausted);
+        mvc.perform(multipart(BASE + "/9/attempts")
+            .file(new MockMultipartFile("video", "clip.webm", "video/webm", new byte[]{5}))
+            .param("attemptNo", "5").requestAttr("principal", PRINCIPAL))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("EXHAUSTED"))
+            .andExpect(jsonPath("$.data.canRetry").value(false))
+            .andExpect(jsonPath("$.data.attemptsUsed").value(5))
+            .andExpect(jsonPath("$.data.remainingAttempts").value(0))
+            .andExpect(jsonPath("$.data.nextAttemptNo").isEmpty())
+            .andExpect(jsonPath("$.data.attempt.attemptNo").value(5))
+            .andExpect(jsonPath("$.data.attempt.reasonCodes[0]").value("FACE_MISMATCH"))
+            .andExpect(jsonPath("$.data.attempts.length()").value(5))
+            .andExpect(jsonPath("$.data.attempts[0].attemptNo").value(1))
+            .andExpect(jsonPath("$.data.attempts[1].reasonCodes[0]").value("LIVENESS_FAILED"))
+            .andExpect(jsonPath("$.data.attempts[4].decision").value("NOT_VERIFIED"))
+            .andExpect(jsonPath("$.data.attempts[0].videoHash").doesNotExist())
+            .andExpect(jsonPath("$.data.challengeToken").doesNotExist());
+        mvc.perform(get(BASE + "/9").requestAttr("principal", PRINCIPAL))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("EXHAUSTED"))
+            .andExpect(jsonPath("$.data.attempts.length()").value(5))
+            .andExpect(jsonPath("$.data.attempts[4].reasonCodes[0]").value("FACE_MISMATCH"));
     }
 
     @Test
@@ -107,10 +157,28 @@ class FaceVerificationControllerTest {
     }
 
     private FaceVerificationResponse response() {
+        return response(List.of());
+    }
+
+    private FaceVerificationResponse response(List<VerificationDecision> decisions) {
         FaceVerificationSession session = FaceVerificationSession.create(
             41L, 7L, "etag-1", "private-token", LocalDateTime.now(), LocalDateTime.now().plusMinutes(5));
         ReflectionTestUtils.setField(session, "id", 9L);
-        return FaceVerificationResponse.from(session, null);
+        List<FaceVerificationAttempt> attempts = new ArrayList<>();
+        for (VerificationDecision decision : decisions) {
+            int attemptNo = session.beginAttempt();
+            var attempt = FaceVerificationAttempt.create(9L, attemptNo, "hash-" + attemptNo,
+                "video/webm", LocalDateTime.now());
+            List<VerificationReasonCode> reasons = switch (decision) {
+                case VERIFIED -> List.of();
+                case RETRY -> List.of(VerificationReasonCode.LIVENESS_FAILED);
+                case NOT_VERIFIED -> List.of(VerificationReasonCode.FACE_MISMATCH);
+            };
+            attempt.complete(decision, reasons, LocalDateTime.now());
+            session.complete(decision);
+            attempts.add(attempt);
+        }
+        return FaceVerificationResponse.from(session, attempts.isEmpty() ? null : attempts.getLast(), attempts);
     }
 
     @TestConfiguration

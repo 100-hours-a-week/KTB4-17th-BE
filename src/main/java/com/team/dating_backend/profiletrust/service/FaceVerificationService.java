@@ -66,7 +66,7 @@ public class FaceVerificationService {
         FaceVerificationSessionStore.Admission admission = store.claim(
             ownerUserId, sessionId, attemptNo, video.hash(), video.contentType());
         if (!admission.acquired()) {
-            return responseOrThrow(FaceVerificationResponse.from(admission.session(), admission.attempt()));
+            return responseOrThrow(admission.previousResult());
         }
 
         try {
