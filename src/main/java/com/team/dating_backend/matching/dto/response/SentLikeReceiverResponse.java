@@ -1,9 +1,11 @@
 package com.team.dating_backend.matching.dto.response;
 
+import com.team.dating_backend.profile.enums.JobCategory;
+
 public record SentLikeReceiverResponse(
-    Long memberId,
+    Long userId,
     String nickname,
     String profileImageUrl,
     Integer age,
-    String job,
+    JobCategory job,
     String region) {}

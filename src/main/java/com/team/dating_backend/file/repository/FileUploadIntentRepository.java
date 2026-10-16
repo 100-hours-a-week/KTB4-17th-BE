@@ -13,7 +13,12 @@ public interface FileUploadIntentRepository {
 
     Optional<FileUploadIntent> findOwned(Long intentId, Long ownerUserId);
 
-    FileUploadIntentClaim claimForCompletion(Long intentId, Long ownerUserId, LocalDateTime now);
+    FileUploadIntentClaim claimForProcessing(Long intentId, Long ownerUserId, LocalDateTime now);
+
+    void completeValidation(
+        Long intentId,
+        Long ownerUserId,
+        String versionToken);
 
     File complete(Long intentId, Long ownerUserId, File file);
 

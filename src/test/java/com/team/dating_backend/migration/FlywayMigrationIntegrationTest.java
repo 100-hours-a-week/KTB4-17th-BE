@@ -55,6 +55,8 @@ class FlywayMigrationIntegrationTest {
         jdbc = new JdbcTemplate(dataSource);
         flyway = Flyway.configure().dataSource(dataSource)
             .locations("classpath:db/migration")
+            // 공통 초기 스키마와 baseline 채택 절차는 V1을 기준으로 검증한다.
+            .target("1")
             .baselineVersion("1").baselineOnMigrate(false).cleanDisabled(true).load();
     }
 
@@ -242,6 +244,104 @@ class FlywayMigrationIntegrationTest {
             .hasMessageContaining("cleanDisabled");
         assertThat(count("tables", "table_name <> 'flyway_schema_history'"))
             .isEqualTo(23);
+    }
+
+    @Test
+    void 시뮬레이션_상대_ID_컬럼을_추가하면서_기존_세션과_결과를_보존한다() {
+        Flyway previous = Flyway.configure().dataSource(dataSource)
+            .locations("classpath:db/migration").target("7")
+            .baselineOnMigrate(false).cleanDisabled(true).load();
+        previous.migrate();
+        jdbc.update("""
+            INSERT INTO ai_simulation_sessions (id, user_id, status, created_at, finished_at)
+            VALUES (31, 7, 'COMPLETED', '2026-10-01 00:00:00', '2026-10-01 00:01:00'),
+                (32, 8, 'COMPLETED', '2026-10-01 00:02:00', '2026-10-01 00:03:00'),
+                (33, 7, 'FAILED', '2026-10-01 00:04:00', '2026-10-01 00:05:00'),
+                (34, 8, 'IN_PROGRESS', '2026-10-01 00:06:00', NULL)
+            """);
+        jdbc.update("""
+            INSERT INTO ai_simulation_reports (session_id, status, created_at, detail_result)
+            VALUES (31, 'COMPLETED', '2026-10-01 00:00:00',
+                '{"partner":{"user_id":"8"}}')
+            """);
+        jdbc.update("""
+            INSERT INTO ai_simulation_messages (session_id, created_at, content)
+            VALUES (31, '2026-10-01 00:01:00', '{"index":0,"speaker":"a","text":"대화"}')
+            """);
+        List<Map<String, Object>> sessionsBefore = jdbc.queryForList(
+            "SELECT id, user_id, status, created_at, finished_at FROM ai_simulation_sessions ORDER BY id");
+        List<Map<String, Object>> reportsBefore = jdbc.queryForList(
+            "SELECT * FROM ai_simulation_reports ORDER BY id");
+        List<Map<String, Object>> messagesBefore = jdbc.queryForList(
+            "SELECT * FROM ai_simulation_messages ORDER BY id");
+        Flyway next = Flyway.configure().dataSource(dataSource)
+            .locations("classpath:db/migration").target("8")
+            .baselineOnMigrate(false).cleanDisabled(true).load();
+
+        assertThat(next.migrate().migrationsExecuted).isEqualTo(1);
+
+        assertThat(jdbc.queryForList(
+            "SELECT id, user_id, status, created_at, finished_at FROM ai_simulation_sessions ORDER BY id"))
+            .isEqualTo(sessionsBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM ai_simulation_reports ORDER BY id"))
+            .isEqualTo(reportsBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM ai_simulation_messages ORDER BY id"))
+            .isEqualTo(messagesBefore);
+        assertThat(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM ai_simulation_sessions WHERE target_user_id IS NULL", Integer.class))
+            .isEqualTo(4);
+        assertThat(jdbc.queryForMap("""
+            SELECT data_type, is_nullable FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'ai_simulation_sessions'
+                AND column_name = 'target_user_id'
+            """))
+            .containsEntry("DATA_TYPE", "bigint")
+            .containsEntry("IS_NULLABLE", "YES");
+        jdbc.update("""
+            INSERT INTO ai_simulation_sessions (user_id, target_user_id, status, created_at)
+            VALUES (7, 8, 'IN_PROGRESS', '2026-10-01 00:07:00')
+            """);
+        assertThat(jdbc.queryForObject(
+            "SELECT target_user_id FROM ai_simulation_sessions WHERE id = 35", Long.class))
+            .isEqualTo(8L);
+        assertThat(next.migrate().migrationsExecuted).isZero();
+        assertThat(next.validateWithResult().validationSuccessful).isTrue();
+    }
+
+    @Test
+    void 과거_리포트의_참가자가_확인되는_경우에만_상대_ID를_복원한다() {
+        Flyway previous = Flyway.configure().dataSource(dataSource)
+            .locations("classpath:db/migration").target("8").cleanDisabled(true).load();
+        previous.migrate();
+        insertUser(7);
+        insertUser(8);
+        jdbc.update("""
+            INSERT INTO ai_simulation_sessions (id, user_id, status, created_at)
+            VALUES (31,7,'COMPLETED',NOW(6)), (32,8,'COMPLETED',NOW(6)),
+                (33,7,'FAILED',NOW(6)), (34,7,'COMPLETED',NOW(6)), (35,7,'COMPLETED',NOW(6))
+            """);
+        jdbc.update("""
+            INSERT INTO ai_simulation_reports (session_id, status, created_at, detail_result)
+            VALUES (31,'COMPLETED',NOW(6),'{"me":{"user_id":"7"},"partner":{"user_id":"8"}}'),
+                (32,'COMPLETED',NOW(6),'{"me":{"user_id":"8"},"partner":{"user_id":"7"}}'),
+                (34,'COMPLETED',NOW(6),'{"me":{"user_id":"7"},"partner":{"user_id":"999"}}'),
+                (35,'COMPLETED',NOW(6),'{"me":{"user_id":"9"},"partner":{"user_id":"8"}}')
+            """);
+        var reportsBefore = jdbc.queryForList("SELECT * FROM ai_simulation_reports ORDER BY id");
+        Flyway next = Flyway.configure().dataSource(dataSource)
+            .locations("classpath:db/migration").target("9").cleanDisabled(true).load();
+
+        assertThat(next.migrate().migrationsExecuted).isEqualTo(1);
+
+        assertThat(jdbc.queryForObject("SELECT target_user_id FROM ai_simulation_sessions WHERE id=31", Long.class))
+            .isEqualTo(8L);
+        assertThat(jdbc.queryForObject("SELECT target_user_id FROM ai_simulation_sessions WHERE id=32", Long.class))
+            .isEqualTo(7L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_sessions WHERE target_user_id IS NULL",
+            Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_sessions", Integer.class)).isEqualTo(5);
+        assertThat(jdbc.queryForList("SELECT * FROM ai_simulation_reports ORDER BY id")).isEqualTo(reportsBefore);
+        assertThat(next.migrate().migrationsExecuted).isZero();
     }
 
     private void assertNicknameConstraint() {

@@ -24,7 +24,6 @@ class ChatExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().errorCode())
             .isEqualTo(ChatErrorCode.TOO_MANY_MESSAGE_REQUESTS.name());
-        assertThat(response.getBody().errors()).isEmpty();
     }
 
     @Test

@@ -107,7 +107,7 @@ public class FileService {
         validateOwner(ownerUserId);
         validateId(uploadIntentId);
 
-        FileUploadIntentClaim claim = uploadIntentRepository.claimForCompletion(
+        FileUploadIntentClaim claim = uploadIntentRepository.claimForProcessing(
             uploadIntentId,
             ownerUserId,
             LocalDateTime.now());
@@ -173,6 +173,11 @@ public class FileService {
 
         if (!imageSignatureValidator.isValid(storedMimeType, uploadedObject.signatureBytes())) {
             rejectAndCleanup(intent, FileErrorCode.FILE_INVALID_CONTENT);
+        }
+
+        if (intent.getValidatedVersionToken() != null
+            && !intent.getValidatedVersionToken().equals(uploadedObject.versionToken())) {
+            rejectAndCleanup(intent, FileErrorCode.FILE_UPLOAD_INTENT_CONFLICT);
         }
 
         try {

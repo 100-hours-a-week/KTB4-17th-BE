@@ -25,6 +25,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeChatRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -40,7 +41,7 @@ class AiPracticeChatServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long SESSION_ID = 10L;
     private static final Long CHAT_ID = 20L;
-    private static final Long TARGET_MEMBER_ID = 2L;
+    private static final Long TARGET_USER_ID = 2L;
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 27, 12, 0);
 
     private AiPracticeChatRepository chatRepository;
@@ -64,12 +65,13 @@ class AiPracticeChatServiceTest {
             userRepository,
             new AiPracticeProperties());
 
-        session = new AiPracticeSession(USER_ID, TARGET_MEMBER_ID, CREATED_AT);
+        session = new AiPracticeSession(USER_ID, TARGET_USER_ID, CREATED_AT);
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
         request = new AiPracticeChatCreateRequest(UUID.randomUUID(), "첫 메시지");
 
         given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(mock(User.class)));
-        given(sessionRepository.findByIdAndUserIdForUpdate(SESSION_ID, USER_ID))
+        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.of(session));
         given(chatRepository.findBySession_IdAndClientMessageId(
             SESSION_ID, request.clientMessageId())).willReturn(Optional.empty());
@@ -193,5 +195,26 @@ class AiPracticeChatServiceTest {
         ArgumentCaptor<AiPracticeOutbox> outboxCaptor = ArgumentCaptor.forClass(AiPracticeOutbox.class);
         verify(outboxRepository).save(outboxCaptor.capture());
         assertThat(outboxCaptor.getValue().getGenerationAttempt()).isEqualTo(2);
+    }
+
+    @Test
+    void 접근할_수_없는_세션은_메시지_전송과_재시도를_모두_거절한다() {
+        given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
+            .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.sendMessage(USER_ID, SESSION_ID, request))
+            .isInstanceOfSatisfying(
+                AiPracticeBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiPracticeErrorCode.SESSION_NOT_FOUND));
+        assertThatThrownBy(() -> service.retry(USER_ID, SESSION_ID, CHAT_ID))
+            .isInstanceOfSatisfying(
+                AiPracticeBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiPracticeErrorCode.SESSION_NOT_FOUND));
+
+        verify(chatRepository, never()).save(any(AiPracticeChat.class));
+        verify(outboxRepository, never()).save(any(AiPracticeOutbox.class));
     }
 }

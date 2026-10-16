@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
 import com.team.dating_backend.matching.dto.response.ReceivedLikeItemResponse;
 import com.team.dating_backend.matching.dto.response.ReceivedLikePageInfo;
@@ -19,14 +21,14 @@ import com.team.dating_backend.matching.dto.response.SentLikeItemResponse;
 import com.team.dating_backend.matching.dto.response.SentLikePageInfo;
 import com.team.dating_backend.matching.dto.response.SentLikeReceiverResponse;
 import com.team.dating_backend.matching.dto.response.SentLikesGetResponse;
-import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.matching.enums.LikeErrorCode;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
-import com.team.dating_backend.matching.service.LikeSendService;
 import com.team.dating_backend.matching.service.LikeRejectService;
+import com.team.dating_backend.matching.service.LikeSendService;
 import com.team.dating_backend.matching.service.ReceivedLikeGetService;
 import com.team.dating_backend.matching.service.SentLikeGetService;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -61,10 +63,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Import(LikeControllerTest.TestAuthenticationPrincipalConfig.class)
 class LikeControllerTest {
 
-    private static final Long AUTHENTICATED_MEMBER_ID = 1L;
+    private static final Long AUTHENTICATED_USER_ID = 1L;
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private LikeSendService likeSendService;
@@ -123,10 +128,10 @@ class LikeControllerTest {
     @Test
     void 사용할_수_없는_수신자는_404를_반환한다() throws Exception {
         given(likeSendService.sendLike(1L, 2L))
-            .willThrow(new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .willThrow(new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
         mockMvc.perform(authenticatedPost("{\"receiverId\":2}"))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.errorCode").value("MEMBER_NOT_FOUND"));
+            .andExpect(jsonPath("$.errorCode").value("USER_NOT_FOUND"));
     }
 
     @Test
@@ -173,7 +178,7 @@ class LikeControllerTest {
             "하리",
             "https://example.com/profile",
             27,
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시 강남구");
         given(sentLikeGetService.getSentLikes(1L, 120L))
             .willReturn(new SentLikesGetResponse(
@@ -185,12 +190,12 @@ class LikeControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("sent_like_get_success"))
             .andExpect(jsonPath("$.data.items[0].likeId").value(101))
-            .andExpect(jsonPath("$.data.items[0].receiver.memberId").value(20))
+            .andExpect(jsonPath("$.data.items[0].receiver.userId").value(20))
             .andExpect(jsonPath("$.data.items[0].receiver.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].receiver.profileImageUrl")
                 .value("https://example.com/profile"))
             .andExpect(jsonPath("$.data.items[0].receiver.age").value(27))
-            .andExpect(jsonPath("$.data.items[0].receiver.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].receiver.job").value("IT_DATA"))
             .andExpect(jsonPath("$.data.items[0].receiver.region")
                 .value("서울특별시 강남구"))
             .andExpect(jsonPath("$.data.items[0].status").value("PENDING"))
@@ -230,7 +235,7 @@ class LikeControllerTest {
             "하리",
             "https://example.com/profile",
             27,
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시 강남구");
         given(receivedLikeGetService.getReceivedLikes(1L, 120L))
             .willReturn(new ReceivedLikesGetResponse(
@@ -242,12 +247,12 @@ class LikeControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("received_like_get_success"))
             .andExpect(jsonPath("$.data.items[0].likeId").value(101))
-            .andExpect(jsonPath("$.data.items[0].sender.memberId").value(20))
+            .andExpect(jsonPath("$.data.items[0].sender.userId").value(20))
             .andExpect(jsonPath("$.data.items[0].sender.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].sender.profileImageUrl")
                 .value("https://example.com/profile"))
             .andExpect(jsonPath("$.data.items[0].sender.age").value(27))
-            .andExpect(jsonPath("$.data.items[0].sender.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].sender.job").value("IT_DATA"))
             .andExpect(jsonPath("$.data.items[0].sender.region")
                 .value("서울특별시 강남구"))
             .andExpect(jsonPath("$.data.items[0].status").value("PENDING"))
@@ -304,7 +309,7 @@ class LikeControllerTest {
                     ModelAndViewContainer mavContainer,
                     NativeWebRequest webRequest,
                     WebDataBinderFactory binderFactory) {
-                    return new ServiceAuthenticationPrincipal(AUTHENTICATED_MEMBER_ID);
+                    return new ServiceAuthenticationPrincipal(AUTHENTICATED_USER_ID);
                 }
             });
         }

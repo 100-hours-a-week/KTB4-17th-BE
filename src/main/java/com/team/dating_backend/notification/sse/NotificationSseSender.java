@@ -1,0 +1,132 @@
+package com.team.dating_backend.notification.sse;
+
+import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.notification.dto.response.NotificationConnectedResponse;
+import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import java.io.IOException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.util.DisconnectedClientHelper;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class NotificationSseSender {
+
+    private static final String CONNECTED_EVENT = "connected";
+    private static final String NOTIFICATION_EVENT = "notification";
+    private static final String HEARTBEAT_COMMENT = "heartbeat";
+
+    private final NotificationEmitterRegistry registry;
+
+    public void sendConnected(NotificationSseConnection connection) throws IOException {
+        requireConnection(connection);
+        SseEmitter.SseEventBuilder event = SseEmitter.event()
+            .name(CONNECTED_EVENT)
+            .data(new NotificationConnectedResponse(connection.getConnectionId()),
+                MediaType.APPLICATION_JSON);
+
+        try {
+            if (!send(connection, event)) {
+                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            }
+        } catch (IOException | RuntimeException exception) {
+            registry.remove(connection);
+            throw exception;
+        }
+    }
+
+    public void sendHeartbeat(NotificationSseConnection connection) {
+        requireConnection(connection);
+        sendSafely(connection, SseEmitter.event().comment(HEARTBEAT_COMMENT), HEARTBEAT_COMMENT);
+    }
+
+    public void sendNotification(Long userId, NotificationEventResponse response) {
+        if (response == null) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+
+        for (NotificationSseConnection connection : registry.findByUserId(userId)) {
+            SseEmitter.SseEventBuilder event = SseEmitter.event()
+                .name(NOTIFICATION_EVENT)
+                .data(response, MediaType.APPLICATION_JSON);
+            sendSafely(connection, event, NOTIFICATION_EVENT);
+        }
+    }
+
+    private boolean send(NotificationSseConnection connection, SseEmitter.SseEventBuilder event)
+        throws IOException {
+        connection.lockForSend();
+        try {
+            if (connection.isClosed()) {
+                return false;
+            }
+
+            connection.getEmitter().send(event);
+            return true;
+        } finally {
+            connection.unlockForSend();
+        }
+    }
+
+    private void sendSafely(
+        NotificationSseConnection connection, SseEmitter.SseEventBuilder event, String eventName) {
+        try {
+            send(connection, event);
+        } catch (IOException | RuntimeException exception) {
+            handleSendFailure(connection, eventName, exception);
+        }
+    }
+
+    private void handleSendFailure(
+        NotificationSseConnection connection, String eventName, Exception exception) {
+        boolean alreadyClosed = connection.isClosed();
+        registry.remove(connection);
+
+        if (exception instanceof IOException
+            || DisconnectedClientHelper.isClientDisconnectedException(exception)) {
+            log.debug("SSE transport write failed. userId={}, connectionId={}, event={}, exceptionType={}",
+                connection.getUserId(), connection.getConnectionId(), eventName,
+                exception.getClass().getSimpleName());
+            return;
+        }
+
+        if (alreadyClosed && exception instanceof IllegalStateException && exception.getCause() == null) {
+            log.debug("SSE send skipped after completion. userId={}, connectionId={}, event={}",
+                connection.getUserId(), connection.getConnectionId(), eventName);
+            return;
+        }
+
+        log.error("SSE send failed. errorCode={}, userId={}, connectionId={}, event={}, exceptionType={}, causeType={}",
+            CommonErrorCode.INTERNAL_SERVER_ERROR, connection.getUserId(), connection.getConnectionId(),
+            eventName, exception.getClass().getSimpleName(),
+            exception.getCause() == null ? null : exception.getCause().getClass().getSimpleName());
+
+        NotificationBusinessException failure = new NotificationBusinessException(
+            CommonErrorCode.INTERNAL_SERVER_ERROR);
+        failure.initCause(exception);
+        try {
+            connection.getEmitter().completeWithError(failure);
+        } catch (RuntimeException completionFailure) {
+            if (DisconnectedClientHelper.isClientDisconnectedException(completionFailure)) {
+                log.debug("SSE error completion failed after disconnect. userId={}, connectionId={}",
+                    connection.getUserId(), connection.getConnectionId());
+                return;
+            }
+
+            log.error("SSE error completion failed. errorCode={}, userId={}, connectionId={}, exceptionType={}",
+                CommonErrorCode.INTERNAL_SERVER_ERROR, connection.getUserId(), connection.getConnectionId(),
+                completionFailure.getClass().getSimpleName());
+        }
+    }
+
+    private void requireConnection(NotificationSseConnection connection) {
+        if (connection == null) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+}

@@ -3,6 +3,7 @@ package com.team.dating_backend.auth.repository;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -10,6 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserAuthAccountRepository extends JpaRepository<UserAuthAccount, Long> {
+
+    List<UserAuthAccount> findAllByUserId(Long userId);
 
     Optional<UserAuthAccount> findByProviderAndProviderUserId(
         AuthProvider provider, String providerUserId);

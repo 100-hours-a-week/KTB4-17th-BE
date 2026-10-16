@@ -38,8 +38,13 @@ public class RecommendationBatch {
     private LocalDateTime deletedAt;
 
     public RecommendationBatch(Long userId, LocalDateTime createdAt) {
+        this(userId, RecommendationGenerationType.DEFAULT, createdAt);
+    }
+
+    public RecommendationBatch(Long userId, RecommendationGenerationType generationType,
+        LocalDateTime createdAt) {
         this.userId = userId;
-        this.generationType = RecommendationGenerationType.DEFAULT;
+        this.generationType = generationType;
         this.createdAt = createdAt;
     }
 }

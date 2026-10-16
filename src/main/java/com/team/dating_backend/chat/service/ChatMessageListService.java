@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.service;
 
+import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
@@ -14,7 +15,6 @@ import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -77,10 +77,11 @@ public class ChatMessageListService {
             .toList();
 
         Long otherUserId = others.getFirst().getUserId();
-        List<Long> otherUserIds = List.of(otherUserId);
-        Map<Long, String> nicknames = participantDisplayService.findNicknames(otherUserIds);
-        Map<Long, String> profileImageUrls = participantDisplayService
-            .findProfileImageUrls(otherUserIds);
+        ChatParticipantDisplay participantDisplay = participantDisplayService
+            .findDisplays(viewerUserId, List.of(otherUserId))
+            .getOrDefault(
+                otherUserId,
+                new ChatParticipantDisplay(otherUserId, null, null));
 
         return new ChatMessageListResponse(
             new ChatMessageListResponse.ChatRoomInfo(
@@ -88,9 +89,9 @@ public class ChatMessageListService {
                 room.getStatus(),
                 viewer.isChatNotification(),
                 new ChatMessageListResponse.OtherParticipant(
-                    otherUserId,
-                    nicknames.get(otherUserId),
-                    profileImageUrls.get(otherUserId))),
+                    participantDisplay.userId(),
+                    participantDisplay.nickname(),
+                    participantDisplay.profileImageUrl())),
             messages,
             new ChatMessageListResponse.PageInfo(nextCursor, hasNext));
     }

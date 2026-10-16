@@ -21,6 +21,9 @@ public interface AiPracticeChatRepository extends JpaRepository<AiPracticeChat, 
 
     boolean existsBySession_IdAndStatus(Long sessionId, AiPracticeChatStatus status);
 
+    List<AiPracticeChat> findAllBySession_IdAndStatus(
+        Long sessionId, AiPracticeChatStatus status);
+
     List<AiPracticeChat> findBySession_IdOrderByIdAsc(Long sessionId, Pageable pageable);
 
     List<AiPracticeChat> findBySession_IdAndIdGreaterThanOrderByIdAsc(

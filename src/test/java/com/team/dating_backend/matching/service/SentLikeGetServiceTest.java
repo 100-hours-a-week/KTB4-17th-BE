@@ -15,6 +15,7 @@ import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.SentLikeItem;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -46,7 +47,7 @@ class SentLikeGetServiceTest {
         profileImageGetService = mock(ProfileImageGetService.class);
         service = new SentLikeGetService(
             userRepository, likeRepository, profileImageGetService);
-        given(profileImageGetService.getProfileImagesByMemberIds(
+        given(profileImageGetService.getProfileImagesByUserIds(
             org.mockito.ArgumentMatchers.anyCollection()))
             .willReturn(Map.of());
     }
@@ -68,7 +69,7 @@ class SentLikeGetServiceTest {
         assertThat(response.items().getLast().likeId()).isEqualTo(102L);
         assertThat(response.pageInfo().nextCursor()).isEqualTo(102L);
         assertThat(response.pageInfo().hasNext()).isTrue();
-        verify(profileImageGetService).getProfileImagesByMemberIds(
+        verify(profileImageGetService).getProfileImagesByUserIds(
             LongStream.rangeClosed(201L, 220L).boxed().toList());
     }
 
@@ -81,7 +82,7 @@ class SentLikeGetServiceTest {
             20L,
             birthDate,
             "하리",
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시",
             "강남구",
             LikeStatus.PENDING,
@@ -89,7 +90,7 @@ class SentLikeGetServiceTest {
         given(likeRepository.findSentPendingLikes(
             SENDER_ID, 120L, PageRequest.of(0, 21)))
             .willReturn(List.of(row));
-        given(profileImageGetService.getProfileImagesByMemberIds(List.of(20L)))
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(20L)))
             .willReturn(Map.of(
                 20L,
                 List.of(
@@ -110,12 +111,12 @@ class SentLikeGetServiceTest {
         assertThat(item.likeId()).isEqualTo(101L);
         assertThat(item.status()).isEqualTo(LikeStatus.PENDING);
         assertThat(item.createdAt()).isEqualTo(LocalDateTime.of(2026, 9, 27, 12, 30));
-        assertThat(item.receiver().memberId()).isEqualTo(20L);
+        assertThat(item.receiver().userId()).isEqualTo(20L);
         assertThat(item.receiver().nickname()).isEqualTo("하리");
         assertThat(item.receiver().profileImageUrl())
             .isEqualTo("https://example.com/representative");
         assertThat(item.receiver().age()).isEqualTo(29);
-        assertThat(item.receiver().job()).isEqualTo("개발자");
+        assertThat(item.receiver().job()).isEqualTo(JobCategory.IT_DATA);
         assertThat(item.receiver().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
@@ -133,7 +134,7 @@ class SentLikeGetServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
-        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of());
     }
 
     @Test
@@ -165,13 +166,13 @@ class SentLikeGetServiceTest {
         given(userRepository.findById(SENDER_ID)).willReturn(Optional.of(sender));
     }
 
-    private SentLikeItem row(Long likeId, Long memberId) {
+    private SentLikeItem row(Long likeId, Long userId) {
         return new SentLikeItem(
             likeId,
-            memberId,
+            userId,
             LocalDate.of(1999, 1, 1),
             "하리",
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시",
             "강남구",
             LikeStatus.PENDING,

@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
 import com.team.dating_backend.onboarding.dto.response.ProfileSaveProfileResponse;
@@ -21,10 +21,14 @@ import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedExcep
 import com.team.dating_backend.onboarding.service.ProfileSaveService;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -62,6 +66,9 @@ class ProfileSaveControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
     private ProfileSaveService profileSaveService;
 
     @Test
@@ -72,7 +79,7 @@ class ProfileSaveControllerTest {
             (short) 175,
             BodyType.AVERAGE,
             EducationLevel.BACHELOR,
-            "개발자",
+            JobCategory.IT_DATA,
             null,
             null,
             null,
@@ -91,7 +98,7 @@ class ProfileSaveControllerTest {
             .andExpect(jsonPath("$.data.profile.height").value(175))
             .andExpect(jsonPath("$.data.profile.bodyType").value("AVERAGE"))
             .andExpect(jsonPath("$.data.profile.educationLevel").value("BACHELOR"))
-            .andExpect(jsonPath("$.data.profile.job").value("개발자"))
+            .andExpect(jsonPath("$.data.profile.job").value("IT_DATA"))
             .andExpect(jsonPath("$.data.profile.religion").isEmpty())
             .andExpect(jsonPath("$.data.profile.mbti").isEmpty())
             .andExpect(jsonPath("$.data.profile.drinking").isEmpty())
@@ -108,7 +115,7 @@ class ProfileSaveControllerTest {
         given(profileSaveService.saveProfile(any(), any(ProfileSaveRequest.class)))
             .willReturn(new ProfileSaveResult(false, null));
 
-        mockMvc.perform(authenticatedPut().contentType(MediaType.APPLICATION_JSON).content("{}"))
+        mockMvc.perform(authenticatedPut().contentType(MediaType.APPLICATION_JSON).content("{\"job\":\"OTHER\"}"))
             .andExpect(status().isNoContent())
             .andExpect(content().string(""));
 
@@ -116,50 +123,60 @@ class ProfileSaveControllerTest {
     }
 
     @Test
-    void 닉네임_형식이_올바르지_않으면_400과_필드_오류를_반환한다() throws Exception {
+    void 닉네임_형식이_올바르지_않으면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"nickname\":\"닉네임!\"}"))
+                .content("{\"nickname\":\"닉네임!\",\"job\":\"OTHER\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("nickname"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value(
-                        "must be 2 to 10 characters using Korean, English letters, or digits"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
     }
 
     @Test
-    void 키가_허용_범위를_벗어나면_400과_필드_오류를_반환한다() throws Exception {
+    void 키가_허용_범위를_벗어나면_400과_에러_코드만_반환한다() throws Exception {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"height\":221}"))
+                .content("{\"height\":221,\"job\":\"OTHER\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("height"))
-            .andExpect(jsonPath("$.errors[0].reason").value("must be between 130 and 220"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
     }
 
-    @Test
-    void 직업이_공백이면_400과_필드_오류를_반환한다() throws Exception {
-        mockMvc.perform(
-            authenticatedPut()
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"job\":\"   \"}"))
+    @ParameterizedTest
+    @ValueSource(
+        strings = {
+            "{}", "{\"job\":null}", "{\"job\":\"\"}", "{\"job\":\"   \"}",
+            "{\"job\":\"개발자\"}", "{\"job\":\"UNDISCLOSED\"}", "{\"job\":\"it_data\"}",
+            "{\"job\":\" IT_DATA \"}", "{\"job\":0}", "{\"job\":\"0\"}", "{\"job\":true}"
+        }
+    )
+    void 직업이_미입력이거나_허용된_코드가_아니면_400을_반환한다(String request) throws Exception {
+        mockMvc.perform(authenticatedPut().contentType(MediaType.APPLICATION_JSON).content(request))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("job"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value("must be non-blank and at most 50 characters"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileSaveService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(JobCategory.class)
+    void 모든_직업군_코드로_프로필을_수정할_수_있다(JobCategory job) throws Exception {
+        given(profileSaveService.saveProfile(any(), any(ProfileSaveRequest.class)))
+            .willReturn(new ProfileSaveResult(false, null));
+
+        mockMvc.perform(authenticatedPut().contentType(MediaType.APPLICATION_JSON)
+            .content("{\"job\":\"" + job.name() + "\"}"))
+            .andExpect(status().isNoContent());
+
+        ArgumentCaptor<ProfileSaveRequest> captor = ArgumentCaptor.forClass(ProfileSaveRequest.class);
+        verify(profileSaveService).saveProfile(any(), captor.capture());
+        assertThat(captor.getValue().job()).isEqualTo(job);
     }
 
     @Test
@@ -167,7 +184,7 @@ class ProfileSaveControllerTest {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"bodyType\":\"NORMAL\"}"))
+                .content("{\"bodyType\":\"NORMAL\",\"job\":\"OTHER\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
             .andExpect(jsonPath("$.errors").doesNotExist());
@@ -176,25 +193,18 @@ class ProfileSaveControllerTest {
     }
 
     @Test
-    void 존재하지_않는_활동_지역이면_400과_필드_오류를_반환한다() throws Exception {
+    void 존재하지_않는_활동_지역이면_400과_에러_코드만_반환한다() throws Exception {
         given(profileSaveService.saveProfile(any(), any(ProfileSaveRequest.class)))
             .willThrow(
-                new RequestValidationException(
-                    List.of(
-                        new FieldErrorResponse(
-                            "activityRegionId",
-                            "must reference an existing activity region"))));
+                new RequestValidationException());
 
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"activityRegionId\":999}"))
+                .content("{\"activityRegionId\":999,\"job\":\"OTHER\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("activityRegionId"))
-            .andExpect(
-                jsonPath("$.errors[0].reason")
-                    .value("must reference an existing activity region"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
     }
 
     @Test
@@ -205,7 +215,7 @@ class ProfileSaveControllerTest {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"nickname\":\"하리\"}"))
+                .content("{\"nickname\":\"하리\",\"job\":\"OTHER\"}"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("NICKNAME_ALREADY_IN_USE"))
             .andExpect(jsonPath("$.errors").doesNotExist());
@@ -220,7 +230,7 @@ class ProfileSaveControllerTest {
         mockMvc.perform(
             authenticatedPut()
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"nickname\":\"하리\"}"))
+                .content("{\"nickname\":\"하리\",\"job\":\"OTHER\"}"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("PROFILE_UPDATE_NOT_ALLOWED"))
             .andExpect(jsonPath("$.errors").doesNotExist());
@@ -234,7 +244,7 @@ class ProfileSaveControllerTest {
               "height": 175,
               "bodyType": "AVERAGE",
               "educationLevel": "BACHELOR",
-              "job": "개발자",
+              "job": "IT_DATA",
               "religion": null,
               "mbti": null,
               "drinking": null,

@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 
 public record AiPracticeSessionResponse(
     Long id,
-    Long targetMemberId,
+    Long targetUserId,
     AiPracticeSessionStatus status,
     LocalDateTime startedAt,
     LocalDateTime endedAt,

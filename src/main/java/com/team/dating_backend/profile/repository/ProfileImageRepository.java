@@ -20,13 +20,13 @@ public interface ProfileImageRepository extends JpaRepository<ProfileImage, Long
         FROM ProfileImage profileImage
         JOIN FETCH profileImage.image image
         JOIN FETCH profileImage.profile profile
-        JOIN FETCH profile.user member
-        WHERE member.id IN :memberIds
+        JOIN FETCH profile.user user
+        WHERE user.id IN :userIds
           AND profile.deletedAt IS NULL
           AND profileImage.deletedAt IS NULL
           AND image.deletedAt IS NULL
-        ORDER BY member.id ASC, profileImage.displayOrder ASC, profileImage.id ASC
+        ORDER BY user.id ASC, profileImage.displayOrder ASC, profileImage.id ASC
         """)
-    List<ProfileImage> findActiveProfileImagesByMemberIds(
-        @Param("memberIds") Collection<Long> memberIds);
+    List<ProfileImage> findActiveProfileImagesByUserIds(
+        @Param("userIds") Collection<Long> userIds);
 }

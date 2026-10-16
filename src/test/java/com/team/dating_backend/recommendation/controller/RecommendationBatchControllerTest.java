@@ -9,8 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchCreateResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationBatchGetResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationCandidateResponse;
@@ -59,6 +60,9 @@ class RecommendationBatchControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private RecommendationBatchCreateService service;
@@ -149,7 +153,7 @@ class RecommendationBatchControllerTest {
             21L,
             "하리",
             29,
-            "개발자",
+            JobCategory.IT_DATA,
             "서울특별시 강남구",
             null,
             List.of(
@@ -173,10 +177,10 @@ class RecommendationBatchControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.message").value("recommendation_items_get_success"))
             .andExpect(jsonPath("$.data.items[0].itemId").value(101))
-            .andExpect(jsonPath("$.data.items[0].candidate.memberId").value(21))
+            .andExpect(jsonPath("$.data.items[0].candidate.userId").value(21))
             .andExpect(jsonPath("$.data.items[0].candidate.nickname").value("하리"))
             .andExpect(jsonPath("$.data.items[0].candidate.age").value(29))
-            .andExpect(jsonPath("$.data.items[0].candidate.job").value("개발자"))
+            .andExpect(jsonPath("$.data.items[0].candidate.job").value("IT_DATA"))
             .andExpect(jsonPath("$.data.items[0].candidate.region").value("서울특별시 강남구"))
             .andExpect(jsonPath("$.data.items[0].candidate.mbti").value(nullValue()))
             .andExpect(jsonPath("$.data.items[0].candidate.images[0].fileId").value(701))
@@ -222,13 +226,12 @@ class RecommendationBatchControllerTest {
     @Test
     void 추천_Item_목록의_양수가_아닌_커서는_400을_반환한다() throws Exception {
         given(recommendationItemGetService.getRecommendationItems(5L, 42L, 0L))
-            .willThrow(new RequestValidationException(
-                List.of(new FieldErrorResponse("cursor", "must be a positive item ID"))));
+            .willThrow(new RequestValidationException());
 
         mockMvc.perform(get("/api/v1/recommendation-batches/42/items").param("cursor", "0"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("cursor"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
     }
 
     @Test

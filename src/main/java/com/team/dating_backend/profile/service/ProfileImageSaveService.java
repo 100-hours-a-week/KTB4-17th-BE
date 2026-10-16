@@ -1,6 +1,5 @@
 package com.team.dating_backend.profile.service;
 
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
@@ -15,6 +14,10 @@ import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ProfileImageSaveService {
 
-    private static final String IMAGES_FIELD = "images";
-
+    private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final FileRepository fileRepository;
@@ -41,6 +43,12 @@ public class ProfileImageSaveService {
         Long userId,
         ProfileImageSaveRequest request) {
         validateRequest(request);
+
+        User user = userRepository.findByIdForUpdate(userId)
+            .orElseThrow(AuthenticationRequiredException::new);
+        if (user.getStatus() == UserStatus.WITHDRAWN) {
+            throw new AuthenticationRequiredException();
+        }
 
         Profile profile = profileRepository.findByUserIdAndDeletedAtIsNull(userId)
             .orElseThrow(
@@ -101,7 +109,7 @@ public class ProfileImageSaveService {
             .distinct()
             .count();
         if (distinctFileIdCount != images.size()) {
-            throw invalidImages("must not contain duplicate file IDs");
+            throw new RequestValidationException();
         }
 
         long frontalCount = images.stream()
@@ -112,7 +120,7 @@ public class ProfileImageSaveService {
                 ProfileImageErrorCode.FRONT_PHOTO_REQUIRED);
         }
         if (frontalCount > 1) {
-            throw invalidImages("must contain exactly one frontal photo");
+            throw new RequestValidationException();
         }
     }
 
@@ -125,10 +133,5 @@ public class ProfileImageSaveService {
 
         return files.stream()
             .collect(Collectors.toMap(File::getId, Function.identity()));
-    }
-
-    private RequestValidationException invalidImages(String reason) {
-        return new RequestValidationException(
-            List.of(new FieldErrorResponse(IMAGES_FIELD, reason)));
     }
 }

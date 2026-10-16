@@ -5,9 +5,11 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageResponse;
 import com.team.dating_backend.profile.dto.response.ProfileImageSaveResponse;
@@ -48,6 +50,9 @@ class ProfileImageControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private ProfileImageSaveService profileImageSaveService;
@@ -103,7 +108,7 @@ class ProfileImageControllerTest {
                 """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("images"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileImageSaveService);
     }
@@ -117,7 +122,7 @@ class ProfileImageControllerTest {
                 """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-            .andExpect(jsonPath("$.errors[0].field").value("images[0].isFrontal"));
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
 
         verifyNoInteractions(profileImageSaveService);
     }

@@ -2,6 +2,8 @@ package com.team.dating_backend.aisimulation.controller;
 
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
 import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
+import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
+import com.team.dating_backend.aisimulation.exception.AiSimulationSubmissionRejectedException;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
@@ -13,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,13 +31,48 @@ public class AiSimulationController {
     private final AiSimulationQueryService queryService;
 
     @PostMapping
-    public ResponseEntity<SuccessResponse<AiSimulationResponses.Detail>> run(
+    public ResponseEntity<SuccessResponse<AiSimulationResponses.Handle>> request(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @Valid @RequestBody AiSimulationCreateRequest request) {
-        AiSimulationResponses.Detail response = simulationService.run(
+        AiSimulationResponses.Handle response = simulationService.request(
             principal.userId(), request);
-        return ResponseEntity.status(HttpStatus.CREATED)
-            .body(SuccessResponse.of("ai_simulation_completed", response));
+        boolean processing = response.status() == AiSimulationSessionStatus.IN_PROGRESS;
+        return ResponseEntity.status(processing ? HttpStatus.ACCEPTED : HttpStatus.OK)
+            .body(SuccessResponse.of(processing ? "ai_simulation_accepted" : "ai_simulation_existing", response));
+    }
+
+    @PostMapping("/{simulationId}/attempts")
+    public ResponseEntity<SuccessResponse<AiSimulationResponses.Handle>> attempt(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long simulationId) {
+        AiSimulationResponses.Handle response = simulationService.attempt(principal.userId(), simulationId);
+        boolean processing = response.status() == AiSimulationSessionStatus.IN_PROGRESS;
+        return ResponseEntity.status(processing ? HttpStatus.ACCEPTED : HttpStatus.OK)
+            .body(SuccessResponse.of(processing ? "ai_simulation_attempt_accepted" : "ai_simulation_attempt_existing",
+                response));
+    }
+
+    @ExceptionHandler(AiSimulationSubmissionRejectedException.class)
+    public ResponseEntity<AiSimulationResponses.SubmissionFailure> handleSubmissionRejected(
+        AiSimulationSubmissionRejectedException exception) {
+        return ResponseEntity.status(exception.getErrorCode().status())
+            .body(new AiSimulationResponses.SubmissionFailure(exception.getErrorCode().name(),
+                exception.getSimulationId(), AiSimulationSessionStatus.FAILED));
+    }
+
+    @GetMapping("/{simulationId}/status")
+    public SuccessResponse<AiSimulationResponses.State> getState(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long simulationId) {
+        return SuccessResponse.of("ai_simulation_status_success",
+            queryService.getState(principal.userId(), simulationId));
+    }
+
+    @GetMapping("/targets/{targetUserId}")
+    public SuccessResponse<AiSimulationResponses.PairOverview> getPair(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long targetUserId) {
+        return SuccessResponse.of("ai_simulation_pair_success", queryService.getPair(principal.userId(), targetUserId));
     }
 
     @GetMapping

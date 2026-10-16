@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.given;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -25,6 +26,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class ServiceJwtAuthenticationFilterTest {
 
     private JwtService jwtService;
+    private UserAuthenticationService userAuthenticationService;
     private ServiceJwtAuthenticationFilter filter;
 
     @BeforeEach
@@ -35,7 +37,9 @@ class ServiceJwtAuthenticationFilterTest {
         jwtProperties.setServiceExpirationMinutes(60);
 
         jwtService = new JwtService(jwtProperties);
-        filter = new ServiceJwtAuthenticationFilter(jwtService);
+        userAuthenticationService = mock(UserAuthenticationService.class);
+        given(userAuthenticationService.isAuthenticationAllowed(123L)).willReturn(true);
+        filter = new ServiceJwtAuthenticationFilter(jwtService, userAuthenticationService);
     }
 
     @AfterEach
@@ -119,6 +123,20 @@ class ServiceJwtAuthenticationFilterTest {
             "kakao-123");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + pendingToken);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, filterChain);
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void 탈퇴한_사용자의_유효한_토큰은_인증정보를_저장하지_않는다() throws Exception {
+        String accessToken = jwtService.createServiceAuthToken(456L);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 

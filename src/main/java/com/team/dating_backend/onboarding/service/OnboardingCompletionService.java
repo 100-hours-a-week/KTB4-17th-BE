@@ -20,10 +20,11 @@ public class OnboardingCompletionService {
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final OnboardingRequirementsCalculator requirementsCalculator;
+    private final OnboardingTrustRequirement trustRequirement;
 
     @Transactional
     public void activateIfCompleted(Long userId) {
-        User user = userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
+        User user = userRepository.findByIdForUpdate(userId).orElseThrow(() -> new UserNotFoundException(userId));
         if (user.getStatus() != UserStatus.ONBOARDING) {
             return;
         }
@@ -37,7 +38,10 @@ public class OnboardingCompletionService {
     private boolean isCompleted(User user, Profile profile) {
         boolean profileImageComplete = profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(
             profile.getId());
+        boolean profileTrustComplete = profileImageComplete
+            && trustRequirement.isSatisfied(user.getId(), profile.getId());
+        user.updateFaceVerificationStatus(profileTrustComplete, LocalDateTime.now());
         return requirementsCalculator.calculate(
-            profile, user.isPersonaOnboardingComplete(), profileImageComplete).isComplete();
+            profile, user.isPersonaOnboardingComplete(), profileImageComplete, profileTrustComplete).isComplete();
     }
 }

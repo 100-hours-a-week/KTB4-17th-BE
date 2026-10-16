@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.dto.response;
 
+import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -7,6 +8,15 @@ import java.util.List;
 public final class AiSimulationResponses {
 
     private AiSimulationResponses() {}
+
+    public record Handle(Long simulationId, AiSimulationSessionStatus status) {}
+
+    public record SubmissionFailure(String errorCode, Long simulationId, AiSimulationSessionStatus status) {}
+
+    public record State(Long simulationId, AiSimulationSessionStatus status,
+        LocalDateTime createdAt, LocalDateTime finishedAt) {}
+
+    public record PairOverview(Long targetUserId, Long simulationId, AiSimulationSessionStatus status) {}
 
     public record Participant(
         String personaId,

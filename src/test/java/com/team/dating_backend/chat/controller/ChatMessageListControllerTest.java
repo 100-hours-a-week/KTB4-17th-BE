@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.service.ChatMessageListService;
@@ -49,6 +50,9 @@ class ChatMessageListControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
     private ChatMessageListService chatMessageListService;
 
     @Test
@@ -69,7 +73,7 @@ class ChatMessageListControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.chatRoom.chatRoomId").value(CHAT_ROOM_ID))
             .andExpect(jsonPath("$.data.chatRoom.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.data.chatRoom.otherParticipant.memberId")
+            .andExpect(jsonPath("$.data.chatRoom.otherParticipant.userId")
                 .value(OTHER_USER_ID))
             .andExpect(jsonPath("$.data.chatRoom.otherParticipant.nickname")
                 .value("상대방"))

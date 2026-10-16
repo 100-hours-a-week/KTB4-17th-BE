@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 
 import com.team.dating_backend.TestJwtSecret;
@@ -29,6 +30,7 @@ import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import java.net.URI;
@@ -126,12 +128,16 @@ class ChatMessageFlowIntegrationTest {
     @MockitoBean
     private ProfileImageGetService profileImageGetService;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @BeforeEach
     void setUpDatabase() {
-        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+        given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
+        given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
 
         jdbcTemplate.update("delete from chat_message_outbox");
         jdbcTemplate.update("delete from chat_messages");

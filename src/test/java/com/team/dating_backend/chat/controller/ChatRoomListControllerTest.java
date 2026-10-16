@@ -9,10 +9,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.jayway.jsonpath.JsonPath;
 import com.team.dating_backend.chat.dto.read.ChatRoomCursor;
 import com.team.dating_backend.chat.dto.read.ChatRoomPage;
 import com.team.dating_backend.chat.dto.read.ChatRoomPageInfo;
+import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.dto.read.ChatRoomPreview;
 import com.team.dating_backend.chat.dto.read.ChatRoomSummary;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
@@ -65,6 +67,9 @@ class ChatRoomListControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
     private ChatRoomListService chatRoomListService;
 
     @MockitoBean
@@ -82,8 +87,9 @@ class ChatRoomListControllerTest {
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
             .willReturn(new ChatRoomPage(
                 List.of(summary), 5L, new ChatRoomPageInfo(null, false)));
-        given(participantDisplayService.findNicknames(List.of(55L)))
-            .willReturn(Map.of(55L, "상대닉네임"));
+        given(participantDisplayService.findDisplays(AUTHENTICATED_USER_ID, List.of(55L)))
+            .willReturn(Map.of(55L, new ChatParticipantDisplay(
+                55L, "상대닉네임", null)));
 
         mockMvc.perform(get("/api/v1/chat-rooms"))
             .andExpect(status().isOk())
@@ -105,14 +111,40 @@ class ChatRoomListControllerTest {
             .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(nullValue()))
             .andExpect(jsonPath("$.data.pageInfo.hasNext").value(false));
         verify(chatRoomListService).listRooms(AUTHENTICATED_USER_ID, null, 20);
-        verify(participantDisplayService).findNicknames(List.of(55L));
+        verify(participantDisplayService).findDisplays(
+            AUTHENTICATED_USER_ID, List.of(55L));
+    }
+
+    @Test
+    void 마스킹된_상대의_닉네임과_프로필_이미지를_채팅방_목록에서_숨긴다() throws Exception {
+        ChatRoomSummary summary = new ChatRoomSummary(
+            100L,
+            55L,
+            false,
+            new ChatRoomPreview(ChatRoomPreviewType.EMPTY, null, null),
+            0L,
+            ACTIVITY_AT);
+        given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
+            .willReturn(new ChatRoomPage(
+                List.of(summary), 0L, new ChatRoomPageInfo(null, false)));
+        given(participantDisplayService.findDisplays(AUTHENTICATED_USER_ID, List.of(55L)))
+            .willReturn(Map.of(55L, new ChatParticipantDisplay(
+                null, "알 수 없음", null)));
+
+        mockMvc.perform(get("/api/v1/chat-rooms"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items[0].otherParticipant.nickname")
+                .value("알 수 없음"))
+            .andExpect(jsonPath("$.data.items[0].otherParticipant.profileImageUrl")
+                .value(nullValue()));
     }
 
     @Test
     void 조회_결과가_없으면_빈_목록과_다음_페이지_없음을_반환한다() throws Exception {
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
             .willReturn(emptyPage());
-        given(participantDisplayService.findNicknames(anyCollection()))
+        given(participantDisplayService.findDisplays(
+            org.mockito.ArgumentMatchers.eq(AUTHENTICATED_USER_ID), anyCollection()))
             .willReturn(Map.of());
 
         mockMvc.perform(get("/api/v1/chat-rooms"))
@@ -120,7 +152,7 @@ class ChatRoomListControllerTest {
             .andExpect(jsonPath("$.data.items").isEmpty())
             .andExpect(jsonPath("$.data.pageInfo.nextCursor").value(nullValue()))
             .andExpect(jsonPath("$.data.pageInfo.hasNext").value(false));
-        verify(participantDisplayService).findNicknames(List.of());
+        verify(participantDisplayService).findDisplays(AUTHENTICATED_USER_ID, List.of());
     }
 
     @Test
@@ -131,7 +163,8 @@ class ChatRoomListControllerTest {
                 List.of(), 0L, new ChatRoomPageInfo(cursor, true)));
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, cursor, 1))
             .willReturn(emptyPage());
-        given(participantDisplayService.findNicknames(anyCollection()))
+        given(participantDisplayService.findDisplays(
+            org.mockito.ArgumentMatchers.eq(AUTHENTICATED_USER_ID), anyCollection()))
             .willReturn(Map.of());
 
         String response = mockMvc.perform(get("/api/v1/chat-rooms").param("size", "1"))

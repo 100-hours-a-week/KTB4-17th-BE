@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.onboarding.dto.response.OnboardingProfileResponse;
 import com.team.dating_backend.onboarding.dto.response.OnboardingRequirementsResponse;
@@ -14,6 +15,7 @@ import com.team.dating_backend.onboarding.enums.OnboardingStep;
 import com.team.dating_backend.onboarding.service.OnboardingService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
+import com.team.dating_backend.security.UserAuthenticationService;
 import com.team.dating_backend.security.config.SecurityConfig;
 import com.team.dating_backend.security.config.SecurityProperties;
 import com.team.dating_backend.user.enums.Gender;
@@ -39,6 +41,9 @@ class OnboardingControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
     private OnboardingService onboardingService;
 
     @MockitoBean
@@ -47,9 +52,13 @@ class OnboardingControllerTest {
     @MockitoBean
     private SecurityProperties securityProperties;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     @BeforeEach
     void setUp() {
         given(jwtService.parseServiceAuthToken(ACCESS_TOKEN)).willReturn(USER_ID);
+        given(userAuthenticationService.isAuthenticationAllowed(USER_ID)).willReturn(true);
         given(securityProperties.getAllowedOrigins()).willReturn(List.of());
     }
 
@@ -57,7 +66,7 @@ class OnboardingControllerTest {
     void Bearer_토큰으로_온보딩_진행_상태를_조회할_수_있다() throws Exception {
         OnboardingRequirementsResponse requirements = new OnboardingRequirementsResponse(true, true,
             false, false,
-            false, false, false);
+            false, false, false, false);
         given(onboardingService.getOnboardingStatus(USER_ID))
             .willReturn(
                 new OnboardingStatusResponse(
@@ -76,7 +85,8 @@ class OnboardingControllerTest {
             .andExpect(jsonPath("$.data.requirements.lifestyleComplete").value(false))
             .andExpect(jsonPath("$.data.requirements.mbtiComplete").value(false))
             .andExpect(jsonPath("$.data.requirements.personaComplete").value(false))
-            .andExpect(jsonPath("$.data.requirements.profileImageComplete").value(false));
+            .andExpect(jsonPath("$.data.requirements.profileImageComplete").value(false))
+            .andExpect(jsonPath("$.data.requirements.profileTrustComplete").value(false));
 
         verify(onboardingService).getOnboardingStatus(USER_ID);
     }

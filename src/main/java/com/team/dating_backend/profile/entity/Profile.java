@@ -4,6 +4,7 @@ import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
@@ -26,7 +27,9 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Entity
@@ -58,8 +61,10 @@ public class Profile {
     @Column(name = "education_level", length = 30)
     private EducationLevel educationLevel;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "job", length = 50)
-    private String job;
+    private JobCategory job;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "religion", length = 30)
@@ -109,7 +114,7 @@ public class Profile {
         Short height,
         BodyType bodyType,
         EducationLevel educationLevel,
-        String job,
+        JobCategory job,
         Religion religion,
         Mbti mbti,
         Drinking drinking,
@@ -124,5 +129,11 @@ public class Profile {
         this.mbti = mbti;
         this.drinking = drinking;
         this.smoking = smoking;
+    }
+
+    public void markDeleted(LocalDateTime deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
+        }
     }
 }

@@ -23,12 +23,12 @@ public interface RecommendationItemRepository extends JpaRepository<Recommendati
         WHERE batch.userId = :requesterUserId
           AND batch.deletedAt IS NULL
           AND requester.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
-          AND candidate.id = :memberId
+          AND candidate.id = :userId
           AND
         """ + RecommendationEligibilityQuery.ELIGIBLE_CANDIDATE_PREDICATE)
     boolean existsEligibleCandidateInActiveBatch(
         @Param("requesterUserId") Long requesterUserId,
-        @Param("memberId") Long memberId);
+        @Param("userId") Long userId);
 
     @Query("""
         SELECT new com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow(

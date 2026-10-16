@@ -32,7 +32,7 @@ public class User {
     @Column(name = "status", nullable = false)
     private UserStatus status;
 
-    @Column(name = "name", nullable = false, length = 8)
+    @Column(name = "name", nullable = false, length = 21)
     private String name;
 
     @Column(name = "birth_date", nullable = false)
@@ -83,6 +83,14 @@ public class User {
         }
     }
 
+    public void updateFaceVerificationStatus(boolean verified, LocalDateTime now) {
+        FaceVerificationStatus next = verified ? FaceVerificationStatus.VERIFIED : FaceVerificationStatus.NOT_VERIFIED;
+        if (faceVerificationStatus != next) {
+            faceVerificationStatus = next;
+            updatedAt = now;
+        }
+    }
+
     public void startPersonaOnboarding(LocalDateTime now) {
         if (personaOnboardingStatus == PersonaOnboardingStatus.PENDING) {
             personaOnboardingStatus = PersonaOnboardingStatus.IN_PROGRESS;
@@ -100,5 +108,16 @@ public class User {
     public boolean isPersonaOnboardingComplete() {
         return personaOnboardingStatus == PersonaOnboardingStatus.CONFIRMED
             || personaOnboardingStatus == PersonaOnboardingStatus.BYPASSED;
+    }
+
+    public void withdraw(LocalDateTime now) {
+        if (status == UserStatus.WITHDRAWN) {
+            return;
+        }
+        status = UserStatus.WITHDRAWN;
+        name = "탈퇴" + id;
+        birthDate = LocalDate.of(1000, 1, 1);
+        withdrawnAt = now;
+        updatedAt = now;
     }
 }

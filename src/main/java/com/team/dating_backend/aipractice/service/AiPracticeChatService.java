@@ -16,6 +16,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeChatRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.user.repository.UserRepository;
+import com.team.dating_backend.user.enums.UserStatus;
 import java.time.LocalDate;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -52,8 +53,8 @@ public class AiPracticeChatService {
         }
 
         requireActiveSession(session);
-        if (session.getAiSessionId() == null && session.getTargetMemberId() == null) {
-            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_MEMBER_UNAVAILABLE);
+        if (session.getAiSessionId() == null && session.getTargetUserId() == null) {
+            throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_USER_UNAVAILABLE);
         }
         if (chatRepository.existsBySession_IdAndStatus(
             sessionId, AiPracticeChatStatus.GENERATING)) {
@@ -123,7 +124,8 @@ public class AiPracticeChatService {
     }
 
     private AiPracticeSession lockOwnedSession(Long sessionId, Long userId) {
-        return sessionRepository.findByIdAndUserIdForUpdate(sessionId, userId)
+        return sessionRepository.findAccessibleByIdAndUserIdForUpdate(
+            sessionId, userId, UserStatus.WITHDRAWN)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
     }
 

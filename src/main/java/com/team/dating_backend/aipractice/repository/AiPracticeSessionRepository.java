@@ -2,10 +2,10 @@ package com.team.dating_backend.aipractice.repository;
 
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
 import com.team.dating_backend.aipractice.enums.AiPracticeSessionStatus;
+import com.team.dating_backend.user.enums.UserStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -13,25 +13,70 @@ import org.springframework.data.repository.query.Param;
 
 public interface AiPracticeSessionRepository extends JpaRepository<AiPracticeSession, Long> {
 
-    Optional<AiPracticeSession> findByIdAndUserId(Long id, Long userId);
+    @Query("""
+        select session from AiPracticeSession session
+        where session.id = :sessionId
+          and session.userId = :userId
+          and not exists (
+              select participant.id from User participant
+              where participant.status = :withdrawnStatus
+                and (participant.id = session.userId
+                  or participant.id = session.targetUserId)
+          )
+          and (session.targetUserId is null or not exists (
+              select block.id from UserBlock block
+              where block.unblockedAt is null
+                and ((block.blockerUserId = session.userId
+                      and block.blockedUserId = session.targetUserId)
+                  or (block.blockerUserId = session.targetUserId
+                      and block.blockedUserId = session.userId))
+          ))
+        """)
+    Optional<AiPracticeSession> findAccessibleByIdAndUserId(
+        @Param("sessionId") Long sessionId,
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select session from AiPracticeSession session
-        where session.id = :sessionId and session.userId = :userId
+        where session.id = :sessionId
+          and session.userId = :userId
+          and not exists (
+              select participant.id from User participant
+              where participant.status = :withdrawnStatus
+                and (participant.id = session.userId
+                  or participant.id = session.targetUserId)
+          )
+          and (session.targetUserId is null or not exists (
+              select block.id from UserBlock block
+              where block.unblockedAt is null
+                and ((block.blockerUserId = session.userId
+                      and block.blockedUserId = session.targetUserId)
+                  or (block.blockerUserId = session.targetUserId
+                      and block.blockedUserId = session.userId))
+          ))
         """)
-    Optional<AiPracticeSession> findByIdAndUserIdForUpdate(
-        @Param("sessionId") Long sessionId, @Param("userId") Long userId);
+    Optional<AiPracticeSession> findAccessibleByIdAndUserIdForUpdate(
+        @Param("sessionId") Long sessionId,
+        @Param("userId") Long userId,
+        @Param("withdrawnStatus") UserStatus withdrawnStatus);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select session from AiPracticeSession session
+        where session.status = :status
+          and (session.userId = :userId or session.targetUserId = :userId)
+        order by session.id
+        """)
+    List<AiPracticeSession> findAllForUserByStatusForUpdate(
+        @Param("userId") Long userId,
+        @Param("status") AiPracticeSessionStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from AiPracticeSession session where session.id = :sessionId")
     Optional<AiPracticeSession> findByIdForUpdate(@Param("sessionId") Long sessionId);
 
-    Optional<AiPracticeSession> findFirstByUserIdAndTargetMemberIdAndStatusOrderByIdDesc(
-        Long userId, Long targetMemberId, AiPracticeSessionStatus status);
-
-    List<AiPracticeSession> findByUserIdOrderByIdDesc(Long userId, Pageable pageable);
-
-    List<AiPracticeSession> findByUserIdAndIdLessThanOrderByIdDesc(
-        Long userId, Long cursor, Pageable pageable);
+    Optional<AiPracticeSession> findFirstByUserIdAndTargetUserIdAndStatusOrderByIdDesc(
+        Long userId, Long targetUserId, AiPracticeSessionStatus status);
 }

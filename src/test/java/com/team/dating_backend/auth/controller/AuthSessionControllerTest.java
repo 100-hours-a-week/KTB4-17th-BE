@@ -7,7 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.security.UserAuthenticationService;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
@@ -26,14 +28,21 @@ class AuthSessionControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
     private AuthCookieFactory authCookieFactory;
 
     @MockitoBean
     private JwtService jwtService;
 
+    @MockitoBean
+    private UserAuthenticationService userAuthenticationService;
+
     @Test
     void 유효한_Refresh_쿠키는_Bearer_Access_Token_JSON으로_교환된다() throws Exception {
         given(jwtService.parseRefreshAuthToken("refresh-token")).willReturn(123L);
+        given(userAuthenticationService.isAuthenticationAllowed(123L)).willReturn(true);
         given(jwtService.createServiceAuthToken(123L)).willReturn("new-access-token");
 
         mockMvc.perform(
@@ -68,5 +77,19 @@ class AuthSessionControllerTest {
             .getHeaders(org.springframework.http.HttpHeaders.SET_COOKIE);
         assertTrue(setCookies.stream().anyMatch(cookie -> cookie.contains("ACCESS_TOKEN=")));
         assertTrue(setCookies.stream().anyMatch(cookie -> cookie.contains("REFRESH_TOKEN=")));
+    }
+
+    @Test
+    void 탈퇴한_사용자의_Refresh_쿠키는_AUTH_REQUIRED를_반환한다() throws Exception {
+        given(jwtService.parseRefreshAuthToken("refresh-token")).willReturn(123L);
+        given(authCookieFactory.deleteAccessToken())
+            .willReturn(ResponseCookie.from("ACCESS_TOKEN", "").maxAge(0).build());
+        given(authCookieFactory.deleteRefreshToken())
+            .willReturn(ResponseCookie.from("REFRESH_TOKEN", "").maxAge(0).build());
+
+        mockMvc.perform(post("/api/v1/auth/token/refresh")
+            .cookie(new Cookie("REFRESH_TOKEN", "refresh-token")))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 }

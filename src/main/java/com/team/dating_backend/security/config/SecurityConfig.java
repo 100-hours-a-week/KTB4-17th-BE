@@ -4,10 +4,13 @@ import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceJwtAuthenticationFilter;
+import com.team.dating_backend.security.UserAuthenticationService;
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -15,6 +18,10 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
+import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -25,6 +32,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtService jwtService;
+    private final UserAuthenticationService userAuthenticationService;
     private final ApiAuthenticationEntryPoint authenticationEntryPoint;
     private final ApiAccessDeniedHandler accessDeniedHandler;
     private final SecurityProperties securityProperties;
@@ -32,7 +40,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         ServiceJwtAuthenticationFilter jwtAuthenticationFilter = new ServiceJwtAuthenticationFilter(
-            jwtService);
+            jwtService, userAuthenticationService);
+        RequestMatcher notificationStreamAsyncRequest = new AndRequestMatcher(
+            new DispatcherTypeRequestMatcher(DispatcherType.ASYNC),
+            PathPatternRequestMatcher.withDefaults()
+                .matcher(HttpMethod.GET, "/api/v1/notifications/stream"));
 
         http.csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
@@ -42,6 +54,8 @@ public class SecurityConfig {
             .httpBasic(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(
                 authorize -> authorize
+                    .requestMatchers(notificationStreamAsyncRequest)
+                    .permitAll()
                     .requestMatchers(
                         "/api/v1/auth/**",
                         "/api/v1/registration/**",

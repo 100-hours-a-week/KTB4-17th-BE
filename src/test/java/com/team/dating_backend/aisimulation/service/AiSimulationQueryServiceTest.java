@@ -19,6 +19,8 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.repository.AiSimulationMessageRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
+import com.team.dating_backend.user.enums.UserStatus;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,15 +49,15 @@ class AiSimulationQueryServiceTest {
             reportRepository,
             new AiSimulationResponseMapper(),
             new AiSimulationResponseValidator(),
-            objectMapper);
+            objectMapper, mock(AiSimulationTargetValidator.class));
     }
 
     @Test
     void 소유자는_저장된_메시지와_리포트를_조회한다() {
         AiSimulationSession session = session();
         AiSimulationReport report = report();
-        given(sessionRepository.findByIdAndUserIdAndStatus(
-            SESSION_ID, USER_ID, AiSimulationSessionStatus.COMPLETED))
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.of(session));
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID))
             .willReturn(Optional.of(report));
@@ -72,8 +74,8 @@ class AiSimulationQueryServiceTest {
 
     @Test
     void 다른_사용자의_결과는_존재하지_않는_것처럼_처리한다() {
-        given(sessionRepository.findByIdAndUserIdAndStatus(
-            SESSION_ID, 999L, AiSimulationSessionStatus.COMPLETED))
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, 999L, UserStatus.WITHDRAWN))
             .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.get(999L, SESSION_ID))
@@ -87,8 +89,8 @@ class AiSimulationQueryServiceTest {
     void 목록에는_로그인_사용자의_완료_세션만_요약한다() {
         AiSimulationSession session = session();
         AiSimulationReport report = report();
-        given(sessionRepository.findByUserIdAndStatusOrderByIdDesc(
-            USER_ID, AiSimulationSessionStatus.COMPLETED, PageRequest.of(0, 20)))
+        given(sessionRepository.findVisibleCompletedByParticipant(
+            USER_ID, UserStatus.WITHDRAWN, PageRequest.of(0, 20)))
             .willReturn(List.of(session));
         given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID))
             .willReturn(Optional.of(report));
@@ -102,10 +104,57 @@ class AiSimulationQueryServiceTest {
         });
     }
 
+    @Test
+    void 저장된_메시지_수가_같아도_내용이_다르면_완료_결과로_반환하지_않는다() {
+        AiSimulationSession session = session();
+        AiSimulationReport report = report();
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(session));
+        given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
+        List<AiSimulationMessage> messages = new ArrayList<>(messages());
+        AiSimulationMessage changed = mock(AiSimulationMessage.class);
+        given(changed.getContent()).willReturn(Map.of("index", 0, "speaker", "a", "text", "changed"));
+        messages.set(0, changed);
+        given(messageRepository.findBySessionIdOrderByIdAsc(SESSION_ID)).willReturn(messages);
+        assertThatThrownBy(() -> service.get(USER_ID, SESSION_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.AI_SERVER_RESPONSE_INVALID));
+    }
+
+    @Test
+    void 상대_ID가_복원되지_않은_과거_결과도_생성자는_조회한다() {
+        AiSimulationSession legacy = session();
+        given(legacy.getTargetUserId()).willReturn(null);
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(legacy));
+        AiSimulationReport report = report();
+        given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
+        List<AiSimulationMessage> messages = messages();
+        given(messageRepository.findBySessionIdOrderByIdAsc(SESSION_ID)).willReturn(messages);
+        assertThat(service.get(USER_ID, SESSION_ID).transcript()).hasSize(20);
+    }
+
+    @Test
+    void 저장된_리포트의_상대_ID가_세션과_다르면_반환하지_않는다() {
+        AiSimulationSession invalid = session();
+        given(invalid.getTargetUserId()).willReturn(999L);
+        given(sessionRepository.findByIdAndParticipant(
+            SESSION_ID, USER_ID, UserStatus.WITHDRAWN)).willReturn(Optional.of(invalid));
+        AiSimulationReport report = report();
+        given(reportRepository.findBySessionIdAndDeletedAtIsNull(SESSION_ID)).willReturn(Optional.of(report));
+        assertThatThrownBy(() -> service.getReport(USER_ID, SESSION_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.AI_SERVER_RESPONSE_INVALID));
+    }
+
     private AiSimulationSession session() {
         AiSimulationSession session = mock(AiSimulationSession.class);
         given(session.getId()).willReturn(SESSION_ID);
         given(session.getUserId()).willReturn(USER_ID);
+        given(session.getTargetUserId()).willReturn(8L);
+        given(session.getStatus()).willReturn(AiSimulationSessionStatus.COMPLETED);
         given(session.getCreatedAt()).willReturn(CREATED_AT);
         return session;
     }

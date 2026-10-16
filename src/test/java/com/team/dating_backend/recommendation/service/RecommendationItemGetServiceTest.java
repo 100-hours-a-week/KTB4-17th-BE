@@ -2,24 +2,25 @@ package com.team.dating_backend.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.common.exception.RequestValidationException;
-import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
+import com.team.dating_backend.profile.enums.JobCategory;
+import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
-import com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow;
 import com.team.dating_backend.recommendation.entity.RecommendationBatch;
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
+import com.team.dating_backend.recommendation.repository.RecommendationItemCandidateRow;
 import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -50,7 +51,7 @@ class RecommendationItemGetServiceTest {
         recommendationBatchRepository = mock(RecommendationBatchRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
         profileImageGetService = mock(ProfileImageGetService.class);
-        given(profileImageGetService.getProfileImagesByMemberIds(anyCollection()))
+        given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         service = new RecommendationItemGetService(
             userRepository,
@@ -68,7 +69,7 @@ class RecommendationItemGetServiceTest {
         given(recommendationItemRepository.findEligibleItems(
             42L, 5L, null, null, PageRequest.of(0, 21)))
             .willReturn(rows);
-        given(profileImageGetService.getProfileImagesByMemberIds(
+        given(profileImageGetService.getProfileImagesByUserIds(
             LongStream.rangeClosed(21L, 40L).boxed().toList()))
             .willReturn(Map.of(
                 21L,
@@ -89,11 +90,11 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items()).hasSize(20);
         assertThat(response.items().getFirst().itemId()).isEqualTo(101L);
         assertThat(response.items().getLast().itemId()).isEqualTo(120L);
-        assertThat(response.items().getFirst().candidate().memberId()).isEqualTo(21L);
+        assertThat(response.items().getFirst().candidate().userId()).isEqualTo(21L);
         assertThat(response.items().getFirst().candidate().nickname()).isEqualTo("하리");
         assertThat(response.items().getFirst().candidate().age())
             .isEqualTo(29);
-        assertThat(response.items().getFirst().candidate().job()).isEqualTo("개발자");
+        assertThat(response.items().getFirst().candidate().job()).isEqualTo(JobCategory.IT_DATA);
         assertThat(response.items().getFirst().candidate().region()).isEqualTo("서울특별시 강남구");
         assertThat(response.items().getFirst().candidate().mbti()).isEqualTo(Mbti.INFP);
         assertThat(response.items().getFirst().candidate().images())
@@ -159,7 +160,7 @@ class RecommendationItemGetServiceTest {
         assertThat(firstPage.pageInfo().nextCursor()).isEqualTo(120L);
         assertThat(secondPage.pageInfo().nextCursor()).isNull();
         assertThat(Stream.concat(firstPage.items().stream(), secondPage.items().stream())
-            .map(item -> item.candidate().memberId()))
+            .map(item -> item.candidate().userId()))
             .containsExactlyInAnyOrderElementsOf(
                 LongStream.rangeClosed(41L, 61L).boxed().toList())
             .doesNotHaveDuplicates();
@@ -177,7 +178,7 @@ class RecommendationItemGetServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.pageInfo().nextCursor()).isNull();
         assertThat(response.pageInfo().hasNext()).isFalse();
-        verify(profileImageGetService).getProfileImagesByMemberIds(List.of());
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of());
     }
 
     @Test
@@ -187,7 +188,7 @@ class RecommendationItemGetServiceTest {
             42L, 5L, null, null, PageRequest.of(0, 21)))
             .willReturn(List.of(new RecommendationItemCandidateRow(
                 101L, 21L, LocalDate.now().minusYears(30).plusDays(1),
-                "하리", "개발자", Mbti.INFP, "서울특별시", "강남구")));
+                "하리", JobCategory.IT_DATA, Mbti.INFP, "서울특별시", "강남구")));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
 
@@ -269,9 +270,9 @@ class RecommendationItemGetServiceTest {
         given(recommendationBatchRepository.findById(42L)).willReturn(Optional.of(batch));
     }
 
-    private RecommendationItemCandidateRow row(Long itemId, Long memberId) {
+    private RecommendationItemCandidateRow row(Long itemId, Long userId) {
         return new RecommendationItemCandidateRow(
-            itemId, memberId, LocalDate.now().minusYears(29), "하리", "개발자",
+            itemId, userId, LocalDate.now().minusYears(29), "하리", JobCategory.IT_DATA,
             Mbti.INFP, "서울특별시", "강남구");
     }
 

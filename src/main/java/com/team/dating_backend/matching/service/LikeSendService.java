@@ -1,6 +1,7 @@
 package com.team.dating_backend.matching.service;
 
 import com.team.dating_backend.chat.service.ChatRoomCreateService;
+import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.entity.Match;
@@ -9,6 +10,7 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
@@ -27,6 +29,7 @@ public class LikeSendService {
     private final UserBlockRepository userBlockRepository;
     private final LikeRepository likeRepository;
     private final MatchRepository matchRepository;
+    private final UserPairLockRepository userPairLockRepository;
     private final ChatRoomCreateService chatRoomCreateService;
 
     @Transactional
@@ -35,15 +38,20 @@ public class LikeSendService {
             throw new LikeBusinessException(LikeErrorCode.SELF_LIKE_NOT_ALLOWED);
         }
 
-        User sender = requireMember(senderId);
-        User receiver = requireMember(receiverId);
+        userPairLockRepository.acquire(senderId, receiverId);
 
+        User sender = requireUserForUpdate(senderId);
+        User receiver = requireUserForUpdate(receiverId);
+
+        if (sender.getStatus() == UserStatus.WITHDRAWN) {
+            throw new AuthenticationRequiredException();
+        }
         if (sender.getStatus() != UserStatus.ACTIVE) {
             throw new LikeBusinessException(LikeErrorCode.SENDER_NOT_ACTIVE);
         }
         if (receiver.getStatus() != UserStatus.ACTIVE
             || userBlockRepository.existsActiveBlockBetween(senderId, receiverId)) {
-            throw new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND);
+            throw new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND);
         }
         if (matchRepository.existsBetween(senderId, receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.MATCH_ALREADY_EXISTS);
@@ -71,9 +79,9 @@ public class LikeSendService {
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
 
-    private User requireMember(Long userId) {
+    private User requireUserForUpdate(Long userId) {
         return userRepository
-            .findById(userId)
-            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.MEMBER_NOT_FOUND));
+            .findByIdForUpdate(userId)
+            .orElseThrow(() -> new LikeBusinessException(LikeErrorCode.USER_NOT_FOUND));
     }
 }

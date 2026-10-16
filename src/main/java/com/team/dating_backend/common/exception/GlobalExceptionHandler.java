@@ -1,10 +1,9 @@
 package com.team.dating_backend.common.exception;
 
 import com.team.dating_backend.common.dto.response.ErrorResponse;
-import com.team.dating_backend.common.dto.response.FieldErrorResponse;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.enums.ErrorCode;
-import java.util.List;
+import com.team.dating_backend.file.enums.FileErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,6 +12,9 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 @Slf4j
 @RestControllerAdvice
@@ -29,40 +31,23 @@ public class GlobalExceptionHandler {
         return error(errorCode);
     }
 
-    @ExceptionHandler(RequestValidationException.class)
-    public ResponseEntity<ErrorResponse> handleRequestValidation(
-        RequestValidationException exception) {
-        if (!exception.hasErrors()) {
-            return error(exception.getErrorCode());
-        }
-
-        return ResponseEntity.status(exception.getErrorCode().status())
-            .body(ErrorResponse.invalidRequest(exception.getErrors()));
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(
-        MethodArgumentNotValidException exception) {
-        List<FieldErrorResponse> errors = exception.getBindingResult().getFieldErrors().stream()
-            .map(
-                fieldError -> new FieldErrorResponse(
-                    fieldError.getField(),
-                    fieldError.getDefaultMessage()))
-            .toList();
-
-        return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.status())
-            .body(ErrorResponse.invalidRequest(errors));
-    }
-
     @ExceptionHandler(
         {
+            MethodArgumentNotValidException.class,
             HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class
+            MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
+            MultipartException.class
         }
     )
     public ResponseEntity<ErrorResponse> handleInvalidRequest(Exception exception) {
         return error(CommonErrorCode.INVALID_REQUEST);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException exception) {
+        return error(FileErrorCode.FILE_TOO_LARGE);
     }
 
     @ExceptionHandler(Exception.class)

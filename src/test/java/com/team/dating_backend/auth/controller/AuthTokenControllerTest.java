@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.service.OAuthLoginCodeService;
 import jakarta.servlet.http.HttpSession;
@@ -24,6 +25,9 @@ class AuthTokenControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private OAuthLoginCodeService oauthLoginCodeService;

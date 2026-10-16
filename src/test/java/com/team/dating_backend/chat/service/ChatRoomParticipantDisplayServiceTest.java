@@ -6,11 +6,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.repository.ChatParticipantDisplayRow;
 import com.team.dating_backend.chat.repository.ChatRoomParticipantDisplayRepository;
+import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserBlockRepository;
+import com.team.dating_backend.user.repository.UserRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,33 +25,48 @@ class ChatRoomParticipantDisplayServiceTest {
 
     private ChatRoomParticipantDisplayRepository repository;
     private ProfileImageGetService profileImageGetService;
+    private UserBlockRepository userBlockRepository;
+    private UserRepository userRepository;
     private ChatRoomParticipantDisplayService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(ChatRoomParticipantDisplayRepository.class);
         profileImageGetService = mock(ProfileImageGetService.class);
-        service = new ChatRoomParticipantDisplayService(repository, profileImageGetService);
+        userBlockRepository = mock(UserBlockRepository.class);
+        userRepository = mock(UserRepository.class);
+        service = new ChatRoomParticipantDisplayService(
+            repository, profileImageGetService, userBlockRepository, userRepository);
     }
 
     @Test
     void 사용자_ID가_없으면_빈_결과를_반환하고_저장소를_호출하지_않는다() {
-        assertThat(service.findNicknames(List.of())).isEmpty();
-        verifyNoInteractions(repository);
+        assertThat(service.findDisplays(1L, List.of())).isEmpty();
+        verifyNoInteractions(repository, profileImageGetService, userBlockRepository, userRepository);
     }
 
     @Test
-    void 여러_사용자의_닉네임을_ID별로_변환한다() {
-        List<Long> userIds = List.of(2L, 3L);
-        given(repository.findByUserIds(userIds)).willReturn(List.of(
-            new ChatParticipantDisplayRow(2L, "사용자A"),
-            new ChatParticipantDisplayRow(3L, "사용자B")));
+    void 차단하거나_탈퇴한_사용자는_ID와_프로필을_숨기고_활성_사용자는_프로필_정보를_반환한다() {
+        List<Long> userIds = List.of(2L, 3L, 4L);
+        given(userBlockRepository.findActiveBlockerUserIds(1L, Set.of(2L, 3L, 4L)))
+            .willReturn(List.of(2L));
+        given(userRepository.findIdsByStatus(Set.of(2L, 3L, 4L), UserStatus.WITHDRAWN))
+            .willReturn(List.of(3L));
+        given(repository.findByUserIds(List.of(4L))).willReturn(List.of(
+            new ChatParticipantDisplayRow(4L, "사용자B")));
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(4L)))
+            .willReturn(Map.of(4L, List.of(new ProfileImageAccessResult(
+                30L, (short) 1, "https://example.com/profile.jpg", Instant.now()))));
 
-        Map<Long, String> result = service.findNicknames(userIds);
+        Map<Long, ChatParticipantDisplay> result = service.findDisplays(1L, userIds);
 
-        assertThat(result).containsExactlyInAnyOrderEntriesOf(Map.of(
-            2L, "사용자A",
-            3L, "사용자B"));
-        verify(repository).findByUserIds(userIds);
+        assertThat(result.get(2L)).isEqualTo(
+            new ChatParticipantDisplay(null, "알 수 없음", null));
+        assertThat(result.get(3L)).isEqualTo(
+            new ChatParticipantDisplay(null, "알 수 없음", null));
+        assertThat(result.get(4L)).isEqualTo(new ChatParticipantDisplay(
+            4L, "사용자B", "https://example.com/profile.jpg"));
+        verify(repository).findByUserIds(List.of(4L));
+        verify(profileImageGetService).getProfileImagesByUserIds(List.of(4L));
     }
 }
