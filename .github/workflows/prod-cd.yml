@@ -56,8 +56,8 @@ jobs:
                   set -euo pipefail
                   aws ecr batch-get-image --repository-name "$ECR_REPOSITORY" \
                     --image-ids "imageDigest=$DIGEST" > image.json
-                  jq -e '.images | length == 1' image.json
-                  jq -er '.images[0].imageManifest' image.json > manifest.json
+                  jq -e '.images | length > 0' image.json
+                  jq -ej '.images[0].imageManifest' image.json > manifest.json
                   # ECS task digest 검증을 위해 현재 single-platform 빌드만 허용한다.
                   jq -e 'has("manifests") | not' manifest.json
                   aws ecr describe-images --repository-name "$ECR_REPOSITORY" > tags.json
@@ -69,7 +69,8 @@ jobs:
                   else
                     aws ecr put-image --repository-name "$ECR_REPOSITORY" \
                       --image-tag "$RELEASE_TAG" \
-                      --image-manifest file://manifest.json > /dev/null
+                      --image-manifest file://manifest.json \
+                      --image-digest "$DIGEST" > /dev/null
                   fi
                   ACTUAL=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
                     --image-ids "imageTag=$RELEASE_TAG" \
