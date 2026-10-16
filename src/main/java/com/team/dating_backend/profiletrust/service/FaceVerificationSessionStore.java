@@ -17,6 +17,7 @@ import com.team.dating_backend.profiletrust.repository.FaceVerificationSessionRe
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,12 @@ public class FaceVerificationSessionStore {
     private final FileUploadIntentRepository uploadIntentRepository;
     private final UserRepository userRepository;
 
-    public record Admission(FaceVerificationSession session, FaceVerificationAttempt attempt, boolean acquired) {}
+    public record Admission(FaceVerificationSession session, FaceVerificationResponse previousResult) {
+
+        public boolean acquired() {
+            return previousResult == null;
+        }
+    }
 
     public FaceVerificationResponse create(
         Long ownerUserId, Long uploadIntentId, String versionToken, ChallengeResponse challenge) {
@@ -103,7 +109,7 @@ public class FaceVerificationSessionStore {
             if (existing.getStatus() == VerificationAttemptStatus.PROCESSING) {
                 throw failure(ProfileTrustErrorCode.VERIFICATION_IN_PROGRESS);
             }
-            return new Admission(session, existing, false);
+            return new Admission(session, response(session, existing));
         }
         requireReady(session);
         if (attemptNo != session.getAttemptsUsed() + 1) {
@@ -113,9 +119,9 @@ public class FaceVerificationSessionStore {
             throw failure(ProfileTrustErrorCode.VERIFICATION_DUPLICATE_VIDEO);
         }
         session.beginAttempt();
-        FaceVerificationAttempt attempt = attemptRepository.saveAndFlush(FaceVerificationAttempt.create(
+        attemptRepository.saveAndFlush(FaceVerificationAttempt.create(
             sessionId, attemptNo, videoHash, contentType, LocalDateTime.now()));
-        return new Admission(session, attempt, true);
+        return new Admission(session, null);
     }
 
     public FaceVerificationResponse finish(
@@ -128,7 +134,7 @@ public class FaceVerificationSessionStore {
             attempt.complete(result.decision(), result.reasonCodes(), LocalDateTime.now());
             session.complete(result.decision());
         }
-        return FaceVerificationResponse.from(session, attempt);
+        return response(session, attempt);
     }
 
     public void fail(Long ownerUserId, Long sessionId, int attemptNo, ProfileTrustErrorCode errorCode) {
@@ -171,8 +177,14 @@ public class FaceVerificationSessionStore {
     }
 
     private FaceVerificationResponse response(FaceVerificationSession session) {
-        return FaceVerificationResponse.from(session,
-            attemptRepository.findFirstBySessionIdOrderByAttemptNoDesc(session.getId()).orElse(null));
+        return response(session, null);
+    }
+
+    private FaceVerificationResponse response(FaceVerificationSession session, FaceVerificationAttempt attempt) {
+        List<FaceVerificationAttempt> attempts = attemptRepository
+            .findAllBySessionIdOrderByAttemptNoAsc(session.getId());
+        FaceVerificationAttempt selected = attempt != null || attempts.isEmpty() ? attempt : attempts.getLast();
+        return FaceVerificationResponse.from(session, selected, attempts);
     }
 
     private void requireReady(FaceVerificationSession session) {

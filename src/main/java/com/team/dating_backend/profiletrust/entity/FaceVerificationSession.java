@@ -89,8 +89,7 @@ public class FaceVerificationSession {
         requireProcessing();
         status = switch (decision) {
             case VERIFIED -> VerificationSessionStatus.VERIFIED;
-            case NOT_VERIFIED -> VerificationSessionStatus.NOT_VERIFIED;
-            case RETRY -> retryStatus();
+            case RETRY, NOT_VERIFIED -> retryStatus();
         };
     }
 

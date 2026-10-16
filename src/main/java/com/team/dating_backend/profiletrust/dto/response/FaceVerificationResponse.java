@@ -14,14 +14,20 @@ import java.util.List;
 public record FaceVerificationResponse(
     Long sessionId, Long uploadIntentId, VerificationSessionStatus status,
     int attemptsUsed, int maxAttempts, int remainingAttempts, Integer nextAttemptNo,
-    boolean canRetry, List<String> challenges, Instant expiresAt, Attempt attempt) {
+    boolean canRetry, List<String> challenges, Instant expiresAt, Attempt attempt, List<Attempt> attempts) {
 
     public record Attempt(
         int attemptNo, VerificationAttemptStatus status, VerificationDecision decision,
-        List<VerificationReasonCode> reasonCodes, ProfileTrustErrorCode errorCode) {}
+        List<VerificationReasonCode> reasonCodes, ProfileTrustErrorCode errorCode) {
+
+        private static Attempt from(FaceVerificationAttempt attempt) {
+            return new Attempt(attempt.getAttemptNo(), attempt.getStatus(), attempt.getDecision(),
+                List.copyOf(attempt.getReasonCodes()), attempt.getErrorCode());
+        }
+    }
 
     public static FaceVerificationResponse from(
-        FaceVerificationSession session, FaceVerificationAttempt attempt) {
+        FaceVerificationSession session, FaceVerificationAttempt attempt, List<FaceVerificationAttempt> attempts) {
         boolean ready = session.getStatus() == VerificationSessionStatus.READY;
         return new FaceVerificationResponse(
             session.getId(), session.getUploadIntentId(), session.getStatus(),
@@ -29,10 +35,7 @@ public record FaceVerificationResponse(
             FaceVerificationSession.MAX_ATTEMPTS - session.getAttemptsUsed(),
             ready ? session.getAttemptsUsed() + 1 : null, ready,
             List.of("LOOK_STRAIGHT"), session.getExpiresAt().atZone(ZoneId.systemDefault()).toInstant(),
-            attempt == null
-                ? null
-                : new Attempt(
-                    attempt.getAttemptNo(), attempt.getStatus(), attempt.getDecision(),
-                    attempt.getReasonCodes(), attempt.getErrorCode()));
+            attempt == null ? null : Attempt.from(attempt),
+            attempts.stream().map(Attempt::from).toList());
     }
 }

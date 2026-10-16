@@ -169,20 +169,60 @@ class FaceVerificationSessionStoreIntegrationTest {
         assertThat(store.get(ownerId, id).attemptsUsed()).isEqualTo(1);
     }
 
-    @Test
-    void 다섯번_RETRY의_상태와_JSON_사유를_저장하고_추가접수를_거부한다() {
+    @ParameterizedTest
+    @EnumSource(value = VerificationDecision.class, names = {"RETRY", "NOT_VERIFIED"})
+    void 다섯번_미통과의_상태와_JSON_사유를_저장하고_추가접수를_거부한다(VerificationDecision decision) {
         Long id = create().sessionId();
+        VerificationReasonCode reason = decision == VerificationDecision.NOT_VERIFIED
+            ? VerificationReasonCode.FACE_MISMATCH
+            : VerificationReasonCode.LIVENESS_FAILED;
         for (int i = 1; i <= 5; i++) {
             store.claim(ownerId, id, i, "hash-" + i, "video/webm");
-            store.finish(ownerId, id, i, new VerificationResponse(VerificationDecision.RETRY,
-                List.of(VerificationReasonCode.LIVENESS_FAILED), new Liveness(false)));
+            var result = store.finish(ownerId, id, i, new VerificationResponse(decision,
+                List.of(reason), new Liveness(decision == VerificationDecision.NOT_VERIFIED)));
+            assertThat(result.canRetry()).isEqualTo(i < 5);
+            assertThat(result.attempts()).hasSize(i);
         }
         var response = store.get(ownerId, id);
         assertThat(response.status()).isEqualTo(VerificationSessionStatus.EXHAUSTED);
-        assertThat(response.attempt().reasonCodes()).containsExactly(VerificationReasonCode.LIVENESS_FAILED);
+        assertThat(response.attempt().reasonCodes()).containsExactly(reason);
+        assertThat(response.attempts()).extracting(FaceVerificationResponse.Attempt::attemptNo)
+            .containsExactly(1, 2, 3, 4, 5);
+        assertThat(response.attempts()).allSatisfy(attempt -> {
+            assertThat(attempt.decision()).isEqualTo(decision);
+            assertThat(attempt.reasonCodes()).containsExactly(reason);
+        });
         assertThatThrownBy(() -> store.claim(ownerId, id, 6, "hash-6", "video/webm"))
             .isInstanceOfSatisfying(ProfileTrustBusinessException.class, error -> assertThat(error.getErrorCode())
                 .isEqualTo(ProfileTrustErrorCode.VERIFICATION_ATTEMPT_LIMIT_REACHED));
+    }
+
+    @Test
+    void 불일치와_RETRY가_섞여도_마지막_성공을_저장하고_이전_사유를_유지한다() {
+        Long id = create().sessionId();
+        for (int i = 1; i <= 4; i++) {
+            store.claim(ownerId, id, i, "hash-" + i, "video/webm");
+            boolean mismatch = i % 2 == 1;
+            store.finish(ownerId, id, i, new VerificationResponse(
+                mismatch ? VerificationDecision.NOT_VERIFIED : VerificationDecision.RETRY,
+                List.of(
+                    mismatch ? VerificationReasonCode.FACE_MISMATCH : VerificationReasonCode.FACE_COMPARISON_FAILED),
+                new Liveness(true)));
+        }
+        assertThat(create().sessionId()).isEqualTo(id);
+        store.claim(ownerId, id, 5, "hash-5", "video/webm");
+        var finished = store.finish(ownerId, id, 5,
+            new VerificationResponse(VerificationDecision.VERIFIED, List.of(), new Liveness(true)));
+        var reloaded = store.get(ownerId, id);
+        assertThat(reloaded).isEqualTo(finished);
+        assertThat(reloaded.status()).isEqualTo(VerificationSessionStatus.VERIFIED);
+        assertThat(reloaded.canRetry()).isFalse();
+        assertThat(reloaded.attempts()).extracting(FaceVerificationResponse.Attempt::decision).containsExactly(
+            VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY, VerificationDecision.NOT_VERIFIED,
+            VerificationDecision.RETRY, VerificationDecision.VERIFIED);
+        assertThat(reloaded.attempts().get(1).reasonCodes())
+            .containsExactly(VerificationReasonCode.FACE_COMPARISON_FAILED);
+        assertThat(reloaded.attempt().reasonCodes()).isEmpty();
     }
 
     @Test
