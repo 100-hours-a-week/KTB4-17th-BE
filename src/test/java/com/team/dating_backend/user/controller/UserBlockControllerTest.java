@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.user.dto.response.UserBlockResult;
 import com.team.dating_backend.user.dto.response.UserBlockResponse;
@@ -50,6 +51,9 @@ class UserBlockControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private UserBlockService userBlockService;

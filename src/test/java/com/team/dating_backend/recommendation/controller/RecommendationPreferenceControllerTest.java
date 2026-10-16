@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.profile.enums.Drinking;
@@ -78,6 +79,9 @@ class RecommendationPreferenceControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private RecommendationPreferenceService recommendationPreferenceService;

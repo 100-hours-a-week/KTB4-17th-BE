@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.service.UserProfileGetService;
@@ -43,6 +44,9 @@ class UserProfileControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private UserProfileGetService userProfileGetService;

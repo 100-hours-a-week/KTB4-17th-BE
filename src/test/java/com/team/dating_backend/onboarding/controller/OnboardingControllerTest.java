@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.onboarding.dto.response.OnboardingProfileResponse;
 import com.team.dating_backend.onboarding.dto.response.OnboardingRequirementsResponse;
@@ -38,6 +39,9 @@ class OnboardingControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private OnboardingService onboardingService;

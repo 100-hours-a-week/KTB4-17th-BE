@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.profiletrust.dto.response.FaceVerificationResponse;
 import com.team.dating_backend.profiletrust.entity.FaceVerificationSession;
 import com.team.dating_backend.profiletrust.enums.ProfileTrustErrorCode;
@@ -53,6 +54,9 @@ class FaceVerificationControllerTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @MockitoBean
+    private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
     private FaceVerificationService service;
