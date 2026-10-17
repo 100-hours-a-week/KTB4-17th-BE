@@ -10,7 +10,11 @@ import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.matching.entity.Match;
+import com.team.dating_backend.matching.enums.MatchEndReason;
+import com.team.dating_backend.matching.repository.MatchRepository;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomLeaveService {
 
     private final ChatRoomRepository chatRoomRepository;
+    private final MatchRepository matchRepository;
 
     @Transactional
     public ChatRoomLeaveResponse leave(Long chatRoomId, Long userId) {
@@ -28,7 +33,12 @@ public class ChatRoomLeaveService {
             throw new RequestValidationException();
         }
 
+        Long matchId = chatRoomRepository.findMatchIdById(chatRoomId)
+            .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
+        Match userMatch = matchRepository.findByIdForUpdate(matchId)
+            .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
         ChatRoom room = chatRoomRepository.findWithLockById(chatRoomId)
+            .filter(candidate -> candidate.getMatch().getId().equals(userMatch.getId()))
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
         List<ChatParticipant> participants = room.getParticipants();
         ChatParticipant participant = participants.stream()
@@ -36,14 +46,16 @@ public class ChatRoomLeaveService {
             .findFirst()
             .orElseThrow(() -> new ChatBusinessException(ChatErrorCode.CHAT_ACCESS_DENIED));
 
-        if (room.getStatus() == ChatRoomStatus.INACTIVE) {
-            throw new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_ACTIVE);
-        }
-
         if (participant.getStatus() == ChatParticipantStatus.ACTIVE) {
-            LocalDateTime now = LocalDateTime.now();
+            if (room.getStatus() == ChatRoomStatus.INACTIVE) {
+                throw new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_ACTIVE);
+            }
+
+            LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
             participant.leave(now);
+            userMatch.end(MatchEndReason.USER_LEFT_CHAT, now);
             room.end(ChatRoomEndReason.USER_LEFT_CHAT, now);
+            room.deactivateWhenAllLeft();
         }
 
         return new ChatRoomLeaveResponse(

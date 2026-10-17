@@ -44,8 +44,8 @@ public class UserWithdrawalService {
 
         LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         likeTerminationService.terminateForWithdrawal(userId, now);
-        chatRoomWithdrawalTerminationService.terminateForUser(userId, now);
         matchWithdrawalTerminationService.terminateForUser(userId, now);
+        chatRoomWithdrawalTerminationService.terminateForUser(userId, now);
         aiPracticeWithdrawalTerminationService.terminateForUser(userId, now);
         aiSimulationWithdrawalTerminationService.terminateForUser(userId, now);
         for (UserAuthAccount account : userAuthAccountRepository.findAllByUserId(userId)) {
