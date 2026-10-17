@@ -3,26 +3,43 @@ package com.team.dating_backend.security.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.notification.controller.NotificationController;
+import com.team.dating_backend.notification.repository.NotificationRepository;
+import com.team.dating_backend.notification.service.NotificationAccessService;
+import com.team.dating_backend.notification.service.NotificationDeleteService;
+import com.team.dating_backend.notification.service.NotificationListService;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.UserAuthenticationService;
+import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.UserStatus;
+import com.team.dating_backend.user.repository.UserRepository;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -37,13 +54,15 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.cors.CorsConfiguration;
 import tools.jackson.databind.ObjectMapper;
 
-@WebMvcTest(controllers = SecurityConfigTest.SecurityProbeController.class)
+@WebMvcTest(controllers = {SecurityConfigTest.SecurityProbeController.class, NotificationController.class})
 @Import(
     {
         SecurityConfig.class,
         ApiAuthenticationEntryPoint.class,
         ApiAccessDeniedHandler.class,
-        SecurityConfigTest.SecurityProbeController.class
+        SecurityConfigTest.SecurityProbeController.class,
+        NotificationAccessService.class,
+        NotificationListService.class
     }
 )
 class SecurityConfigTest {
@@ -65,6 +84,15 @@ class SecurityConfigTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationDeleteService notificationDeleteService;
+
+    @MockitoBean
+    private NotificationRepository notificationRepository;
+
+    @MockitoBean
+    private UserRepository userRepository;
 
     @BeforeEach
     void setUp() {
@@ -146,10 +174,80 @@ class SecurityConfigTest {
     }
 
     @Test
+    void 목록_조회는_미인증_요청을_401로_차단하고_DB를_조회하지_않는다() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
+
+        verifyNoInteractions(userRepository, notificationRepository);
+    }
+
+    @Test
+    void 목록_조회는_유효하지_않은_토큰을_401로_차단한다() throws Exception {
+        given(jwtService.parseServiceAuthToken("invalid-token")).willThrow(new JwtException("invalid"));
+
+        mockMvc.perform(get("/api/v1/notifications")
+            .header("Authorization", "Bearer invalid-token"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
+
+        verifyNoInteractions(userRepository, notificationRepository);
+    }
+
+    @Test
+    void 인증_계층에서_회원_접근을_거부하면_목록_Service_진입_전에_401을_반환한다() throws Exception {
+        given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
+        given(userAuthenticationService.isAuthenticationAllowed(42L)).willReturn(false);
+
+        mockMvc.perform(get("/api/v1/notifications")
+            .header("Authorization", "Bearer service-token"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
+
+        verifyNoInteractions(userRepository, notificationRepository);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = UserStatus.class, names = {"ONBOARDING", "SUSPENDED"})
+    void 인증을_통과한_비ACTIVE_회원은_목록_조회_전에_403으로_차단한다(UserStatus status) throws Exception {
+        given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(status);
+        given(userRepository.findById(42L)).willReturn(Optional.of(user));
+
+        mockMvc.perform(get("/api/v1/notifications")
+            .header("Authorization", "Bearer service-token"))
+            .andExpect(status().isForbidden())
+            .andExpect(content().string("{\"errorCode\":\"REQUESTER_NOT_ACTIVE\"}"));
+
+        verifyNoInteractions(notificationRepository);
+    }
+
+    @Test
+    void ACTIVE_회원의_목록_조회는_Principal의_ID로_Service까지_연결된다() throws Exception {
+        given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(userRepository.findById(42L)).willReturn(Optional.of(user));
+        given(notificationRepository.findVisibleByUserId(42L, PageRequest.of(0, 21)))
+            .willReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/notifications")
+            .header("Authorization", "Bearer service-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("notification_list_success"))
+            .andExpect(jsonPath("$.data.items").isEmpty())
+            .andExpect(jsonPath("$.data.pageInfo.hasNext").value(false));
+
+        verify(notificationRepository).findVisibleByUserId(42L, PageRequest.of(0, 21));
+    }
+
+    @Test
     void SSE의_GET_ASYNC_재디스패치만_인증없이_후속_처리를_허용한다() throws Exception {
         assertEquals(204, asyncStatus("GET", "/api/v1/notifications/stream"));
         assertEquals(401, asyncStatus("GET", "/api/v1/security/protected"));
         assertEquals(401, asyncStatus("POST", "/api/v1/notifications/stream"));
+        assertEquals(401, asyncStatus("GET", "/api/v1/notifications"));
     }
 
     private int asyncStatus(String method, String path) throws Exception {
