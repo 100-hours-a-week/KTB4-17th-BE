@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,6 +19,7 @@ import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationReadService;
 import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
@@ -29,6 +31,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.MethodParameter;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -46,6 +49,7 @@ class NotificationControllerTest {
     private NotificationDeleteService service;
     private NotificationListService listService;
     private NotificationUnreadCountService unreadCountService;
+    private NotificationReadService readService;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -53,8 +57,9 @@ class NotificationControllerTest {
         service = mock(NotificationDeleteService.class);
         listService = mock(NotificationListService.class);
         unreadCountService = mock(NotificationUnreadCountService.class);
+        readService = mock(NotificationReadService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
-            new NotificationController(service, listService, unreadCountService))
+            new NotificationController(service, listService, unreadCountService, readService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalArgumentResolver())
             .build();
@@ -204,6 +209,50 @@ class NotificationControllerTest {
             .given(unreadCountService).getUnreadCount(USER_ID);
 
         mockMvc.perform(get("/api/v1/notifications/unread-count"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(content().string("{\"errorCode\":\"INTERNAL_SERVER_ERROR\"}"));
+    }
+
+    @Test
+    void 개별_읽음은_Principal과_ID를_전달하고_204와_빈_본문을_반환한다() throws Exception {
+        mockMvc.perform(put("/api/v1/notifications/{notificationId}/read-receipt", NOTIFICATION_ID))
+            .andExpect(status().isNoContent())
+            .andExpect(content().string(""));
+
+        verify(readService).markAsRead(USER_ID, NOTIFICATION_ID);
+        verifyNoInteractions(service, listService, unreadCountService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"invalid", " ", "0", "-1", "9223372036854775808"})
+    void 개별_읽음의_ID가_잘못되면_Service를_호출하지_않는다(String id) throws Exception {
+        mockMvc.perform(put("/api/v1/notifications/{notificationId}/read-receipt", id))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().string("{\"errorCode\":\"INVALID_NOTIFICATION_ID\"}"));
+
+        verifyNoInteractions(readService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = NotificationErrorCode.class,
+        names = {"REQUESTER_NOT_ACTIVE", "NOTIFICATION_ACCESS_DENIED", "NOTIFICATION_NOT_FOUND"}
+    )
+    void 개별_읽음_실패는_해당_HTTP_상태와_오류_코드만_반환한다(NotificationErrorCode errorCode) throws Exception {
+        willThrow(new NotificationBusinessException(errorCode))
+            .given(readService).markAsRead(USER_ID, NOTIFICATION_ID);
+
+        mockMvc.perform(put("/api/v1/notifications/{notificationId}/read-receipt", NOTIFICATION_ID))
+            .andExpect(status().is(errorCode.status().value()))
+            .andExpect(content().string("{\"errorCode\":\"" + errorCode.name() + "\"}"));
+    }
+
+    @Test
+    void 개별_읽음의_잠금_실패는_성공이_아닌_500을_반환한다() throws Exception {
+        willThrow(new CannotAcquireLockException("잠금 실패"))
+            .given(readService).markAsRead(USER_ID, NOTIFICATION_ID);
+
+        mockMvc.perform(put("/api/v1/notifications/{notificationId}/read-receipt", NOTIFICATION_ID))
             .andExpect(status().isInternalServerError())
             .andExpect(content().string("{\"errorCode\":\"INTERNAL_SERVER_ERROR\"}"));
     }

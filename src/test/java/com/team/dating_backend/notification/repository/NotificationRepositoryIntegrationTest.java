@@ -8,10 +8,13 @@ import com.team.dating_backend.notification.dto.response.NotificationEventRespon
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
 import com.team.dating_backend.notification.entity.Notification;
 import com.team.dating_backend.notification.enums.NotificationCategory;
+import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationReadService;
 import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
@@ -32,6 +35,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -65,7 +70,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
     {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
-        NotificationUnreadCountService.class}
+        NotificationUnreadCountService.class, NotificationReadService.class}
 )
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
@@ -102,6 +107,9 @@ class NotificationRepositoryIntegrationTest {
 
     @Autowired
     private NotificationUnreadCountService unreadCountService;
+
+    @Autowired
+    private NotificationReadService readService;
 
     private TransactionTemplate transaction;
     private Long userId;
@@ -544,6 +552,163 @@ class NotificationRepositoryIntegrationTest {
         deleteService.deleteNotification(userId, deleteId);
 
         assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 읽음_Service는_최초_시각과_다른_컬럼을_보존하고_목록과_집계에_반영한다(boolean alreadyRead) {
+        Long notificationId = saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, false);
+        if (alreadyRead) {
+            transaction.executeWithoutResult(status -> repository.findById(notificationId).orElseThrow()
+                .markAsRead(NOW.plusMinutes(1)));
+        }
+        Map<String, Object> before = jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(alreadyRead ? 0L : 1L);
+
+        readService.markAsRead(userId, notificationId);
+
+        Notification stored = repository.findById(notificationId).orElseThrow();
+        LocalDateTime readAt = stored.getReadAt();
+        assertThat(readAt).isNotNull();
+        if (alreadyRead) {
+            assertThat(readAt).isEqualTo(NOW.plusMinutes(1));
+        }
+        Map<String, Object> after = jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId);
+        before.put("read_at", after.get("read_at"));
+        assertThat(after).isEqualTo(before);
+        assertThat(listService.getNotifications(userId, NotificationCategory.ALL, null, 20)
+            .items().getFirst().readAt()).isEqualTo(readAt);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+
+        readService.markAsRead(userId, notificationId);
+
+        assertThat(jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId)).isEqualTo(after);
+    }
+
+    @Test
+    void 읽음_변경을_flush한_트랜잭션이_롤백되면_DB와_집계에_반영하지_않는다() {
+        Long notificationId = saveNotification();
+
+        transaction.executeWithoutResult(status -> {
+            readService.markAsRead(userId, notificationId);
+            entityManager.flush();
+            status.setRollbackOnly();
+        });
+
+        assertThat(repository.findById(notificationId).orElseThrow().getReadAt()).isNull();
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(1L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 동시_읽음은_선행_커밋의_시각을_보존하고_롤백된_시각은_재사용하지_않는다(boolean rollbackFirst)
+        throws Exception {
+        Long notificationId = saveNotification();
+        AtomicReference<LocalDateTime> firstReadAt = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> {
+                readService.markAsRead(userId, notificationId);
+                firstReadAt.set(repository.findById(notificationId).orElseThrow().getReadAt());
+            },
+            () -> readService.markAsRead(userId, notificationId),
+            rollbackFirst);
+
+        LocalDateTime storedReadAt = repository.findById(notificationId).orElseThrow().getReadAt();
+        assertThat(storedReadAt).isNotNull();
+        if (rollbackFirst) {
+            assertThat(storedReadAt).isNotEqualTo(firstReadAt.get());
+        } else {
+            assertThat(storedReadAt).isEqualTo(firstReadAt.get());
+        }
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 읽음과_삭제가_겹치면_선행_커밋에_따라_읽음_시각_보존_또는_404로_처리한다(boolean readFirst)
+        throws Exception {
+        Long notificationId = saveNotification();
+        AtomicReference<LocalDateTime> firstChangedAt = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> {
+                if (readFirst) {
+                    readService.markAsRead(userId, notificationId);
+                } else {
+                    deleteService.deleteNotification(userId, notificationId);
+                }
+                Notification notification = repository.findById(notificationId).orElseThrow();
+                firstChangedAt.set(readFirst ? notification.getReadAt() : notification.getDeletedAt());
+            },
+            () -> {
+                if (readFirst) {
+                    deleteService.deleteNotification(userId, notificationId);
+                } else {
+                    assertThatThrownBy(() -> readService.markAsRead(userId, notificationId))
+                        .isInstanceOfSatisfying(NotificationBusinessException.class,
+                            exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(NotificationErrorCode.NOTIFICATION_NOT_FOUND));
+                }
+            },
+            false);
+
+        Notification stored = repository.findById(notificationId).orElseThrow();
+        assertThat(stored.getDeletedAt()).isNotNull();
+        if (readFirst) {
+            assertThat(stored.getReadAt()).isEqualTo(firstChangedAt.get());
+        } else {
+            assertThat(stored.getReadAt()).isNull();
+            assertThat(stored.getDeletedAt()).isEqualTo(firstChangedAt.get());
+        }
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    private void runWhileFirstTransactionIsOpen(Runnable firstAction, Runnable secondAction,
+        boolean rollbackFirst) throws Exception {
+        CountDownLatch firstPrepared = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = executor.submit(() -> transaction.executeWithoutResult(status -> {
+                firstAction.run();
+                entityManager.flush();
+                firstPrepared.countDown();
+                awaitLatch(releaseFirst);
+                if (rollbackFirst) {
+                    status.setRollbackOnly();
+                }
+            }));
+            awaitLatch(firstPrepared);
+            Future<?> second = executor.submit(() -> {
+                secondStarted.countDown();
+                secondAction.run();
+            });
+            awaitLatch(secondStarted);
+            assertThatThrownBy(() -> second.get(200, TimeUnit.MILLISECONDS))
+                .isInstanceOf(TimeoutException.class);
+
+            releaseFirst.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private void awaitLatch(CountDownLatch latch) {
+        try {
+            assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("동시성 테스트 대기 중 중단", exception);
+        }
     }
 
     private Long saveOtherUser() {
