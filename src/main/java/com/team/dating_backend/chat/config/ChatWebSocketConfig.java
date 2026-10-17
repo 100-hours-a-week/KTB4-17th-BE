@@ -6,7 +6,8 @@ import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.config.SecurityProperties;
 import io.jsonwebtoken.JwtException;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
@@ -18,6 +19,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -26,9 +28,9 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 
 @Configuration
 @EnableWebSocketMessageBroker
-@RequiredArgsConstructor
 public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    private static final String PRESENCE_DESTINATION = "/app/chat-rooms/presence";
     private static final Set<String> USER_SUBSCRIPTIONS = Set.of(
         "/user/queue/chat-messages",
         "/user/queue/chat-read-receipts",
@@ -37,9 +39,20 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final SecurityProperties securityProperties;
     private final JwtService jwtService;
+    private final ObjectProvider<MessageChannel> clientOutboundChannel;
+
+    public ChatWebSocketConfig(
+        SecurityProperties securityProperties,
+        JwtService jwtService,
+        @Qualifier("clientOutboundChannel") ObjectProvider<MessageChannel> clientOutboundChannel) {
+        this.securityProperties = securityProperties;
+        this.jwtService = jwtService;
+        this.clientOutboundChannel = clientOutboundChannel;
+    }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.setPreserveReceiveOrder(true);
         registry.addEndpoint("/ws/chat")
             .setAllowedOrigins(
                 securityProperties.getAllowedOrigins().toArray(String[]::new));
@@ -48,6 +61,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/queue");
+        registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
     }
 
@@ -63,22 +77,33 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 }
 
                 StompCommand command = accessor.getCommand();
-                if (command == StompCommand.SEND) {
-                    return null;
-                }
-
                 if (command == StompCommand.CONNECT || command == StompCommand.STOMP) {
-                    authenticate(accessor);
+                    try {
+                        authenticate(accessor);
+                    } catch (MessageDeliveryException exception) {
+                        StompHeaderAccessor error = StompHeaderAccessor.create(StompCommand.ERROR);
+                        error.setSessionId(accessor.getSessionId());
+                        error.setMessage(exception.getMessage());
+                        error.setLeaveMutable(true);
+                        clientOutboundChannel.getObject().send(
+                            MessageBuilder.createMessage(new byte[0], error.getMessageHeaders()));
+                        return null;
+                    }
                 }
 
                 if (command == StompCommand.CONNECT || command == StompCommand.STOMP
-                    || command == StompCommand.SUBSCRIBE) {
+                    || command == StompCommand.SUBSCRIBE || command == StompCommand.SEND) {
                     if (!(accessor.getUser() instanceof Authentication authentication)
                         || !authentication.isAuthenticated()
                         || !(authentication
                             .getPrincipal() instanceof ServiceAuthenticationPrincipal)) {
                         return null;
                     }
+                }
+
+                if (command == StompCommand.SEND
+                    && !PRESENCE_DESTINATION.equals(accessor.getDestination())) {
+                    return null;
                 }
 
                 if (command == StompCommand.SUBSCRIBE) {
