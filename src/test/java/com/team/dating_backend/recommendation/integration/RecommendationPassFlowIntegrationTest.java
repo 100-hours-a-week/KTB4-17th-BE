@@ -14,6 +14,7 @@ import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.service.LikeSendService;
+import com.team.dating_backend.notification.service.NotificationCreateService;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.controller.RecommendationBatchController;
 import com.team.dating_backend.recommendation.controller.RecommendationPassController;
@@ -150,6 +151,7 @@ class RecommendationPassFlowIntegrationTest {
     @BeforeEach
     void setUp() {
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
+        jdbcTemplate.update("delete from notifications");
         jdbcTemplate.update("delete from recommendation_passes");
         jdbcTemplate.update("delete from user_blocks");
         jdbcTemplate.update("delete from likes");
@@ -521,6 +523,7 @@ class RecommendationPassFlowIntegrationTest {
             "com.team.dating_backend.user.repository",
             "com.team.dating_backend.recommendation.repository",
             "com.team.dating_backend.matching.repository",
+            "com.team.dating_backend.notification.repository",
             "com.team.dating_backend.profile.repository",
             "com.team.dating_backend.chat.repository"
         }
@@ -536,6 +539,7 @@ class RecommendationPassFlowIntegrationTest {
             RecommendationBatchGetService.class,
             RecommendationItemGetService.class,
             LikeSendService.class,
+            NotificationCreateService.class,
             UserPairLockRepository.class,
             ChatRoomCreateService.class,
             GlobalExceptionHandler.class,
