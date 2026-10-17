@@ -18,6 +18,7 @@ import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
+import com.team.dating_backend.notification.service.ChatNotificationReadService;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,7 @@ class ChatMessageReadServiceTest {
     private ChatParticipantRepository chatParticipantRepository;
     private ChatMessageRepository chatMessageRepository;
     private ApplicationEventPublisher eventPublisher;
+    private ChatNotificationReadService chatNotificationReadService;
     private ChatMessageReadService service;
     private ChatRoom room;
     private ChatParticipant viewer;
@@ -48,11 +50,13 @@ class ChatMessageReadServiceTest {
         chatParticipantRepository = mock(ChatParticipantRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        chatNotificationReadService = mock(ChatNotificationReadService.class);
         service = new ChatMessageReadService(
             chatRoomRepository,
             chatParticipantRepository,
             chatMessageRepository,
-            eventPublisher);
+            eventPublisher,
+            chatNotificationReadService);
 
         LocalDateTime now = LocalDateTime.of(2026, 9, 27, 10, 0);
         Match match = new Match(VIEWER_ID, OTHER_ID, now.minusDays(1));
@@ -77,6 +81,7 @@ class ChatMessageReadServiceTest {
         assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
         assertThat(response.lastReadMessageId()).isEqualTo(READ_MESSAGE_ID);
         assertThat(viewer.getLastReadMessageId()).isEqualTo(READ_MESSAGE_ID);
+        verify(chatNotificationReadService).markAsRead(VIEWER_ID, ROOM_ID);
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         ChatMessageReadRequestedEvent event = (ChatMessageReadRequestedEvent) eventCaptor.getValue();
@@ -96,6 +101,7 @@ class ChatMessageReadServiceTest {
             ROOM_ID, VIEWER_ID, new ChatMessageReadRequest(600L));
 
         assertThat(response.lastReadMessageId()).isEqualTo(700L);
+        verify(chatNotificationReadService).markAsRead(VIEWER_ID, ROOM_ID);
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         ChatMessageReadRequestedEvent event = (ChatMessageReadRequestedEvent) eventCaptor.getValue();
@@ -114,7 +120,7 @@ class ChatMessageReadServiceTest {
                 ((ChatBusinessException) exception).getErrorCode())
                 .isEqualTo(ChatErrorCode.INVALID_CHAT_MESSAGE_READ_CURSOR));
         assertThat(viewer.getLastReadMessageId()).isNull();
-        verifyNoInteractions(eventPublisher);
+        verifyNoInteractions(eventPublisher, chatNotificationReadService);
     }
 
     private ChatParticipant participant(Long participantId, Long userId) {

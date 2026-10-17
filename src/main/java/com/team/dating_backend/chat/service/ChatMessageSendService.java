@@ -11,10 +11,16 @@ import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
+import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.notification.enums.ChatNotificationTemplate;
+import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -41,6 +47,9 @@ public class ChatMessageSendService {
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
     private final FileRepository fileRepository;
+    private final ChatRoomPresenceRegistry presenceRegistry;
+    private final NotificationCreateService notificationCreateService;
+    private final ProfileRepository profileRepository;
 
     @Transactional
     public ChatMessageCreateResponse sendTextMessage(
@@ -78,7 +87,7 @@ public class ChatMessageSendService {
         }
 
         validateRequestShape(request);
-        requireSendableRoom(room, participants, sender);
+        ChatParticipant receiver = requireSendableRoom(room, participants, sender);
 
         File imageFile = findImageFile(senderUserId, request);
         if (!rateLimiter.tryAcquire(senderUserId)) {
@@ -91,6 +100,17 @@ public class ChatMessageSendService {
             : ChatMessage.image(room, sender, request.clientMessageId(), imageFile, now);
         ChatMessage message = chatMessageRepository.save(newMessage);
         outboxRepository.save(new ChatMessageOutbox(message.getId(), now));
+
+        if (!presenceRegistry.isViewingChatRoom(receiver.getUserId(), chatRoomId)) {
+            String senderNickname = profileRepository.findByUserIdAndDeletedAtIsNull(senderUserId)
+                .map(Profile::getNickname)
+                .orElse(null);
+            ChatNotificationTemplate template = ChatNotificationTemplate.CHAT_MESSAGE;
+            notificationCreateService.createNotification(
+                receiver.getUserId(), NotificationType.CHAT_MESSAGE,
+                template.getTitle(), template.formatBody(senderNickname),
+                template.getTargetType(), chatRoomId);
+        }
 
         return new ChatMessageCreateResponse(
             message.getId(), message.getCreatedAt(), message.getImageFileId());
@@ -133,7 +153,7 @@ public class ChatMessageSendService {
         return imageFile;
     }
 
-    private void requireSendableRoom(
+    private ChatParticipant requireSendableRoom(
         ChatRoom room, List<ChatParticipant> participants, ChatParticipant sender) {
         if (participants.size() != 2) {
             throw new ChatBusinessException(ChatErrorCode.INTERNAL_SERVER_ERROR);
@@ -153,6 +173,8 @@ public class ChatMessageSendService {
                 sender.getUserId(), receiver.getUserId())) {
             throw new ChatBusinessException(ChatErrorCode.CHAT_ROOM_NOT_ACTIVE);
         }
+
+        return receiver;
     }
 
     private boolean isActiveUser(Long userId) {

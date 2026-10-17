@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -15,6 +19,14 @@ import com.team.dating_backend.chat.config.ChatWebSocketConfig;
 import com.team.dating_backend.chat.controller.ChatExceptionHandler;
 import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
+import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
+import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
+import com.team.dating_backend.chat.enums.ChatRoomPresenceAction;
+import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
+import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
+import com.team.dating_backend.chat.service.ChatRoomPresenceService;
+import com.team.dating_backend.notification.service.ChatNotificationReadService;
+import com.team.dating_backend.notification.service.NotificationCreateService;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
@@ -46,6 +58,8 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +71,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -125,6 +140,15 @@ class ChatMessageFlowIntegrationTest {
     @Autowired
     private SimpUserRegistry simpUserRegistry;
 
+    @Autowired
+    private ChatRoomPresenceRegistry presenceRegistry;
+
+    @MockitoSpyBean
+    private ChatRoomPresenceService presenceService;
+
+    @MockitoBean
+    private ChatMessageRateLimiter rateLimiter;
+
     @MockitoBean
     private ProfileImageGetService profileImageGetService;
 
@@ -132,13 +156,24 @@ class ChatMessageFlowIntegrationTest {
     private UserAuthenticationService userAuthenticationService;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final BlockingQueue<ChatRoomPresenceRequest> completedPresenceRequests = new LinkedBlockingQueue<>();
 
     @BeforeEach
     void setUpDatabase() {
         given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
+        given(rateLimiter.tryAcquire(anyLong())).willReturn(true);
+        completedPresenceRequests.clear();
+        doAnswer(invocation -> {
+            try {
+                return invocation.callRealMethod();
+            } finally {
+                completedPresenceRequests.add(invocation.getArgument(2));
+            }
+        }).when(presenceService).updatePresence(anyLong(), anyString(), any(), anyMap());
 
+        jdbcTemplate.update("delete from notifications");
         jdbcTemplate.update("delete from chat_message_outbox");
         jdbcTemplate.update("delete from chat_messages");
         jdbcTemplate.update("delete from files");
@@ -206,6 +241,10 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
+            assertEquals(1, countChatNotifications());
+            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
+                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
+                String.class, RECEIVER_USER_ID));
             assertThat(sent.body()).contains("\"messageId\":" + messageId);
 
             HttpResponse<String> retry = postMessage(senderToken, clientMessageId, MESSAGE_TEXT);
@@ -213,6 +252,7 @@ class ChatMessageFlowIntegrationTest {
             assertThat(retry.body()).contains("\"messageId\":" + messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
+            assertEquals(1, countChatNotifications());
 
             HttpResponse<String> conflict = postMessage(
                 senderToken, clientMessageId, "같은 ID의 다른 내용");
@@ -242,9 +282,18 @@ class ChatMessageFlowIntegrationTest {
             HttpResponse<String> senderHistoryBeforeRead = getMessageHistory(senderToken);
             assertThat(senderHistoryBeforeRead.body()).contains("\"unreadCount\":1");
 
+            HttpResponse<String> secondMessage = postMessage(
+                senderToken, UUID.randomUUID(), "두 번째 메시지");
+            assertEquals(201, secondMessage.statusCode(), secondMessage.body());
+            assertEquals(2, countChatNotifications());
+
             HttpResponse<String> read = postRead(receiverToken, messageId);
             assertEquals(200, read.statusCode(), read.body());
             assertThat(read.body()).contains("\"lastReadMessageId\":" + messageId);
+            assertEquals(0, jdbcTemplate.queryForObject(
+                "select count(*) from notifications where user_id = ? "
+                    + "and type = 'CHAT_MESSAGE' and read_at is null",
+                Integer.class, RECEIVER_USER_ID));
 
             ChatMessageReadReceiptEvent readReceipt = readReceiptEvents.poll(5, TimeUnit.SECONDS);
             assertNotNull(readReceipt);
@@ -302,6 +351,10 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals("IMAGE", jdbcTemplate.queryForObject(
                 "select message_type from chat_messages where id = ?", String.class, messageId));
+            assertEquals(1, countChatNotifications());
+            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
+                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
+                String.class, RECEIVER_USER_ID));
 
             outboxPublishJob.publishDueMessages();
             ChatMessageCreatedEvent event = receiverEvents.poll(5, TimeUnit.SECONDS);
@@ -319,6 +372,155 @@ class ChatMessageFlowIntegrationTest {
             disconnect(receiverSession);
             stompClient.stop();
         }
+    }
+
+    @Test
+    void 여러_연결의_화면_상태와_연결_종료에_따라_알림을_생략하거나_생성한다() throws Exception {
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
+        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
+        StompSession pc = null;
+        StompSession mobile = null;
+        try {
+            pc = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
+            mobile = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
+            sendPresenceAndAwait(pc, ChatRoomPresenceAction.ENTER);
+            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
+            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "첫 번째").statusCode());
+            assertEquals(0, countChatNotifications());
+
+            disconnect(pc);
+            assertTrue(awaitCondition(() -> {
+                SimpUser user = simpUserRegistry.getUser(RECEIVER_USER_ID.toString());
+                return user != null && user.getSessions().size() == 1;
+            }));
+            assertThat(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).isTrue();
+            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "두 번째").statusCode());
+            assertEquals(0, countChatNotifications());
+
+            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.LEAVE);
+            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "세 번째").statusCode());
+            assertEquals(1, countChatNotifications());
+
+            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
+            disconnect(mobile);
+            assertTrue(awaitCondition(() -> !presenceRegistry.isViewingChatRoom(
+                RECEIVER_USER_ID, CHAT_ROOM_ID)));
+            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "네 번째").statusCode());
+            assertEquals(2, countChatNotifications());
+        } finally {
+            disconnect(pc);
+            disconnect(mobile);
+            client.stop();
+        }
+    }
+
+    @Test
+    void 같은_연결의_입장_검증이_느려도_뒤따르는_이탈을_수신_순서대로_처리한다() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch leaveStarted = new CountDownLatch(1);
+        CountDownLatch left = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ChatRoomPresenceRequest request = invocation.getArgument(2);
+            if (request.action() == ChatRoomPresenceAction.ENTER) {
+                entered.countDown();
+                assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            } else if (request.action() == ChatRoomPresenceAction.LEAVE) {
+                leaveStarted.countDown();
+            }
+            Object result = invocation.callRealMethod();
+            if (request.action() == ChatRoomPresenceAction.LEAVE) {
+                left.countDown();
+            }
+            return result;
+        }).when(presenceService).updatePresence(anyLong(), anyString(), any(), anyMap());
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+        StompSession session = null;
+        try {
+            session = connectAndSubscribe(client,
+                jwtService.createServiceAuthToken(RECEIVER_USER_ID), new LinkedBlockingQueue<>());
+            session.send("/app/chat-rooms/presence",
+                new ChatRoomPresenceRequest(CHAT_ROOM_ID, ChatRoomPresenceAction.ENTER));
+            assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+            session.send("/app/chat-rooms/presence",
+                new ChatRoomPresenceRequest(CHAT_ROOM_ID, ChatRoomPresenceAction.LEAVE));
+            assertThat(leaveStarted.await(150, TimeUnit.MILLISECONDS)).isFalse();
+            release.countDown();
+            assertThat(left.await(3, TimeUnit.SECONDS)).isTrue();
+            assertThat(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).isFalse();
+        } finally {
+            release.countDown();
+            disconnect(session);
+            client.stop();
+        }
+    }
+
+    @Test
+    void 알림_생성이_실패하면_메시지와_Outbox도_함께_롤백한다() throws Exception {
+        jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_notification "
+            + "CHECK (type <> 'CHAT_MESSAGE')");
+        try {
+            HttpResponse<String> response = postMessage(
+                jwtService.createServiceAuthToken(SENDER_USER_ID), UUID.randomUUID(), MESSAGE_TEXT);
+
+            assertEquals(500, response.statusCode(), response.body());
+            assertEquals(0, countMessages());
+            assertEquals(0, countOutboxes());
+            assertEquals(0, countChatNotifications());
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE notifications DROP CHECK test_reject_chat_notification");
+        }
+    }
+
+    @Test
+    void 알림_읽음_갱신이_실패하면_채팅_읽음_위치도_롤백한다() throws Exception {
+        assertEquals(201, postMessage(jwtService.createServiceAuthToken(SENDER_USER_ID),
+            UUID.randomUUID(), MESSAGE_TEXT).statusCode());
+        Long messageId = jdbcTemplate.queryForObject(
+            "select id from chat_messages where chat_room_id = ?", Long.class, CHAT_ROOM_ID);
+        jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_read "
+            + "CHECK (type <> 'CHAT_MESSAGE' OR read_at IS NULL)");
+        try {
+            HttpResponse<String> response = postRead(
+                jwtService.createServiceAuthToken(RECEIVER_USER_ID), messageId);
+
+            assertEquals(500, response.statusCode(), response.body());
+            assertThat(jdbcTemplate.queryForObject(
+                "select last_read_message_id from chat_participants "
+                    + "where chat_room_id = ? and user_id = ?",
+                Long.class, CHAT_ROOM_ID, RECEIVER_USER_ID)).isNull();
+            assertThat(jdbcTemplate.queryForObject(
+                "select read_at from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
+                Timestamp.class, RECEIVER_USER_ID)).isNull();
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE notifications DROP CHECK test_reject_chat_read");
+        }
+    }
+
+    private void sendPresenceAndAwait(StompSession session, ChatRoomPresenceAction action)
+        throws InterruptedException {
+        ChatRoomPresenceRequest request = new ChatRoomPresenceRequest(CHAT_ROOM_ID, action);
+        session.send("/app/chat-rooms/presence", request);
+        assertThat(completedPresenceRequests.poll(3, TimeUnit.SECONDS)).isEqualTo(request);
+    }
+
+    private boolean awaitCondition(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(10);
+        }
+        return false;
+    }
+
+    private int countChatNotifications() {
+        return jdbcTemplate.queryForObject(
+            "select count(*) from notifications where type = 'CHAT_MESSAGE'", Integer.class);
     }
 
     private StompSession connectAndSubscribe(
@@ -489,6 +691,8 @@ class ChatMessageFlowIntegrationTest {
         basePackages = {
             "com.team.dating_backend.chat.repository",
             "com.team.dating_backend.user.repository",
+            "com.team.dating_backend.notification.repository",
+            "com.team.dating_backend.profile.repository",
             "com.team.dating_backend.file.repository"
         }
     )
@@ -497,6 +701,12 @@ class ChatMessageFlowIntegrationTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRoomPresenceController.class,
+            ChatRoomPresenceService.class,
+            ChatRoomPresenceRegistry.class,
+            ChatRoomPresenceDisconnectListener.class,
+            NotificationCreateService.class,
+            ChatNotificationReadService.class,
             ChatMessageSendController.class,
             ChatMessageListController.class,
             ChatMessageReadController.class,
