@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.entity;
 
+import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomEndReason;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.matching.entity.Match;
@@ -88,6 +89,15 @@ public class ChatRoom {
             status = ChatRoomStatus.ENDED;
             endReason = reason;
             this.endedAt = endedAt;
+        }
+    }
+
+    public void deactivateWhenAllLeft() {
+        if (status == ChatRoomStatus.ENDED
+            && !participants.isEmpty()
+            && participants.stream()
+                .allMatch(participant -> participant.getStatus() == ChatParticipantStatus.LEFT)) {
+            status = ChatRoomStatus.INACTIVE;
         }
     }
 }

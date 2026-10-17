@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.service;
 
 import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
+import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantDisplayRow;
 import com.team.dating_backend.chat.repository.ChatRoomParticipantDisplayRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
@@ -27,6 +28,7 @@ public class ChatRoomParticipantDisplayService {
     private static final String UNKNOWN_NICKNAME = "알 수 없음";
 
     private final ChatRoomParticipantDisplayRepository participantDisplayRepository;
+    private final ChatParticipantRepository chatParticipantRepository;
     private final ProfileImageGetService profileImageGetService;
     private final UserBlockRepository userBlockRepository;
     private final UserRepository userRepository;
@@ -43,6 +45,8 @@ public class ChatRoomParticipantDisplayService {
             userBlockRepository.findActiveBlockerUserIds(viewerUserId, distinctUserIds));
         maskedUserIds.addAll(userRepository.findIdsByStatus(
             distinctUserIds, UserStatus.WITHDRAWN));
+        maskedUserIds.addAll(chatParticipantRepository.findLeftUserIdsVisibleTo(
+            viewerUserId, distinctUserIds));
         List<Long> visibleUserIds = distinctUserIds.stream()
             .filter(userId -> !maskedUserIds.contains(userId))
             .toList();

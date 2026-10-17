@@ -37,6 +37,7 @@ public class UserProfileGetService {
         if (viewerUserId == null || userId == null || userId <= 0
             || viewerUserId.equals(userId)
             || userBlockRepository.existsActiveBlockBetween(viewerUserId, userId)
+            || chatRoomRepository.existsLeftParticipantBetweenUsers(viewerUserId, userId)
             || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
                 && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
                 && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(

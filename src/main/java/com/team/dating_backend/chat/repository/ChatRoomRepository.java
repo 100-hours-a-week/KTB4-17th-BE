@@ -16,6 +16,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
 
+    @Query("select room.match.id from ChatRoom room where room.id = :chatRoomId")
+    Optional<Long> findMatchIdById(@Param("chatRoomId") Long chatRoomId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select room from ChatRoom room
@@ -59,6 +62,22 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     boolean existsVisibleBetweenUsers(
         @Param("viewerUserId") Long viewerUserId,
         @Param("targetUserId") Long targetUserId);
+
+    @Query("""
+        select count(room) > 0
+        from ChatRoom room
+        join ChatParticipant firstParticipant on firstParticipant.chatRoom.id = room.id
+        join ChatParticipant secondParticipant on secondParticipant.chatRoom.id = room.id
+        where firstParticipant.userId = :firstUserId
+          and secondParticipant.userId = :secondUserId
+          and (
+              firstParticipant.status = com.team.dating_backend.chat.enums.ChatParticipantStatus.LEFT
+              or secondParticipant.status = com.team.dating_backend.chat.enums.ChatParticipantStatus.LEFT
+          )
+        """)
+    boolean existsLeftParticipantBetweenUsers(
+        @Param("firstUserId") Long firstUserId,
+        @Param("secondUserId") Long secondUserId);
 
     @Query("select room from ChatRoom room where room.match.id = :matchId")
     Optional<ChatRoom> findByMatchId(@Param("matchId") Long matchId);

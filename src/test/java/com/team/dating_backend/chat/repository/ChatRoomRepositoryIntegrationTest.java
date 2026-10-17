@@ -40,6 +40,9 @@ class ChatRoomRepositoryIntegrationTest {
     private ChatRoomRepository chatRoomRepository;
 
     @Autowired
+    private ChatParticipantRepository chatParticipantRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
@@ -66,6 +69,23 @@ class ChatRoomRepositoryIntegrationTest {
         List<ChatRoomListRow> result = findRooms(null, null, 10);
 
         assertThat(result).extracting(ChatRoomListRow::chatRoomId).containsExactly(102L, 101L);
+    }
+
+    @Test
+    void 채팅방을_나간_사용자의_정보는_마스킹된다() {
+        insertRoom(106L, "ENDED", BASE_TIME.plusMinutes(1));
+        insertParticipants(106L, VIEWER_USER_ID, "ACTIVE", 20L);
+        jdbcTemplate.update(
+            "update chat_participants set status = 'LEFT', left_at = ? "
+                + "where chat_room_id = ? and user_id = ?",
+            Timestamp.valueOf(BASE_TIME.plusMinutes(2)), 106L, 20L);
+
+        assertThat(chatParticipantRepository.findLeftUserIdsVisibleTo(
+            VIEWER_USER_ID, List.of(20L, 30L))).containsExactly(20L);
+        assertThat(chatRoomRepository.existsLeftParticipantBetweenUsers(
+            VIEWER_USER_ID, 20L)).isTrue();
+        assertThat(chatRoomRepository.existsLeftParticipantBetweenUsers(
+            20L, VIEWER_USER_ID)).isTrue();
     }
 
     @Test

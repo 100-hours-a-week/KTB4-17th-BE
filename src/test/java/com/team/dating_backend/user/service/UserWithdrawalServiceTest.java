@@ -110,10 +110,10 @@ class UserWithdrawalServiceTest {
         terminationOrder.verify(likeTerminationService)
             .terminateForWithdrawal(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
-        terminationOrder.verify(chatRoomWithdrawalTerminationService)
+        terminationOrder.verify(matchWithdrawalTerminationService)
             .terminateForUser(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
-        terminationOrder.verify(matchWithdrawalTerminationService)
+        terminationOrder.verify(chatRoomWithdrawalTerminationService)
             .terminateForUser(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
         terminationOrder.verify(aiPracticeWithdrawalTerminationService)
@@ -159,7 +159,7 @@ class UserWithdrawalServiceTest {
     }
 
     @Test
-    void 채팅방_종료에_실패하면_Match_종료와_사용자_및_소셜계정_비식별화와_프로필_삭제를_실행하지_않고_예외를_전파한다() {
+    void 채팅방_종료에_실패하면_사용자와_소셜계정_및_프로필_후속처리를_실행하지_않고_예외를_전파한다() {
         User user = user(UserStatus.ACTIVE);
         ChatBusinessException failure = new ChatBusinessException(
             ChatErrorCode.INTERNAL_SERVER_ERROR);
@@ -172,8 +172,11 @@ class UserWithdrawalServiceTest {
         assertThatThrownBy(() -> service.withdraw(USER_ID)).isSameAs(failure);
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        verify(matchWithdrawalTerminationService)
+            .terminateForUser(
+                org.mockito.ArgumentMatchers.eq(USER_ID),
+                org.mockito.ArgumentMatchers.any(LocalDateTime.class));
         verifyNoInteractions(
-            matchWithdrawalTerminationService,
             aiPracticeWithdrawalTerminationService,
             aiSimulationWithdrawalTerminationService,
             authAccountRepository,
