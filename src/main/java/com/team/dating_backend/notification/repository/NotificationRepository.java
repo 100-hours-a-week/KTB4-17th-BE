@@ -65,6 +65,15 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         @Param("cursor") Long cursor,
         Pageable pageable);
 
+    @Query("""
+        select count(notification.id)
+        from Notification notification
+        where notification.user.id = :userId
+          and notification.deletedAt is null
+          and notification.readAt is null
+        """)
+    long countVisibleUnreadByUserId(@Param("userId") Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select notification

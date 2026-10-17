@@ -12,11 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
+import com.team.dating_backend.notification.dto.response.NotificationUnreadCountResponse;
 import com.team.dating_backend.notification.enums.NotificationCategory;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,13 +45,16 @@ class NotificationControllerTest {
 
     private NotificationDeleteService service;
     private NotificationListService listService;
+    private NotificationUnreadCountService unreadCountService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = mock(NotificationDeleteService.class);
         listService = mock(NotificationListService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new NotificationController(service, listService))
+        unreadCountService = mock(NotificationUnreadCountService.class);
+        mockMvc = MockMvcBuilders.standaloneSetup(
+            new NotificationController(service, listService, unreadCountService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalArgumentResolver())
             .build();
@@ -163,6 +168,42 @@ class NotificationControllerTest {
             .given(listService).getNotifications(USER_ID, NotificationCategory.ALL, null, 20);
 
         mockMvc.perform(get("/api/v1/notifications"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(content().string("{\"errorCode\":\"INTERNAL_SERVER_ERROR\"}"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, 3L})
+    void 미읽음_개수는_0도_정상_성공_응답으로_반환한다(long count) throws Exception {
+        given(unreadCountService.getUnreadCount(USER_ID))
+            .willReturn(new NotificationUnreadCountResponse(count));
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count"))
+            .andExpect(status().isOk())
+            .andExpect(content().json("""
+                {"message":"notification_unread_count_success","data":{"count":%d}}
+                """.formatted(count)));
+
+        verify(unreadCountService).getUnreadCount(USER_ID);
+        verifyNoInteractions(service, listService);
+    }
+
+    @Test
+    void 미읽음_개수_접근_거부는_403과_오류_코드만_반환한다() throws Exception {
+        willThrow(new NotificationBusinessException(NotificationErrorCode.REQUESTER_NOT_ACTIVE))
+            .given(unreadCountService).getUnreadCount(USER_ID);
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count"))
+            .andExpect(status().isForbidden())
+            .andExpect(content().string("{\"errorCode\":\"REQUESTER_NOT_ACTIVE\"}"));
+    }
+
+    @Test
+    void 미읽음_집계_실패는_0이_아닌_500과_오류_코드만_반환한다() throws Exception {
+        willThrow(new DataAccessResourceFailureException("집계 실패"))
+            .given(unreadCountService).getUnreadCount(USER_ID);
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count"))
             .andExpect(status().isInternalServerError())
             .andExpect(content().string("{\"errorCode\":\"INTERNAL_SERVER_ERROR\"}"));
     }

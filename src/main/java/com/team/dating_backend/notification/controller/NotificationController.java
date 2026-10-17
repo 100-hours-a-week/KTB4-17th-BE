@@ -2,11 +2,13 @@ package com.team.dating_backend.notification.controller;
 
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
+import com.team.dating_backend.notification.dto.response.NotificationUnreadCountResponse;
 import com.team.dating_backend.notification.enums.NotificationCategory;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +30,7 @@ public class NotificationController {
 
     private final NotificationDeleteService notificationDeleteService;
     private final NotificationListService notificationListService;
+    private final NotificationUnreadCountService notificationUnreadCountService;
 
     @GetMapping
     public ResponseEntity<SuccessResponse<NotificationListResponse>> getNotifications(
@@ -42,6 +45,14 @@ public class NotificationController {
         NotificationListResponse response = notificationListService.getNotifications(
             principal.userId(), parsedCategory, parsedCursor, parsedSize);
         return ResponseEntity.ok(SuccessResponse.of("notification_list_success", response));
+    }
+
+    @GetMapping("/unread-count")
+    public ResponseEntity<SuccessResponse<NotificationUnreadCountResponse>> getUnreadCount(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal) {
+        NotificationUnreadCountResponse response = notificationUnreadCountService.getUnreadCount(
+            principal.userId());
+        return ResponseEntity.ok(SuccessResponse.of("notification_unread_count_success", response));
     }
 
     @DeleteMapping("/{notificationId}")
