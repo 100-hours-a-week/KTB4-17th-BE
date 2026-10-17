@@ -15,6 +15,7 @@ import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
 import com.team.dating_backend.notification.service.NotificationReadService;
+import com.team.dating_backend.notification.service.ChatNotificationReadService;
 import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
@@ -54,6 +55,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -70,7 +72,8 @@ import org.testcontainers.mysql.MySQLContainer;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
     {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
-        NotificationUnreadCountService.class, NotificationReadService.class}
+        NotificationUnreadCountService.class, NotificationReadService.class,
+        ChatNotificationReadService.class}
 )
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
@@ -111,6 +114,9 @@ class NotificationRepositoryIntegrationTest {
     @Autowired
     private NotificationReadService readService;
 
+    @Autowired
+    private ChatNotificationReadService chatReadService;
+
     private TransactionTemplate transaction;
     private Long userId;
     private Long otherUserId;
@@ -147,6 +153,51 @@ class NotificationRepositoryIntegrationTest {
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
             Long.class, userId, "LIKE")).isEqualTo(2L);
+    }
+
+    @Test
+    void 채팅방_일괄_읽음은_해당_회원과_방의_미확인_채팅_알림만_갱신한다() {
+        otherUserId = saveOtherUser();
+        List<Long> ids = transaction.execute(status -> {
+            User owner = userRepository.getReferenceById(userId);
+            User other = userRepository.getReferenceById(otherUserId);
+            List<Notification> notifications = List.of(
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 20L, NOW),
+                new Notification(owner, NotificationType.MATCH, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "PROFILE", 10L, NOW),
+                new Notification(other, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW));
+            notifications.get(6).markAsRead(NOW.minusMinutes(1));
+            notifications.get(7).markAsDeleted(NOW);
+            return repository.saveAllAndFlush(notifications).stream().map(Notification::getId).toList();
+        });
+
+        int updated = transaction.execute(status -> repository.markVisibleUnreadChatNotificationsAsRead(
+            userId, 10L, NOW.plusMinutes(1)));
+        int repeated = transaction.execute(status -> repository.markVisibleUnreadChatNotificationsAsRead(
+            userId, 10L, NOW.plusMinutes(2)));
+
+        assertThat(updated).isEqualTo(2);
+        assertThat(repeated).isZero();
+        for (int index = 0; index < ids.size(); index++) {
+            Notification notification = repository.findById(ids.get(index)).orElseThrow();
+            if (index < 2) {
+                assertThat(notification.getReadAt()).isEqualTo(NOW.plusMinutes(1));
+            } else if (index == 6) {
+                assertThat(notification.getReadAt()).isEqualTo(NOW.minusMinutes(1));
+            } else {
+                assertThat(notification.getReadAt()).isNull();
+            }
+        }
+    }
+
+    @Test
+    void 채팅_알림_읽음은_기존_트랜잭션_없이_실행할_수_없다() {
+        assertThatThrownBy(() -> chatReadService.markAsRead(userId, 10L))
+            .isInstanceOf(IllegalTransactionStateException.class);
     }
 
     @Test
