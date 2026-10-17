@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,6 +19,7 @@ import com.team.dating_backend.notification.repository.NotificationRepository;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
@@ -35,7 +37,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -62,7 +65,8 @@ import tools.jackson.databind.ObjectMapper;
         ApiAccessDeniedHandler.class,
         SecurityConfigTest.SecurityProbeController.class,
         NotificationAccessService.class,
-        NotificationListService.class
+        NotificationListService.class,
+        NotificationUnreadCountService.class
     }
 )
 class SecurityConfigTest {
@@ -173,20 +177,22 @@ class SecurityConfigTest {
             .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
     }
 
-    @Test
-    void 목록_조회는_미인증_요청을_401로_차단하고_DB를_조회하지_않는다() throws Exception {
-        mockMvc.perform(get("/api/v1/notifications"))
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/notifications", "/api/v1/notifications/unread-count"})
+    void 알림_조회는_미인증_요청을_401로_차단하고_DB를_조회하지_않는다(String path) throws Exception {
+        mockMvc.perform(get(path))
             .andExpect(status().isUnauthorized())
             .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
 
         verifyNoInteractions(userRepository, notificationRepository);
     }
 
-    @Test
-    void 목록_조회는_유효하지_않은_토큰을_401로_차단한다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/notifications", "/api/v1/notifications/unread-count"})
+    void 알림_조회는_유효하지_않은_토큰을_401로_차단한다(String path) throws Exception {
         given(jwtService.parseServiceAuthToken("invalid-token")).willThrow(new JwtException("invalid"));
 
-        mockMvc.perform(get("/api/v1/notifications")
+        mockMvc.perform(get(path)
             .header("Authorization", "Bearer invalid-token"))
             .andExpect(status().isUnauthorized())
             .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
@@ -194,12 +200,13 @@ class SecurityConfigTest {
         verifyNoInteractions(userRepository, notificationRepository);
     }
 
-    @Test
-    void 인증_계층에서_회원_접근을_거부하면_목록_Service_진입_전에_401을_반환한다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/notifications", "/api/v1/notifications/unread-count"})
+    void 인증_계층에서_회원_접근을_거부하면_조회_Service_진입_전에_401을_반환한다(String path) throws Exception {
         given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
         given(userAuthenticationService.isAuthenticationAllowed(42L)).willReturn(false);
 
-        mockMvc.perform(get("/api/v1/notifications")
+        mockMvc.perform(get(path)
             .header("Authorization", "Bearer service-token"))
             .andExpect(status().isUnauthorized())
             .andExpect(content().string("{\"errorCode\":\"AUTH_REQUIRED\"}"));
@@ -208,14 +215,21 @@ class SecurityConfigTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = UserStatus.class, names = {"ONBOARDING", "SUSPENDED"})
-    void 인증을_통과한_비ACTIVE_회원은_목록_조회_전에_403으로_차단한다(UserStatus status) throws Exception {
+    @CsvSource(
+        {
+            "/api/v1/notifications,ONBOARDING",
+            "/api/v1/notifications,SUSPENDED",
+            "/api/v1/notifications/unread-count,ONBOARDING",
+            "/api/v1/notifications/unread-count,SUSPENDED"
+        }
+    )
+    void 인증을_통과한_비ACTIVE_회원은_알림_조회_전에_403으로_차단한다(String path, UserStatus status) throws Exception {
         given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
         User user = mock(User.class);
         given(user.getStatus()).willReturn(status);
         given(userRepository.findById(42L)).willReturn(Optional.of(user));
 
-        mockMvc.perform(get("/api/v1/notifications")
+        mockMvc.perform(get(path)
             .header("Authorization", "Bearer service-token"))
             .andExpect(status().isForbidden())
             .andExpect(content().string("{\"errorCode\":\"REQUESTER_NOT_ACTIVE\"}"));
@@ -243,11 +257,31 @@ class SecurityConfigTest {
     }
 
     @Test
+    void ACTIVE_회원의_미읽음_집계는_Principal의_ID로_실제_Service에_연결된다() throws Exception {
+        given(jwtService.parseServiceAuthToken("service-token")).willReturn(42L);
+        User user = mock(User.class);
+        given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(userRepository.findById(42L)).willReturn(Optional.of(user));
+        given(notificationRepository.countVisibleUnreadByUserId(42L)).willReturn(3L);
+
+        mockMvc.perform(get("/api/v1/notifications/unread-count")
+            .header("Authorization", "Bearer service-token"))
+            .andExpect(status().isOk())
+            .andExpect(content().json("""
+                {"message":"notification_unread_count_success","data":{"count":3}}
+                """));
+
+        verify(notificationRepository).countVisibleUnreadByUserId(42L);
+        verifyNoMoreInteractions(notificationRepository);
+    }
+
+    @Test
     void SSE의_GET_ASYNC_재디스패치만_인증없이_후속_처리를_허용한다() throws Exception {
         assertEquals(204, asyncStatus("GET", "/api/v1/notifications/stream"));
         assertEquals(401, asyncStatus("GET", "/api/v1/security/protected"));
         assertEquals(401, asyncStatus("POST", "/api/v1/notifications/stream"));
         assertEquals(401, asyncStatus("GET", "/api/v1/notifications"));
+        assertEquals(401, asyncStatus("GET", "/api/v1/notifications/unread-count"));
     }
 
     private int asyncStatus(String method, String path) throws Exception {

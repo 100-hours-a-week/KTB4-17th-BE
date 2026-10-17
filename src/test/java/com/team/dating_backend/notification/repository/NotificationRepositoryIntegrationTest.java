@@ -12,6 +12,7 @@ import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
 import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -62,7 +63,10 @@ import org.testcontainers.mysql.MySQLContainer;
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@Import({NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class})
+@Import(
+    {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
+        NotificationUnreadCountService.class}
+)
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
 
@@ -95,6 +99,9 @@ class NotificationRepositoryIntegrationTest {
 
     @Autowired
     private NotificationListService listService;
+
+    @Autowired
+    private NotificationUnreadCountService unreadCountService;
 
     private TransactionTemplate transaction;
     private Long userId;
@@ -475,6 +482,68 @@ class NotificationRepositoryIntegrationTest {
         assertThat(empty).isEqualTo(new NotificationListResponse(
             List.of(), new NotificationListResponse.PageInfo(null, false)));
         assertThat(beyond).isEqualTo(empty);
+    }
+
+    @Test
+    void 미읽음_집계는_모든_업무_유형을_포함하고_다른_회원과_읽음과_삭제_알림을_제외한다() {
+        otherUserId = saveOtherUser();
+        for (NotificationType type : NotificationType.values()) {
+            saveNotification(userId, type, NOW, false);
+            saveNotification(otherUserId, type, NOW, false);
+        }
+        Long readId = saveNotification(userId, NotificationType.LIKE, NOW, false);
+        saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, true);
+        Long readDeletedId = saveNotification(userId, NotificationType.NOTICE, NOW, true);
+        transaction.executeWithoutResult(status -> {
+            repository.findById(readId).orElseThrow().markAsRead(NOW.plusMinutes(1));
+            repository.findById(readDeletedId).orElseThrow().markAsRead(NOW.plusMinutes(1));
+        });
+        List<Map<String, Object>> before = jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId);
+
+        long count = unreadCountService.getUnreadCount(userId).count();
+
+        assertThat(count).isEqualTo(NotificationType.values().length);
+        assertThat(jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId)).isEqualTo(before);
+    }
+
+    @Test
+    void 알림이_없거나_집계에서_제외되는_알림만_있으면_0을_반환한다() {
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+        otherUserId = saveOtherUser();
+        saveNotification(otherUserId, NotificationType.LIKE, NOW, false);
+        saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, true);
+        Long readId = saveNotification(userId, NotificationType.NOTICE, NOW, false);
+        transaction.executeWithoutResult(status -> repository.findById(readId).orElseThrow()
+            .markAsRead(NOW.plusMinutes(1)));
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @Test
+    void 미읽음_개수에는_목록의_20건_제한을_적용하지_않는다() {
+        for (int index = 0; index < 25; index++) {
+            saveNotification(userId, NotificationType.AI_PRACTICE_CHAT_COMPLETED, NOW, false);
+        }
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(25L);
+    }
+
+    @Test
+    void 읽음과_삭제가_커밋되면_후속_미읽음_집계에서_제외한다() {
+        Long readId = saveNotification(userId, NotificationType.LIKE, NOW, false);
+        Long deleteId = saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, false);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(2L);
+
+        transaction.executeWithoutResult(status -> repository.findById(readId).orElseThrow()
+            .markAsRead(NOW.plusMinutes(1)));
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(1L);
+
+        deleteService.deleteNotification(userId, deleteId);
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
     }
 
     private Long saveOtherUser() {
