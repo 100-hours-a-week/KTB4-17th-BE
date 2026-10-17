@@ -10,6 +10,11 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.notification.enums.MatchingNotificationTemplate;
+import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -31,6 +36,8 @@ public class LikeSendService {
     private final MatchRepository matchRepository;
     private final UserPairLockRepository userPairLockRepository;
     private final ChatRoomCreateService chatRoomCreateService;
+    private final NotificationCreateService notificationCreateService;
+    private final ProfileRepository profileRepository;
 
     @Transactional
     public LikeCreateResponse sendLike(Long senderId, Long receiverId) {
@@ -74,7 +81,23 @@ public class LikeSendService {
             like.resolveLike(LikeStatus.MATCHED, matchedAt);
             Match match = matchRepository.save(
                 new Match(earlierLike.getSenderId(), earlierLike.getReceiverId(), matchedAt));
-            chatRoomCreateService.createChatRoom(match, matchedAt);
+            Long chatRoomId = chatRoomCreateService.createChatRoom(match, matchedAt);
+            MatchingNotificationTemplate template = MatchingNotificationTemplate.MATCH;
+            notificationCreateService.createNotification(
+                match.getSenderId(), NotificationType.MATCH,
+                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId);
+            notificationCreateService.createNotification(
+                match.getReceiverId(), NotificationType.MATCH,
+                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId);
+        } else {
+            String senderNickname = profileRepository.findByUserIdAndDeletedAtIsNull(senderId)
+                .map(Profile::getNickname)
+                .orElse(null);
+            MatchingNotificationTemplate template = MatchingNotificationTemplate.LIKE;
+            notificationCreateService.createNotification(
+                receiverId, NotificationType.LIKE,
+                template.getTitle(), template.formatBody(senderNickname),
+                template.getTargetType(), senderId);
         }
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }

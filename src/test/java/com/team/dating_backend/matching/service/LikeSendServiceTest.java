@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.chat.service.ChatRoomCreateService;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
@@ -20,6 +21,10 @@ import com.team.dating_backend.matching.enums.MatchStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -29,6 +34,9 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -40,6 +48,8 @@ class LikeSendServiceTest {
     private MatchRepository matchRepository;
     private UserPairLockRepository userPairLockRepository;
     private ChatRoomCreateService chatRoomCreateService;
+    private NotificationCreateService notificationCreateService;
+    private ProfileRepository profileRepository;
     private LikeSendService service;
 
     @BeforeEach
@@ -50,13 +60,17 @@ class LikeSendServiceTest {
         matchRepository = mock(MatchRepository.class);
         userPairLockRepository = mock(UserPairLockRepository.class);
         chatRoomCreateService = mock(ChatRoomCreateService.class);
+        notificationCreateService = mock(NotificationCreateService.class);
+        profileRepository = mock(ProfileRepository.class);
         service = new LikeSendService(
             userRepository,
             userBlockRepository,
             likeRepository,
             matchRepository,
             userPairLockRepository,
-            chatRoomCreateService);
+            chatRoomCreateService,
+            notificationCreateService,
+            profileRepository);
         User activeSender = user(UserStatus.ACTIVE);
         User activeReceiver = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(activeSender));
@@ -65,6 +79,10 @@ class LikeSendServiceTest {
 
     @Test
     void 좋아요_전송은_인증된_발신자와_수신자일_때_PENDING으로_저장한다() {
+        Profile profile = mock(Profile.class);
+        given(profile.getNickname()).willReturn("봄날");
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(2L))
+            .willReturn(Optional.of(profile));
         given(likeRepository.save(any(Like.class)))
             .willAnswer(
                 invocation -> {
@@ -89,6 +107,9 @@ class LikeSendServiceTest {
         verify(matchRepository, never()).save(any(Match.class));
         verify(chatRoomCreateService, never())
             .createChatRoom(any(Match.class), any(LocalDateTime.class));
+        verify(notificationCreateService).createNotification(
+            1L, NotificationType.LIKE, "새로운 좋아요", "봄날님이 당신에게 마음을 전했어요.", "PROFILE", 2L);
+        verifyNoMoreInteractions(notificationCreateService);
     }
 
     @Test
@@ -109,6 +130,8 @@ class LikeSendServiceTest {
                 ReflectionTestUtils.setField(match, "id", 30L);
                 return match;
             });
+        given(chatRoomCreateService.createChatRoom(any(Match.class), any(LocalDateTime.class)))
+            .willReturn(40L);
 
         var response = service.sendLike(1L, 2L);
 
@@ -129,6 +152,14 @@ class LikeSendServiceTest {
         assertThat(match.getStatus()).isEqualTo(MatchStatus.ACTIVE);
         assertThat(match.getMatchedAt()).isEqualTo(earlierLike.getResolvedAt());
         verify(chatRoomCreateService).createChatRoom(match, match.getMatchedAt());
+        verify(notificationCreateService).createNotification(
+            2L, NotificationType.MATCH, "매칭 성사",
+            "서로의 마음이 연결되었어요. 채팅을 시작해 보세요.", "CHAT_ROOM", 40L);
+        verify(notificationCreateService).createNotification(
+            1L, NotificationType.MATCH, "매칭 성사",
+            "서로의 마음이 연결되었어요. 채팅을 시작해 보세요.", "CHAT_ROOM", 40L);
+        verifyNoMoreInteractions(notificationCreateService);
+        verifyNoInteractions(profileRepository);
     }
 
     @Test
@@ -145,6 +176,26 @@ class LikeSendServiceTest {
         verify(matchRepository, never()).save(any(Match.class));
         verify(chatRoomCreateService, never())
             .createChatRoom(any(Match.class), any(LocalDateTime.class));
+        verify(notificationCreateService).createNotification(
+            2L, NotificationType.LIKE, "새로운 좋아요", "당신에게 마음이 도착했어요.", "PROFILE", 1L);
+        verifyNoMoreInteractions(notificationCreateService);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    void 닉네임이_비어_있으면_기본_문구로_좋아요_알림을_생성한다(String nickname) {
+        Profile profile = mock(Profile.class);
+        given(profile.getNickname()).willReturn(nickname);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(1L))
+            .willReturn(Optional.of(profile));
+        given(likeRepository.save(any(Like.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        service.sendLike(1L, 2L);
+
+        verify(notificationCreateService).createNotification(
+            2L, NotificationType.LIKE, "새로운 좋아요", "당신에게 마음이 도착했어요.", "PROFILE", 1L);
+        verifyNoMoreInteractions(notificationCreateService);
     }
 
     @Test
@@ -166,6 +217,7 @@ class LikeSendServiceTest {
             .createChatRoom(any(Match.class), any(LocalDateTime.class));
 
         assertThatThrownBy(() -> service.sendLike(1L, 2L)).isSameAs(failure);
+        verifyNoInteractions(notificationCreateService);
     }
 
     @Test
@@ -216,6 +268,7 @@ class LikeSendServiceTest {
 
         assertThatThrownBy(() -> service.sendLike(1L, 2L))
             .isInstanceOf(AuthenticationRequiredException.class);
+        verifyNoInteractions(notificationCreateService, profileRepository);
         verify(likeRepository, never()).save(any());
         verify(matchRepository, never()).save(any(Match.class));
         verify(chatRoomCreateService, never())
@@ -255,6 +308,7 @@ class LikeSendServiceTest {
             .satisfies(
                 exception -> assertThat(((LikeBusinessException) exception).getErrorCode())
                     .isEqualTo(errorCode));
+        verifyNoInteractions(notificationCreateService, profileRepository);
     }
 
     private User user(UserStatus status) {
