@@ -2,6 +2,7 @@ package com.team.dating_backend.user.service;
 
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.aipractice.service.AiPracticeWithdrawalTerminationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationWithdrawalTerminationService;
 import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService;
@@ -26,6 +27,7 @@ public class UserWithdrawalService {
 
     private final UserRepository userRepository;
     private final UserAuthAccountRepository userAuthAccountRepository;
+    private final AuthTokenService authTokenService;
     private final ProfileRepository profileRepository;
     private final ProfileImageRepository profileImageRepository;
     private final LikeTerminationService likeTerminationService;
@@ -43,6 +45,7 @@ public class UserWithdrawalService {
         }
 
         LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+        authTokenService.revokeAllForUser(userId);
         likeTerminationService.terminateForWithdrawal(userId, now);
         matchWithdrawalTerminationService.terminateForUser(userId, now);
         chatRoomWithdrawalTerminationService.terminateForUser(userId, now);

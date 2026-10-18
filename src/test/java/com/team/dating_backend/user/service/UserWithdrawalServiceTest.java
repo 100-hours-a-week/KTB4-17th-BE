@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.aipractice.service.AiPracticeWithdrawalTerminationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationWithdrawalTerminationService;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
@@ -47,6 +48,7 @@ class UserWithdrawalServiceTest {
 
     private UserRepository userRepository;
     private UserAuthAccountRepository authAccountRepository;
+    private AuthTokenService authTokenService;
     private ProfileRepository profileRepository;
     private ProfileImageRepository profileImageRepository;
     private LikeTerminationService likeTerminationService;
@@ -60,6 +62,7 @@ class UserWithdrawalServiceTest {
     void setUp() {
         userRepository = mock(UserRepository.class);
         authAccountRepository = mock(UserAuthAccountRepository.class);
+        authTokenService = mock(AuthTokenService.class);
         profileRepository = mock(ProfileRepository.class);
         profileImageRepository = mock(ProfileImageRepository.class);
         likeTerminationService = mock(LikeTerminationService.class);
@@ -68,6 +71,7 @@ class UserWithdrawalServiceTest {
         aiPracticeWithdrawalTerminationService = mock(AiPracticeWithdrawalTerminationService.class);
         aiSimulationWithdrawalTerminationService = mock(AiSimulationWithdrawalTerminationService.class);
         service = new UserWithdrawalService(userRepository, authAccountRepository,
+            authTokenService,
             profileRepository, profileImageRepository, likeTerminationService,
             chatRoomWithdrawalTerminationService, matchWithdrawalTerminationService,
             aiPracticeWithdrawalTerminationService, aiSimulationWithdrawalTerminationService);
@@ -99,6 +103,7 @@ class UserWithdrawalServiceTest {
         assertThat(profile.getDeletedAt()).isEqualTo(user.getWithdrawnAt());
         assertThat(image.getDeletedAt()).isEqualTo(user.getWithdrawnAt());
         verify(userRepository).findByIdForUpdate(USER_ID);
+        verify(authTokenService).revokeAllForUser(USER_ID);
         ArgumentCaptor<LocalDateTime> endedAtCaptor = ArgumentCaptor
             .forClass(LocalDateTime.class);
         InOrder terminationOrder = inOrder(
@@ -149,6 +154,7 @@ class UserWithdrawalServiceTest {
 
         verifyNoInteractions(
             authAccountRepository,
+            authTokenService,
             profileRepository,
             profileImageRepository,
             likeTerminationService,

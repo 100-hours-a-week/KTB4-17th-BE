@@ -1,10 +1,10 @@
 package com.team.dating_backend.auth.controller;
 
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
+import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
-import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.security.UserAuthenticationService;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -21,8 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthSessionController {
 
     private final AuthCookieFactory authCookieFactory;
-    private final JwtService jwtService;
-    private final UserAuthenticationService userAuthenticationService;
+    private final AuthTokenService authTokenService;
 
     @PostMapping("/token/refresh")
     public ResponseEntity<?> refresh(
@@ -31,21 +30,27 @@ public class AuthSessionController {
             required = false
         ) String refreshToken) {
         try {
-            Long userId = jwtService.parseRefreshAuthToken(refreshToken);
-            if (!userAuthenticationService.isAuthenticationAllowed(userId)) {
-                return authenticationRequired();
-            }
-            String accessToken = jwtService.createServiceAuthToken(userId);
+            IssuedAuthTokens tokens = authTokenService.rotate(refreshToken);
+            HttpHeaders headers = noStoreHeaders();
+            headers.add(
+                HttpHeaders.SET_COOKIE,
+                authCookieFactory.refreshToken(
+                    tokens.refreshToken(), tokens.refreshExpiresAt()).toString());
 
             return new ResponseEntity<>(
-                AuthTokenResponse.bearer(accessToken), noStoreHeaders(), HttpStatus.OK);
+                AuthTokenResponse.bearer(tokens.accessToken()), headers, HttpStatus.OK);
         } catch (JwtException exception) {
             return authenticationRequired();
         }
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout() {
+    public ResponseEntity<Void> logout(
+        @CookieValue(
+            value = AuthCookieFactory.REFRESH_TOKEN_COOKIE,
+            required = false
+        ) String refreshToken) {
+        authTokenService.revokeCurrent(refreshToken);
         HttpHeaders headers = noStoreHeaders();
         headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteAccessToken().toString());
         headers.add(HttpHeaders.SET_COOKIE, authCookieFactory.deleteRefreshToken().toString());

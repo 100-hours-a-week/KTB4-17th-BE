@@ -8,6 +8,8 @@ import com.team.dating_backend.auth.enums.AuthProvider;
 import io.jsonwebtoken.JwtException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -97,9 +99,15 @@ class JwtServiceTest {
 
     @Test
     void Refresh_토큰에서_userId를_추출하고_Service_토큰과_구분한다() {
-        String refreshToken = jwtService.createRefreshAuthToken(456L);
+        UUID sessionKey = UUID.randomUUID();
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        String refreshToken = jwtService.createRefreshAuthToken(
+            456L, sessionKey, expiresAt);
 
-        assertEquals(456L, jwtService.parseRefreshAuthToken(refreshToken));
+        var payload = jwtService.parseRefreshAuthToken(refreshToken);
+        assertEquals(456L, payload.userId());
+        assertEquals(sessionKey, payload.sessionKey());
+        assertEquals(expiresAt.getEpochSecond(), payload.expiresAt().getEpochSecond());
         assertThrows(
             JwtException.class,
             () -> jwtService.parseRefreshAuthToken(jwtService.createServiceAuthToken(456L)));
@@ -112,7 +120,8 @@ class JwtServiceTest {
         expiredProperties.setRefreshExpirationDays(-1);
 
         JwtService expiredJwtService = new JwtService(expiredProperties);
-        String expiredToken = expiredJwtService.createRefreshAuthToken(456L);
+        String expiredToken = expiredJwtService.createRefreshAuthToken(
+            456L, UUID.randomUUID(), Instant.now().minusSeconds(1));
 
         assertThrows(
             JwtException.class, () -> expiredJwtService.parseRefreshAuthToken(expiredToken));

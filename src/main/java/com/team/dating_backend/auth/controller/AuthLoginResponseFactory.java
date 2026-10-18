@@ -27,9 +27,7 @@ public class AuthLoginResponseFactory {
 
     public ResponseEntity<Void> create(SocialLoginResult loginResult, HttpSession session) {
         if (loginResult instanceof SocialLoginResult.Authenticated authenticated) {
-            String accessToken = jwtService.createServiceAuthToken(authenticated.userId());
-            String refreshToken = jwtService.createRefreshAuthToken(authenticated.userId());
-            String loginCode = oauthLoginCodeService.issue(accessToken, refreshToken, session);
+            String loginCode = oauthLoginCodeService.issue(authenticated.userId(), session);
 
             return redirect(
                 withLoginCode(destinationFor(authenticated.destination()), loginCode),

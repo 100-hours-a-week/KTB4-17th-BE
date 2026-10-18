@@ -10,9 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.auth.dto.IssuedAuthTokens;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.auth.service.OAuthLoginCodeService;
 import jakarta.servlet.http.HttpSession;
 import java.util.Optional;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -33,6 +35,9 @@ class AuthTokenControllerTest {
     private OAuthLoginCodeService oauthLoginCodeService;
 
     @MockitoBean
+    private AuthTokenService authTokenService;
+
+    @MockitoBean
     private AuthCookieFactory authCookieFactory;
 
     @Test
@@ -40,8 +45,12 @@ class AuthTokenControllerTest {
         throws Exception {
         MockHttpSession session = new MockHttpSession();
         given(oauthLoginCodeService.consume(eq("one-time-code"), any(HttpSession.class)))
-            .willReturn(Optional.of(new IssuedAuthTokens("service-token", "refresh-token")));
-        given(authCookieFactory.refreshToken("refresh-token"))
+            .willReturn(Optional.of(123L));
+        Instant refreshExpiresAt = Instant.now().plusSeconds(3600);
+        given(authTokenService.issue(123L))
+            .willReturn(new IssuedAuthTokens(
+                "service-token", "refresh-token", refreshExpiresAt));
+        given(authCookieFactory.refreshToken("refresh-token", refreshExpiresAt))
             .willReturn(
                 org.springframework.http.ResponseCookie.from("REFRESH_TOKEN", "refresh-token")
                     .httpOnly(true)

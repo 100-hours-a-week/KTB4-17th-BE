@@ -44,7 +44,8 @@ public class UserRegistrationController {
                 authCookieFactory.deleteAccessToken().toString())
             .header(
                 HttpHeaders.SET_COOKIE,
-                authCookieFactory.refreshToken(tokens.refreshToken()).toString())
+                authCookieFactory.refreshToken(
+                    tokens.refreshToken(), tokens.refreshExpiresAt()).toString())
             .header(
                 HttpHeaders.SET_COOKIE,
                 authCookieFactory.deletePendingRegistrationToken().toString())

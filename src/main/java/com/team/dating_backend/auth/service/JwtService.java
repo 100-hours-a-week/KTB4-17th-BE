@@ -2,6 +2,8 @@ package com.team.dating_backend.auth.service;
 
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
+import com.team.dating_backend.auth.dto.RefreshAuthTokenPayload;
+import com.team.dating_backend.auth.enums.AuthErrorCode;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -11,6 +13,7 @@ import io.jsonwebtoken.security.Keys;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,7 @@ public class JwtService {
     private static final String PROVIDER_CLAIM = "provider";
     private static final String PROVIDER_USER_ID_CLAIM = "provider_user_id";
     private static final String PURPOSE_CLAIM = "purpose";
+    private static final String SESSION_ID_CLAIM = "sid";
     private static final String PENDING_REGISTRATION_PURPOSE = "PENDING_REGISTRATION";
     private static final String SERVICE_AUTH_PURPOSE = "SERVICE_AUTH";
     private static final String REFRESH_AUTH_PURPOSE = "REFRESH_AUTH";
@@ -128,23 +132,24 @@ public class JwtService {
         }
     }
 
-    public String createRefreshAuthToken(Long userId) {
+    public String createRefreshAuthToken(
+        Long userId, UUID sessionKey, Instant expiresAt) {
         Instant issuedAt = Instant.now();
-        Instant expiresAt = issuedAt.plus(jwtProperties.getRefreshExpirationDays(),
-            ChronoUnit.DAYS);
 
         return Jwts.builder()
             .subject(userId.toString())
+            .id(UUID.randomUUID().toString())
             .claim(PURPOSE_CLAIM, REFRESH_AUTH_PURPOSE)
+            .claim(SESSION_ID_CLAIM, sessionKey.toString())
             .issuedAt(Date.from(issuedAt))
             .expiration(Date.from(expiresAt))
             .signWith(signingKey())
             .compact();
     }
 
-    public Long parseRefreshAuthToken(String token) {
+    public RefreshAuthTokenPayload parseRefreshAuthToken(String token) {
         if (token == null || token.isBlank()) {
-            throw new JwtException("Refresh auth token is missing");
+            throw new JwtException(AuthErrorCode.REFRESH_AUTH_TOKEN_MISSING.name());
         }
 
         Claims claims = Jwts.parser()
@@ -156,19 +161,30 @@ public class JwtService {
         String purpose = claims.get(PURPOSE_CLAIM, String.class);
 
         if (!REFRESH_AUTH_PURPOSE.equals(purpose)) {
-            throw new JwtException("Invalid refresh auth token purpose");
+            throw new JwtException(AuthErrorCode.INVALID_REFRESH_AUTH_TOKEN_PURPOSE.name());
         }
 
         String subject = claims.getSubject();
+        String sessionId = claims.get(SESSION_ID_CLAIM, String.class);
+        String tokenId = claims.getId();
 
-        if (subject == null || subject.isBlank()) {
-            throw new JwtException("Refresh auth token subject is missing");
+        if (subject == null || subject.isBlank()
+            || sessionId == null || sessionId.isBlank()
+            || tokenId == null || tokenId.isBlank()
+            || claims.getIssuedAt() == null
+            || claims.getExpiration() == null) {
+            throw new JwtException(AuthErrorCode.REFRESH_AUTH_TOKEN_CLAIM_MISSING.name());
         }
 
         try {
-            return Long.valueOf(subject);
-        } catch (NumberFormatException exception) {
-            throw new JwtException("Invalid refresh auth token subject", exception);
+            return new RefreshAuthTokenPayload(
+                Long.valueOf(subject),
+                UUID.fromString(sessionId),
+                UUID.fromString(tokenId),
+                claims.getIssuedAt().toInstant(),
+                claims.getExpiration().toInstant());
+        } catch (IllegalArgumentException exception) {
+            throw new JwtException(AuthErrorCode.INVALID_REFRESH_AUTH_TOKEN_CLAIM.name(), exception);
         }
     }
 }

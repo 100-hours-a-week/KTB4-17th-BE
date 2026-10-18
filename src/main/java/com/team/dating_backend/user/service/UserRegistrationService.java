@@ -5,6 +5,7 @@ import com.team.dating_backend.auth.dto.PendingRegistrationTokenPayload;
 import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.entity.User;
@@ -28,6 +29,7 @@ public class UserRegistrationService {
     private static final ZoneId REGISTRATION_AGE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final JwtService jwtService;
+    private final AuthTokenService authTokenService;
     private final UserRepository userRepository;
     private final UserAuthAccountRepository userAuthAccountRepository;
 
@@ -65,9 +67,7 @@ public class UserRegistrationService {
             userAuthAccountRepository.save(existingAccount);
         }
 
-        return new IssuedAuthTokens(
-            jwtService.createServiceAuthToken(savedUser.getId()),
-            jwtService.createRefreshAuthToken(savedUser.getId()));
+        return authTokenService.issue(savedUser.getId());
     }
 
     private void validateRegistrationAge(LocalDate birthDate) {

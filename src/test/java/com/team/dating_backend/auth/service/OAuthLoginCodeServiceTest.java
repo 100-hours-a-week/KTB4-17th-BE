@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpSession;
@@ -18,12 +17,12 @@ class OAuthLoginCodeServiceTest {
         MockHttpSession issuingSession = new MockHttpSession();
         MockHttpSession otherSession = new MockHttpSession();
 
-        String code = service.issue("service-token", "refresh-token", issuingSession);
+        String code = service.issue(123L, issuingSession);
 
         assertEquals(43, code.length());
         assertTrue(service.consume(code, otherSession).isEmpty());
         assertEquals(
-            Optional.of(new IssuedAuthTokens("service-token", "refresh-token")),
+            Optional.of(123L),
             service.consume(code, issuingSession));
         assertFalse(service.consume(code, issuingSession).isPresent());
     }
