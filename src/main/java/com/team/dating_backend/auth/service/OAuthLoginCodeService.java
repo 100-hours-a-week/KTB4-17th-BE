@@ -1,6 +1,6 @@
 package com.team.dating_backend.auth.service;
 
-import com.team.dating_backend.auth.dto.IssuedAuthTokens;
+import com.team.dating_backend.auth.enums.AuthErrorCode;
 import jakarta.servlet.http.HttpSession;
 import java.io.Serializable;
 import java.security.SecureRandom;
@@ -8,7 +8,6 @@ import java.util.Base64;
 import java.util.Enumeration;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 @Service
 public class OAuthLoginCodeService {
@@ -18,12 +17,10 @@ public class OAuthLoginCodeService {
     private static final String SESSION_CODE_PREFIX = "OAUTH_LOGIN_CODE_";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    public String issue(String accessToken, String refreshToken, HttpSession session) {
-        if (!StringUtils.hasText(accessToken)) {
-            throw new IllegalArgumentException("Access token must not be blank");
-        }
-        if (!StringUtils.hasText(refreshToken)) {
-            throw new IllegalArgumentException("Refresh token must not be blank");
+    public String issue(Long userId, HttpSession session) {
+        if (userId == null) {
+            throw new IllegalArgumentException(
+                AuthErrorCode.OAUTH_LOGIN_USER_ID_MISSING.name());
         }
         if (session == null) {
             throw new IllegalArgumentException("OAuth login session is required");
@@ -43,12 +40,12 @@ public class OAuthLoginCodeService {
 
             session.setAttribute(
                 attributeName,
-                new LoginCodeGrant(accessToken, refreshToken, System.currentTimeMillis()));
+                new LoginCodeGrant(userId, System.currentTimeMillis()));
             return code;
         }
     }
 
-    public Optional<IssuedAuthTokens> consume(String code, HttpSession session) {
+    public Optional<Long> consume(String code, HttpSession session) {
         if (session == null || !isValidCode(code)) {
             return Optional.empty();
         }
@@ -67,7 +64,7 @@ public class OAuthLoginCodeService {
                 return Optional.empty();
             }
 
-            return Optional.of(new IssuedAuthTokens(grant.accessToken(), grant.refreshToken()));
+            return Optional.of(grant.userId());
         }
     }
 
@@ -102,7 +99,7 @@ public class OAuthLoginCodeService {
         return SESSION_CODE_PREFIX + code;
     }
 
-    private record LoginCodeGrant(String accessToken, String refreshToken, long createdAtMillis)
+    private record LoginCodeGrant(Long userId, long createdAtMillis)
         implements
             Serializable {}
 }

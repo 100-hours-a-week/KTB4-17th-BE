@@ -62,9 +62,7 @@ class AuthLoginResponseFactoryTest {
     void ACTIVE_회원은_일회용_로그인_코드와_서비스_목적지로_리다이렉트된다() {
         // given
         HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
-        given(jwtService.createServiceAuthToken(1L)).willReturn("service-token");
-        given(jwtService.createRefreshAuthToken(1L)).willReturn("refresh-token");
-        given(oauthLoginCodeService.issue("service-token", "refresh-token", session))
+        given(oauthLoginCodeService.issue(1L, session))
             .willReturn("one-time-code");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
             LoginDestination.SERVICE);
@@ -87,9 +85,7 @@ class AuthLoginResponseFactoryTest {
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
         assertTrue(setCookieHeaders.get(2).contains("PENDING_REGISTRATION_TOKEN="));
         assertTrue(setCookieHeaders.get(2).contains("Max-Age=0"));
-        verify(oauthLoginCodeService).issue("service-token", "refresh-token", session);
-        verify(jwtService).createServiceAuthToken(1L);
-        verify(jwtService).createRefreshAuthToken(1L);
+        verify(oauthLoginCodeService).issue(1L, session);
         verifyNoMoreInteractions(jwtService);
     }
 
@@ -124,14 +120,12 @@ class AuthLoginResponseFactoryTest {
     @Test
     void ONBOARDING_회원은_일회용_로그인_코드로_온보딩_목적지에_진입한다() {
         // given
-        given(jwtService.createServiceAuthToken(2L)).willReturn("service-token");
-        given(jwtService.createRefreshAuthToken(2L)).willReturn("refresh-token");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(2L,
             LoginDestination.ONBOARDING);
 
         // when
         HttpSession session = org.mockito.Mockito.mock(HttpSession.class);
-        given(oauthLoginCodeService.issue("service-token", "refresh-token", session))
+        given(oauthLoginCodeService.issue(2L, session))
             .willReturn("onboarding-code");
         ResponseEntity<Void> response = authLoginResponseFactory.create(loginResult, session);
 
@@ -142,9 +136,7 @@ class AuthLoginResponseFactoryTest {
             response.getHeaders().getLocation().toString());
         assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).getFirst()
             .contains("ACCESS_TOKEN="));
-        verify(oauthLoginCodeService).issue("service-token", "refresh-token", session);
-        verify(jwtService).createServiceAuthToken(2L);
-        verify(jwtService).createRefreshAuthToken(2L);
+        verify(oauthLoginCodeService).issue(2L, session);
         verifyNoMoreInteractions(jwtService);
     }
 }

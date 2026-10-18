@@ -4,7 +4,9 @@ import com.team.dating_backend.auth.dto.AuthErrorResponse;
 import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.dto.request.AuthTokenExchangeRequest;
 import com.team.dating_backend.auth.dto.response.AuthTokenResponse;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.auth.service.OAuthLoginCodeService;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthTokenController {
 
     private final OAuthLoginCodeService oauthLoginCodeService;
+    private final AuthTokenService authTokenService;
     private final AuthCookieFactory authCookieFactory;
 
     @PostMapping("/token/exchange")
@@ -32,19 +35,22 @@ public class AuthTokenController {
         @Valid @RequestBody AuthTokenExchangeRequest request,
         HttpServletRequest servletRequest) {
         HttpSession session = servletRequest.getSession(false);
-        Optional<IssuedAuthTokens> issuedTokens = oauthLoginCodeService.consume(
+        Optional<Long> userId = oauthLoginCodeService.consume(
             request.code(), session);
         HttpHeaders headers = noStoreHeaders();
 
-        if (issuedTokens.isEmpty()) {
+        if (userId.isEmpty()) {
             return new ResponseEntity<>(
-                new AuthErrorResponse("AUTH_REQUIRED"), headers, HttpStatus.UNAUTHORIZED);
+                new AuthErrorResponse(CommonErrorCode.AUTH_REQUIRED.name()),
+                headers,
+                CommonErrorCode.AUTH_REQUIRED.status());
         }
 
-        IssuedAuthTokens tokens = issuedTokens.get();
+        IssuedAuthTokens tokens = authTokenService.issue(userId.get());
         headers.add(
             HttpHeaders.SET_COOKIE,
-            authCookieFactory.refreshToken(tokens.refreshToken()).toString());
+            authCookieFactory.refreshToken(
+                tokens.refreshToken(), tokens.refreshExpiresAt()).toString());
 
         return new ResponseEntity<>(
             AuthTokenResponse.bearer(tokens.accessToken()), headers, HttpStatus.OK);

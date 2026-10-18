@@ -16,6 +16,7 @@ import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedExc
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.service.UserRegistrationService;
 import jakarta.servlet.http.Cookie;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -68,13 +69,15 @@ class UserRegistrationControllerTest {
     @Test
     void 회원가입_완료는_Bearer_토큰을_JSON으로_반환하고_기존_인증_쿠키를_삭제한다()
         throws Exception {
+        Instant refreshExpiresAt = Instant.now().plusSeconds(3600);
         given(
             userRegistrationService.registerUser(
                 eq("pending-token"), any(UserRegistrationRequest.class)))
-            .willReturn(new IssuedAuthTokens("new-service-token", "new-refresh-token"));
+            .willReturn(new IssuedAuthTokens(
+                "new-service-token", "new-refresh-token", refreshExpiresAt));
         given(authCookieFactory.deleteAccessToken())
             .willReturn(ResponseCookie.from("ACCESS_TOKEN", "").maxAge(0).build());
-        given(authCookieFactory.refreshToken("new-refresh-token"))
+        given(authCookieFactory.refreshToken("new-refresh-token", refreshExpiresAt))
             .willReturn(ResponseCookie.from("REFRESH_TOKEN", "new-refresh-token")
                 .httpOnly(true)
                 .path("/api/v1/auth")
