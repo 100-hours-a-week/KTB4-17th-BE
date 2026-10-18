@@ -1,0 +1,20 @@
+CREATE TABLE `chat_delegations` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `chat_room_id` bigint NOT NULL,
+  `requester_participant_id` bigint NOT NULL,
+  `context_message_id` bigint NOT NULL,
+  `request_id` binary(16) NOT NULL,
+  `end_type` varchar(16) NOT NULL,
+  `ai_draft_id` varchar(32) DEFAULT NULL,
+  `status` varchar(30) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_chat_delegation_room` (`chat_room_id`),
+  UNIQUE KEY `uk_chat_delegation_request` (`request_id`),
+  KEY `idx_chat_delegation_requester` (`requester_participant_id`),
+  KEY `idx_chat_delegation_context_message` (`context_message_id`),
+  CONSTRAINT `fk_chat_delegation_room` FOREIGN KEY (`chat_room_id`) REFERENCES `chat_rooms` (`id`),
+  CONSTRAINT `fk_chat_delegation_requester` FOREIGN KEY (`requester_participant_id`) REFERENCES `chat_participants` (`id`),
+  CONSTRAINT `fk_chat_delegation_context_message` FOREIGN KEY (`context_message_id`) REFERENCES `chat_messages` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
