@@ -10,6 +10,8 @@ import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
 import com.team.dating_backend.onboarding.exception.NicknameAlreadyInUseException;
 import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedException;
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
+import com.team.dating_backend.persona.client.PersonaAiClient;
+import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameRequest;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
@@ -17,6 +19,7 @@ import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.PersonaOnboardingStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -34,6 +37,7 @@ public class ProfileSaveService {
     private final ProfileRepository profileRepository;
     private final ActivityRegionRepository activityRegionRepository;
     private final OnboardingCompletionService onboardingCompletionService;
+    private final PersonaAiClient personaAiClient;
 
     @Transactional
     public ProfileSaveResult saveProfile(Long userId, ProfileSaveRequest request) {
@@ -47,6 +51,10 @@ public class ProfileSaveService {
         Optional<Profile> existingProfile = profileRepository
             .findByUserIdAndDeletedAtIsNull(userId);
         boolean created = existingProfile.isEmpty();
+        String previousNickname = existingProfile.map(Profile::getNickname).orElse(null);
+        boolean nicknameChangedForActiveUser = !created
+            && user.getStatus() == UserStatus.ACTIVE
+            && !Objects.equals(previousNickname, request.nickname());
         Profile profile = existingProfile.orElseGet(() -> new Profile(user));
 
         validateNickname(request.nickname(), userId);
@@ -66,6 +74,10 @@ public class ProfileSaveService {
 
         Profile savedProfile = saveAndFlush(profile);
         onboardingCompletionService.activateIfCompleted(userId);
+        if (nicknameChangedForActiveUser) {
+            personaAiClient.updateNickname(new UpdateNicknameRequest(
+                userId.toString(), savedProfile.getNickname()));
+        }
         ProfileSaveResponse response = new ProfileSaveResponse(
             ProfileSaveProfileResponse.from(savedProfile));
         return new ProfileSaveResult(created, response);
