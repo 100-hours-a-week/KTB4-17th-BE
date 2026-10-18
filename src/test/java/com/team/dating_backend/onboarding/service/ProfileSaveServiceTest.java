@@ -17,6 +17,7 @@ import com.team.dating_backend.onboarding.dto.response.ProfileSaveResult;
 import com.team.dating_backend.onboarding.exception.NicknameAlreadyInUseException;
 import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedException;
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
+import com.team.dating_backend.persona.client.PersonaAiClient;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
@@ -50,6 +51,7 @@ class ProfileSaveServiceTest {
     private ProfileRepository profileRepository;
     private ActivityRegionRepository activityRegionRepository;
     private OnboardingCompletionService onboardingCompletionService;
+    private PersonaAiClient personaAiClient;
     private ProfileSaveService profileSaveService;
 
     @BeforeEach
@@ -58,8 +60,9 @@ class ProfileSaveServiceTest {
         profileRepository = mock(ProfileRepository.class);
         activityRegionRepository = mock(ActivityRegionRepository.class);
         onboardingCompletionService = mock(OnboardingCompletionService.class);
+        personaAiClient = mock(PersonaAiClient.class);
         profileSaveService = new ProfileSaveService(userRepository, profileRepository,
-            activityRegionRepository, onboardingCompletionService);
+            activityRegionRepository, onboardingCompletionService, personaAiClient);
     }
 
     @Test

@@ -7,6 +7,8 @@ import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ConfirmResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.PersonaResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.StartRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.TurnResponse;
+import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameRequest;
+import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameResponse;
 import com.team.dating_backend.persona.enums.PersonaErrorCode;
 import com.team.dating_backend.persona.exception.PersonaBusinessException;
 import java.net.URI;
@@ -39,6 +41,11 @@ public class RestPersonaAiClient implements PersonaAiClient {
     @Override
     public TurnResponse start(StartRequest request) {
         return post(properties.getStartPath(), request, TurnResponse.class);
+    }
+
+    @Override
+    public UpdateNicknameResponse updateNickname(UpdateNicknameRequest request) {
+        return post(properties.getNicknamePath(), request, UpdateNicknameResponse.class);
     }
 
     @Override
