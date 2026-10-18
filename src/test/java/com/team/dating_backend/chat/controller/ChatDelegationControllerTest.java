@@ -55,7 +55,25 @@ class ChatDelegationControllerTest {
     }
 
     @Test
-    void 잘못된_종료유형은_errorCode만_반환한다() throws Exception {
+    void 초안을_재생성하면_200을_반환한다() throws Exception {
+        when(service.regenerate(10L, 20L, 1L, ChatDelegationEndType.DIRECT)).thenReturn(
+            new ChatDelegationDraftResponse(20L, ChatDelegationStatus.AWAITING_CONFIRMATION,
+                "b".repeat(32), List.of(
+                    new ChatDelegationDraftResponse.Turn(1, "첫 번째"),
+                    new ChatDelegationDraftResponse.Turn(2, "두 번째"),
+                    new ChatDelegationDraftResponse.Turn(3, "세 번째"))));
+
+        mvc.perform(post("/api/v1/chat-rooms/10/delegations/20/drafts")
+            .contentType(MediaType.APPLICATION_JSON).content("{\"endType\":\"DIRECT\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("chat_delegation_draft_regenerated"))
+            .andExpect(jsonPath("$.data.delegationId").value(20))
+            .andExpect(jsonPath("$.data.draftId").value("b".repeat(32)))
+            .andExpect(jsonPath("$.data.turns.length()").value(3));
+    }
+
+    @Test
+    void 잘못된_종료_유형은_errorCode만_반환한다() throws Exception {
         mvc.perform(post("/api/v1/chat-rooms/10/delegations")
             .contentType(MediaType.APPLICATION_JSON).content("{\"endType\":\"UNKNOWN\"}"))
             .andExpect(status().isBadRequest())

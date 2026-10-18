@@ -59,10 +59,10 @@ public class ChatDelegation {
     @Column(name = "status", nullable = false, length = 30)
     private ChatDelegationStatus status;
 
-    @Column(name = "request_id", nullable = false, updatable = false, unique = true)
+    @Column(name = "request_id", nullable = false, unique = true)
     private UUID requestId;
 
-    @Column(name = "context_message_id", nullable = false, updatable = false)
+    @Column(name = "context_message_id", nullable = false)
     private Long contextMessageId;
 
     @CreationTimestamp
@@ -86,9 +86,35 @@ public class ChatDelegation {
         this.status = ChatDelegationStatus.DRAFT_GENERATING;
     }
 
-    public void completeDraft(String aiDraftId) {
+    public void completeDraft(UUID completedRequestId, String aiDraftId) {
+        requireGeneratingRequest(completedRequestId);
         this.aiDraftId = Objects.requireNonNull(aiDraftId);
         status = ChatDelegationStatus.AWAITING_CONFIRMATION;
+    }
+
+    public void failDraft(UUID failedRequestId) {
+        requireGeneratingRequest(failedRequestId);
+        status = ChatDelegationStatus.DRAFT_FAILED;
+    }
+
+    public void regenerate(
+        ChatDelegationEndType newEndType, UUID newRequestId, Long newContextMessageId) {
+        if (status != ChatDelegationStatus.AWAITING_CONFIRMATION
+            && status != ChatDelegationStatus.DRAFT_FAILED) {
+            throw new IllegalStateException();
+        }
+        endType = Objects.requireNonNull(newEndType);
+        aiDraftId = null;
+        requestId = Objects.requireNonNull(newRequestId);
+        contextMessageId = Objects.requireNonNull(newContextMessageId);
+        status = ChatDelegationStatus.DRAFT_GENERATING;
+    }
+
+    private void requireGeneratingRequest(UUID expectedRequestId) {
+        if (status != ChatDelegationStatus.DRAFT_GENERATING
+            || !requestId.equals(expectedRequestId)) {
+            throw new IllegalStateException();
+        }
     }
 
 }
