@@ -77,6 +77,10 @@ app:
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 
+  chat-delegation:
+    base-url: ${AI_CHAT_DELEGATION_BASE_URL:}
+    api-key: ${AI_CHAT_DELEGATION_API_KEY:}
+
   ai-practice:
     base-url: ${AI_PRACTICE_BASE_URL:}
     initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/ai/api/v1/practice/start}
