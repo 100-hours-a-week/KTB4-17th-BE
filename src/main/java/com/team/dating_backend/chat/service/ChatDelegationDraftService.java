@@ -5,6 +5,7 @@ import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftRespons
 import com.team.dating_backend.chat.dto.response.ChatDelegationDraftResponse;
 import com.team.dating_backend.chat.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.service.ChatDelegationDraftPersistenceService.Preparation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,8 +21,33 @@ public class ChatDelegationDraftService {
         Long chatRoomId, Long requesterUserId, ChatDelegationEndType endType) {
         Preparation preparation = persistenceService.prepare(
             chatRoomId, requesterUserId, endType);
-        DraftResponse aiResponse = aiClient.createDraft(preparation.aiRequest());
-        persistenceService.complete(preparation.delegationId(), aiResponse.draftId());
+        DraftResponse aiResponse;
+        try {
+            aiResponse = aiClient.createDraft(preparation.aiRequest());
+        } catch (ChatBusinessException exception) {
+            persistenceService.fail(preparation);
+            throw exception;
+        }
+        return complete(preparation, aiResponse);
+    }
+
+    public ChatDelegationDraftResponse regenerate(Long chatRoomId, Long delegationId,
+        Long requesterUserId, ChatDelegationEndType endType) {
+        Preparation preparation = persistenceService.prepareRegeneration(
+            chatRoomId, delegationId, requesterUserId, endType);
+        DraftResponse aiResponse;
+        try {
+            aiResponse = aiClient.createDraft(preparation.aiRequest());
+        } catch (ChatBusinessException exception) {
+            persistenceService.fail(preparation);
+            throw exception;
+        }
+        return complete(preparation, aiResponse);
+    }
+
+    private ChatDelegationDraftResponse complete(
+        Preparation preparation, DraftResponse aiResponse) {
+        persistenceService.complete(preparation, aiResponse.draftId());
         return new ChatDelegationDraftResponse(
             preparation.delegationId(), ChatDelegationStatus.AWAITING_CONFIRMATION,
             aiResponse.draftId(), aiResponse.turns().stream()

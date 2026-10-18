@@ -33,4 +33,16 @@ public class ChatDelegationController {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(SuccessResponse.of("chat_delegation_draft_created", response));
     }
+
+    @PostMapping("/{delegationId}/drafts")
+    public ResponseEntity<SuccessResponse<ChatDelegationDraftResponse>> regenerateDraft(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long chatRoomId,
+        @PathVariable Long delegationId,
+        @Valid @RequestBody ChatDelegationCreateRequest request) {
+        ChatDelegationDraftResponse response = draftService.regenerate(
+            chatRoomId, delegationId, principal.userId(), request.endType());
+        return ResponseEntity.ok(
+            SuccessResponse.of("chat_delegation_draft_regenerated", response));
+    }
 }

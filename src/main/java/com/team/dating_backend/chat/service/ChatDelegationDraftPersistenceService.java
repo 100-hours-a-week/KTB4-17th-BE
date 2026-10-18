@@ -8,6 +8,7 @@ import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
@@ -40,8 +41,80 @@ public class ChatDelegationDraftPersistenceService {
     @Transactional
     public Preparation prepare(Long chatRoomId, Long requesterUserId,
         ChatDelegationEndType endType) {
-        ChatRoom room = chatRoomRepository.findWithLockById(chatRoomId)
+        ChatRoom room = requireRoom(chatRoomId);
+        ChatParticipant requester = requireRequester(room, requesterUserId);
+        validateRoom(room, requester);
+        ChatDelegation existing = delegationRepository.findByChatRoomId(chatRoomId).orElse(null);
+        if (existing != null) {
+            if (!existing.getRequesterParticipant().getId().equals(requester.getId())) {
+                throw failure(ChatErrorCode.CHAT_ACCESS_DENIED);
+            }
+            if (existing.getStatus() != ChatDelegationStatus.DRAFT_FAILED) {
+                throw failure(ChatErrorCode.CHAT_DELEGATION_ALREADY_EXISTS);
+            }
+        }
+
+        MessageContext context = messageContext(chatRoomId, requester.getId());
+        UUID requestId = UUID.randomUUID();
+        if (existing != null) {
+            existing.regenerate(endType, requestId, context.messageId());
+            return preparation(existing.getId(), requestId, room.getId(), requesterUserId,
+                endType, context);
+        }
+        ChatDelegation delegation = delegationRepository.saveAndFlush(
+            new ChatDelegation(room, requester, endType, requestId, context.messageId()));
+        return preparation(delegation.getId(), requestId, room.getId(), requesterUserId,
+            endType, context);
+    }
+
+    @Transactional
+    public Preparation prepareRegeneration(Long chatRoomId, Long delegationId,
+        Long requesterUserId, ChatDelegationEndType endType) {
+        ChatRoom room = requireRoom(chatRoomId);
+        ChatParticipant requester = requireRequester(room, requesterUserId);
+        validateRoom(room, requester);
+        ChatDelegation delegation = delegationRepository.findWithLockById(delegationId)
+            .filter(found -> found.getChatRoom().getId().equals(chatRoomId))
+            .orElseThrow(() -> failure(ChatErrorCode.CHAT_DELEGATION_NOT_FOUND));
+        if (!delegation.getRequesterParticipant().getId().equals(requester.getId())) {
+            throw failure(ChatErrorCode.CHAT_ACCESS_DENIED);
+        }
+        if (delegation.getStatus() != ChatDelegationStatus.AWAITING_CONFIRMATION
+            && delegation.getStatus() != ChatDelegationStatus.DRAFT_FAILED) {
+            throw failure(ChatErrorCode.CHAT_DELEGATION_INVALID_STATUS);
+        }
+
+        MessageContext context = messageContext(chatRoomId, requester.getId());
+        UUID requestId = UUID.randomUUID();
+        delegation.regenerate(endType, requestId, context.messageId());
+        return preparation(
+            delegationId, requestId, chatRoomId, requesterUserId, endType, context);
+    }
+
+    private Preparation preparation(Long delegationId, UUID requestId, Long roomId,
+        Long requesterUserId, ChatDelegationEndType endType, MessageContext context) {
+        return new Preparation(delegationId, requestId, new DraftRequest(
+            requestId, roomId, delegationId, requesterUserId.toString(),
+            endType, context.messages()));
+    }
+
+    @Transactional
+    public void complete(Preparation preparation, String draftId) {
+        requireDelegation(preparation.delegationId())
+            .completeDraft(preparation.requestId(), draftId);
+    }
+
+    @Transactional
+    public void fail(Preparation preparation) {
+        requireDelegation(preparation.delegationId()).failDraft(preparation.requestId());
+    }
+
+    private ChatRoom requireRoom(Long chatRoomId) {
+        return chatRoomRepository.findWithLockById(chatRoomId)
             .orElseThrow(() -> failure(ChatErrorCode.CHAT_ROOM_NOT_FOUND));
+    }
+
+    private ChatParticipant requireRequester(ChatRoom room, Long requesterUserId) {
         ChatParticipant requester = room.getParticipants().stream()
             .filter(participant -> participant.getUserId().equals(requesterUserId))
             .findFirst()
@@ -49,34 +122,7 @@ public class ChatDelegationDraftPersistenceService {
         if (requester.getStatus() != ChatParticipantStatus.ACTIVE) {
             throw failure(ChatErrorCode.CHAT_ACCESS_DENIED);
         }
-        validateRoom(room, requester);
-        if (delegationRepository.existsByChatRoomId(chatRoomId)) {
-            throw failure(ChatErrorCode.CHAT_DELEGATION_ALREADY_EXISTS);
-        }
-
-        List<ChatMessage> messages = new ArrayList<>(chatMessageRepository
-            .findByChatRoomIdAndStatusOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT, PageRequest.of(0, RECENT_MESSAGE_LIMIT)));
-        if (messages.isEmpty()) {
-            throw failure(ChatErrorCode.CHAT_DELEGATION_CONVERSATION_REQUIRED);
-        }
-        Long contextMessageId = messages.getFirst().getId();
-        Collections.reverse(messages);
-
-        UUID requestId = UUID.randomUUID();
-        ChatDelegation delegation = delegationRepository.saveAndFlush(
-            new ChatDelegation(room, requester, endType, requestId, contextMessageId));
-        List<RecentMessage> recentMessages = messages.stream()
-            .map(message -> toRecentMessage(message, requester.getId()))
-            .toList();
-        return new Preparation(delegation.getId(), new DraftRequest(
-            requestId, room.getId(), delegation.getId(), requesterUserId.toString(),
-            endType, recentMessages));
-    }
-
-    @Transactional
-    public void complete(Long delegationId, String draftId) {
-        requireDelegation(delegationId).completeDraft(draftId);
+        return requester;
     }
 
     private void validateRoom(ChatRoom room, ChatParticipant requester) {
@@ -105,13 +151,29 @@ public class ChatDelegationDraftPersistenceService {
     }
 
     private ChatDelegation requireDelegation(Long delegationId) {
-        return delegationRepository.findById(delegationId)
+        return delegationRepository.findWithLockById(delegationId)
             .orElseThrow(() -> failure(ChatErrorCode.INTERNAL_SERVER_ERROR));
+    }
+
+    private MessageContext messageContext(Long chatRoomId, Long requesterParticipantId) {
+        List<ChatMessage> messages = new ArrayList<>(chatMessageRepository
+            .findByChatRoomIdAndStatusOrderByIdDesc(
+                chatRoomId, ChatMessageStatus.SENT, PageRequest.of(0, RECENT_MESSAGE_LIMIT)));
+        if (messages.isEmpty()) {
+            throw failure(ChatErrorCode.CHAT_DELEGATION_CONVERSATION_REQUIRED);
+        }
+        Long messageId = messages.getFirst().getId();
+        Collections.reverse(messages);
+        return new MessageContext(messageId, messages.stream()
+            .map(message -> toRecentMessage(message, requesterParticipantId))
+            .toList());
     }
 
     private ChatBusinessException failure(ChatErrorCode code) {
         return new ChatBusinessException(code);
     }
 
-    public record Preparation(Long delegationId, DraftRequest aiRequest) {}
+    public record Preparation(Long delegationId, UUID requestId, DraftRequest aiRequest) {}
+
+    private record MessageContext(Long messageId, List<RecentMessage> messages) {}
 }

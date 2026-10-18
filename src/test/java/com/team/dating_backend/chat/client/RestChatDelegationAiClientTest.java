@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.team.dating_backend.chat.config.ChatDelegationProperties;
@@ -15,10 +16,16 @@ import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Speaker;
 import com.team.dating_backend.chat.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -66,6 +73,75 @@ class RestChatDelegationAiClientTest {
         properties.setApiKey("");
         assertError(() -> client.createDraft(request), ChatErrorCode.CHAT_DELEGATION_AI_NOT_CONFIGURED);
         server.verify();
+    }
+
+    @Test
+    void AI가_4xx로_응답하면_요청_거절_오류로_변환한다() {
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/drafts"))
+            .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY));
+
+        assertError(() -> client.createDraft(request),
+            ChatErrorCode.CHAT_DELEGATION_AI_REQUEST_REJECTED);
+        server.verify();
+    }
+
+    @Test
+    void AI가_5xx로_응답하거나_통신에_실패하면_이용_불가_오류로_변환한다() {
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/drafts"))
+            .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        assertError(() -> client.createDraft(request),
+            ChatErrorCode.CHAT_DELEGATION_AI_UNAVAILABLE);
+        server.verify();
+
+        server.reset();
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/drafts"))
+            .andRespond(httpRequest -> {
+                throw new IOException("connection timed out");
+            });
+        assertError(() -> client.createDraft(request),
+            ChatErrorCode.CHAT_DELEGATION_AI_UNAVAILABLE);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidResponses")
+    void AI_응답_계약이_다르면_거부한다(String response) {
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/drafts"))
+            .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        assertError(() -> client.createDraft(request),
+            ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
+        server.verify();
+    }
+
+    private static Stream<Arguments> invalidResponses() {
+        String turns = """
+            [{"turn":1,"message":"첫 번째"},{"turn":2,"message":"두 번째"},
+            {"turn":3,"message":"세 번째"}]
+            """;
+        return Stream.of(
+            Arguments.of("{broken"),
+            Arguments.of(responseJson(11, "a".repeat(32), "PENDING", turns)),
+            Arguments.of(responseJson(10, "A".repeat(32), "PENDING", turns)),
+            Arguments.of(responseJson(10, "a".repeat(32), "CONFIRMED", turns)),
+            Arguments.of(responseJson(10, "a".repeat(32), "PENDING",
+                "[{\"turn\":1,\"message\":\"하나\"}]")),
+            Arguments.of(responseJson(10, "a".repeat(32), "PENDING",
+                "[{\"turn\":1,\"message\":\"하나\"},{\"turn\":1,\"message\":\"둘\"},"
+                    + "{\"turn\":3,\"message\":\"셋\"}]")),
+            Arguments.of(responseJson(10, "a".repeat(32), "PENDING",
+                "[{\"turn\":1,\"message\":\" \"},{\"turn\":2,\"message\":\"둘\"},"
+                    + "{\"turn\":3,\"message\":\"셋\"}]")),
+            Arguments.of(responseJson(10, "a".repeat(32), "PENDING",
+                "[{\"turn\":1,\"message\":\"" + "가".repeat(1001)
+                    + "\"},{\"turn\":2,\"message\":\"둘\"},"
+                    + "{\"turn\":3,\"message\":\"셋\"}]")));
+    }
+
+    private static String responseJson(int roomId, String draftId, String status, String turns) {
+        return """
+            {"room_id":%d,"draft_id":"%s","status":"%s","turns":%s}
+            """.formatted(roomId, draftId, status, turns);
     }
 
     private String validResponse() {
