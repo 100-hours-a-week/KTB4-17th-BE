@@ -15,4 +15,5 @@ public class KakaoOAuthProperties {
     private String authorizationUri;
     private String tokenUri;
     private String userInfoUri;
+    private String talkProfileUri;
 }

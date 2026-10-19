@@ -87,7 +87,7 @@ public class OAuthController {
 
         OAuthIdentity identity = providerClient.requestIdentity(code);
         SocialLoginResult loginResult = socialLoginService.login(identity.provider(),
-            identity.providerUserId());
+            identity.providerUserId(), identity.kakaoTalkNickname());
 
         return authLoginResponseFactory.create(loginResult, session);
     }

@@ -55,6 +55,7 @@ kakao:
     authorization-uri: ${AUTHORIZATION_URI}
     token-uri: ${TOKEN_URI}
     user-info-uri: ${USER_INFO_URI}
+    talk-profile-uri: ${KAKAO_TALK_PROFILE_URI}
 
 app:
   auth:

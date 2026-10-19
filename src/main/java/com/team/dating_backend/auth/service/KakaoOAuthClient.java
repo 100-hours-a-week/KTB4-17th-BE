@@ -2,9 +2,12 @@ package com.team.dating_backend.auth.service;
 
 import com.team.dating_backend.auth.config.KakaoOAuthProperties;
 import com.team.dating_backend.auth.dto.KakaoTokenResponse;
+import com.team.dating_backend.auth.dto.KakaoTalkProfileResponse;
 import com.team.dating_backend.auth.dto.KakaoUserInfoResponse;
 import com.team.dating_backend.auth.dto.OAuthIdentity;
 import com.team.dating_backend.auth.enums.AuthProvider;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameRequiredException;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameTooLongException;
 import com.team.dating_backend.auth.exception.OAuthProviderUnavailableException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -20,6 +23,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 @RequiredArgsConstructor
 public class KakaoOAuthClient implements OAuthProviderClient {
 
+    private static final int MAX_NICKNAME_LENGTH = 21;
+
     private final KakaoOAuthProperties kakaoOAuthProperties;
     private final RestClient.Builder restClientBuilder;
 
@@ -34,6 +39,7 @@ public class KakaoOAuthClient implements OAuthProviderClient {
             .queryParam("response_type", "code")
             .queryParam("client_id", kakaoOAuthProperties.getClientId())
             .queryParam("redirect_uri", kakaoOAuthProperties.getRedirectUri())
+            .queryParam("scope", "profile_nickname")
             .queryParam("state", state)
             .build()
             .encode()
@@ -55,7 +61,22 @@ public class KakaoOAuthClient implements OAuthProviderClient {
                 throw new OAuthProviderUnavailableException();
             }
 
-            return new OAuthIdentity(AuthProvider.KAKAO, String.valueOf(userInfo.id()));
+            KakaoTalkProfileResponse profile = requestTalkProfile(tokenResponse.accessToken());
+
+            if (profile == null || profile.id() == null || !profile.id().equals(userInfo.id())) {
+                throw new OAuthProviderUnavailableException();
+            }
+
+            String nickname = profile.nickname();
+            if (!StringUtils.hasText(nickname)) {
+                throw new KakaoTalkNicknameRequiredException();
+            }
+            if (nickname.codePointCount(0, nickname.length()) > MAX_NICKNAME_LENGTH) {
+                throw new KakaoTalkNicknameTooLongException();
+            }
+
+            return new OAuthIdentity(
+                AuthProvider.KAKAO, String.valueOf(userInfo.id()), nickname);
         } catch (RestClientException exception) {
             throw new OAuthProviderUnavailableException(exception);
         }
@@ -87,5 +108,15 @@ public class KakaoOAuthClient implements OAuthProviderClient {
             .header("Authorization", "Bearer " + accessToken)
             .retrieve()
             .body(KakaoUserInfoResponse.class);
+    }
+
+    private KakaoTalkProfileResponse requestTalkProfile(String accessToken) {
+        return restClientBuilder
+            .build()
+            .get()
+            .uri(kakaoOAuthProperties.getTalkProfileUri())
+            .header("Authorization", "Bearer " + accessToken)
+            .retrieve()
+            .body(KakaoTalkProfileResponse.class);
     }
 }
