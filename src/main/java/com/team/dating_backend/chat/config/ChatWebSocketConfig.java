@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.config;
 
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.security.BearerTokenResolver;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.config.SecurityProperties;
@@ -122,8 +123,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 accessor.removeNativeHeader(HttpHeaders.AUTHORIZATION);
 
                 if (bearerToken == null) {
-                    throw new MessageDeliveryException(
-                        "STOMP Authorization bearer token is required");
+                    throw new MessageDeliveryException(CommonErrorCode.AUTH_REQUIRED.name());
                 }
 
                 try {
@@ -131,8 +131,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     accessor.setUser(UsernamePasswordAuthenticationToken.authenticated(
                         new ServiceAuthenticationPrincipal(userId), null, Set.of()));
                 } catch (JwtException exception) {
-                    throw new MessageDeliveryException(
-                        "STOMP Authorization bearer token is invalid");
+                    throw new MessageDeliveryException(CommonErrorCode.AUTH_REQUIRED.name());
                 }
             }
         });

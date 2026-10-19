@@ -17,6 +17,7 @@ import com.team.dating_backend.file.storage.FileStorage;
 import com.team.dating_backend.file.storage.StoredObjectInfo;
 import com.team.dating_backend.file.support.FakeFileRepository;
 import com.team.dating_backend.file.support.FakeFileUploadIntentRepository;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profiletrust.client.FaceVerificationAiClient;
 import com.team.dating_backend.profiletrust.dto.ai.FaceVerificationAiPayloads.ChallengeResponse;
 import com.team.dating_backend.profiletrust.dto.ai.FaceVerificationAiPayloads.Liveness;
@@ -103,7 +104,8 @@ class FaceVerificationServiceTest {
         given(storage.readUploadedObject(photo.getStagingKey(), "etag-1")).willReturn(PHOTO);
         given(ai.createChallenge()).willReturn(new ChallengeResponse(
             "signed-token", List.of("LOOK_STRAIGHT"), OffsetDateTime.now().plusMinutes(5)));
-        FaceVerificationSessionStore store = new FaceVerificationSessionStore(sessions, attempts, files, users);
+        FaceVerificationSessionStore store = new FaceVerificationSessionStore(
+            sessions, attempts, files, users, mock(OnboardingCompletionService.class));
         service = new FaceVerificationService(store, ai, new VerificationVideoReader(), files, storage);
     }
 
