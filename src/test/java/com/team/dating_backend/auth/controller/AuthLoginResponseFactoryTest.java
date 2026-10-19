@@ -30,6 +30,7 @@ class AuthLoginResponseFactoryTest {
     private static final String SERVICE_REDIRECT_URI = "https://frontend.example.com/service";
     private static final String REGISTRATION_REDIRECT_URI = "https://frontend.example.com/registration";
     private static final String ONBOARDING_REDIRECT_URI = "https://frontend.example.com/onboarding";
+    private static final String KAKAO_TALK_NICKNAME = "Alice";
 
     @Mock
     private JwtService jwtService;
@@ -92,10 +93,11 @@ class AuthLoginResponseFactoryTest {
     @Test
     void 신규_회원은_PENDING_REGISTRATION_TOKEN과_회원가입_목적지로_리다이렉트된다() {
         // given
-        given(jwtService.createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123"))
+        given(jwtService.createPendingRegistrationToken(
+            AuthProvider.KAKAO, "kakao-123", KAKAO_TALK_NICKNAME))
             .willReturn("pending-token");
         SocialLoginResult loginResult = new SocialLoginResult.PendingRegistration(
-            AuthProvider.KAKAO, "kakao-123");
+            AuthProvider.KAKAO, "kakao-123", KAKAO_TALK_NICKNAME);
 
         // when
         ResponseEntity<Void> response = authLoginResponseFactory.create(
@@ -113,7 +115,8 @@ class AuthLoginResponseFactoryTest {
         assertTrue(setCookieHeaders.get(1).contains("Max-Age=0"));
         assertTrue(setCookieHeaders.get(2).contains("REFRESH_TOKEN="));
         assertTrue(setCookieHeaders.get(2).contains("Max-Age=0"));
-        verify(jwtService).createPendingRegistrationToken(AuthProvider.KAKAO, "kakao-123");
+        verify(jwtService).createPendingRegistrationToken(
+            AuthProvider.KAKAO, "kakao-123", KAKAO_TALK_NICKNAME);
         verifyNoMoreInteractions(jwtService);
     }
 

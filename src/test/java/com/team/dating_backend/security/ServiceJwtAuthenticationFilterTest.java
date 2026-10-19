@@ -120,7 +120,7 @@ class ServiceJwtAuthenticationFilterTest {
     @Test
     void Pending_토큰은_Bearer_ACCESS_TOKEN으로_인증되지_않는다() throws Exception {
         String pendingToken = jwtService.createPendingRegistrationToken(AuthProvider.KAKAO,
-            "kakao-123");
+            "kakao-123", "Alice");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + pendingToken);
         MockHttpServletResponse response = new MockHttpServletResponse();

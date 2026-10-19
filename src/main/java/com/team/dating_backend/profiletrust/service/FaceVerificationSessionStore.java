@@ -3,6 +3,7 @@ package com.team.dating_backend.profiletrust.service;
 import com.team.dating_backend.file.entity.FileUploadIntent;
 import com.team.dating_backend.file.enums.FileUploadIntentStatus;
 import com.team.dating_backend.file.repository.FileUploadIntentRepository;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
 import com.team.dating_backend.profiletrust.dto.ai.FaceVerificationAiPayloads.ChallengeResponse;
 import com.team.dating_backend.profiletrust.dto.ai.FaceVerificationAiPayloads.VerificationResponse;
 import com.team.dating_backend.profiletrust.dto.response.FaceVerificationResponse;
@@ -33,6 +34,7 @@ public class FaceVerificationSessionStore {
     private final FaceVerificationAttemptRepository attemptRepository;
     private final FileUploadIntentRepository uploadIntentRepository;
     private final UserRepository userRepository;
+    private final OnboardingCompletionService onboardingCompletionService;
 
     public record Admission(FaceVerificationSession session, FaceVerificationResponse previousResult) {
 
@@ -133,6 +135,7 @@ public class FaceVerificationSessionStore {
             && attemptNo == session.getAttemptsUsed()) {
             attempt.complete(result.decision(), result.reasonCodes(), LocalDateTime.now());
             session.complete(result.decision());
+            onboardingCompletionService.activateIfCompleted(ownerUserId);
         }
         return response(session, attempt);
     }

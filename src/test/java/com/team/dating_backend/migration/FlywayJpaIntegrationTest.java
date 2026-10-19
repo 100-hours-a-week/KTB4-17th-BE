@@ -2,6 +2,8 @@ package com.team.dating_backend.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.team.dating_backend.chat.entity.ChatMessageOutbox;
+import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.entity.Profile;
@@ -46,6 +48,9 @@ class FlywayJpaIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private ChatMessageOutboxRepository outboxes;
 
     @Autowired
     private LikeRepository likeRepository;
@@ -104,5 +109,51 @@ class FlywayJpaIntegrationTest {
         assertThat(flyway.info().applied()).isNotEmpty();
         assertThat(flyway.info().pending()).isEmpty();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void Green이_오래된_엔티티를_저장해도_Blue의_최신_발행상태를_덮어쓰지_않는다() {
+        ChatMessageOutbox outbox = outboxes.saveAndFlush(
+            new ChatMessageOutbox(901L, LocalDateTime.now()));
+        jdbc.update("""
+            UPDATE chat_message_outbox SET published_at=NOW(6), failure_count=3,
+                last_failure_type='BLUE_RETRY', next_attempt_at='2099-01-01 00:00:00'
+            WHERE id=?
+            """, outbox.getId());
+
+        outbox.markRabbitPublished(LocalDateTime.now());
+        outboxes.saveAndFlush(outbox);
+
+        assertThat(jdbc.queryForObject(
+            "SELECT failure_count FROM chat_message_outbox WHERE id=?", Integer.class,
+            outbox.getId())).isEqualTo(3);
+        assertThat(jdbc.queryForObject(
+            "SELECT published_at FROM chat_message_outbox WHERE id=?", LocalDateTime.class,
+            outbox.getId())).isNotNull();
+        assertThat(jdbc.queryForObject(
+            "SELECT last_failure_type FROM chat_message_outbox WHERE id=?", String.class,
+            outbox.getId())).isEqualTo("BLUE_RETRY");
+        assertThat(jdbc.queryForObject(
+            "SELECT rabbit_published_at FROM chat_message_outbox WHERE id=?", LocalDateTime.class,
+            outbox.getId())).isNotNull();
+    }
+
+    @Test
+    void Blue가_발행하거나_실패한_메시지도_RabbitMQ는_독립적으로_조회한다() {
+        jdbc.update("""
+            INSERT INTO chat_message_outbox
+                (chat_message_id, created_at, next_attempt_at, failure_count, published_at, failed_at,
+                 rabbit_published_at, rabbit_failed_at)
+            VALUES
+                (902, NOW(6), '2099-01-01', 10, NOW(6), NOW(6), NULL, NULL),
+                (903, NOW(6), NOW(6), 0, NULL, NULL, NOW(6), NULL),
+                (904, NOW(6), NOW(6), 0, NULL, NULL, NULL, NOW(6))
+            """);
+        entityManager.clear();
+
+        assertThat(outboxes
+            .findByRabbitPublishedAtIsNullAndRabbitFailedAtIsNullAndRabbitNextAttemptAtLessThanEqualOrderByRabbitNextAttemptAtAscIdAsc(
+                LocalDateTime.now().plusSeconds(1), PageRequest.of(0, 100)))
+            .extracting(ChatMessageOutbox::getChatMessageId).containsExactly(902L);
     }
 }

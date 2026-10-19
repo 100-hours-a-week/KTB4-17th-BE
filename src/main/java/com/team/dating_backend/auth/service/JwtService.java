@@ -24,6 +24,7 @@ public class JwtService {
 
     private static final String PROVIDER_CLAIM = "provider";
     private static final String PROVIDER_USER_ID_CLAIM = "provider_user_id";
+    private static final String KAKAO_TALK_NICKNAME_CLAIM = "kakao_talk_nickname";
     private static final String PURPOSE_CLAIM = "purpose";
     private static final String SESSION_ID_CLAIM = "sid";
     private static final String PENDING_REGISTRATION_PURPOSE = "PENDING_REGISTRATION";
@@ -32,7 +33,8 @@ public class JwtService {
 
     private final JwtProperties jwtProperties;
 
-    public String createPendingRegistrationToken(AuthProvider provider, String providerUserId) {
+    public String createPendingRegistrationToken(
+        AuthProvider provider, String providerUserId, String kakaoTalkNickname) {
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plus(jwtProperties.getPendingExpirationMinutes(),
             ChronoUnit.MINUTES);
@@ -40,6 +42,7 @@ public class JwtService {
         return Jwts.builder()
             .claim(PROVIDER_CLAIM, provider.name())
             .claim(PROVIDER_USER_ID_CLAIM, providerUserId)
+            .claim(KAKAO_TALK_NICKNAME_CLAIM, kakaoTalkNickname)
             .claim(PURPOSE_CLAIM, PENDING_REGISTRATION_PURPOSE)
             .issuedAt(Date.from(issuedAt))
             .expiration(Date.from(expiresAt))
@@ -53,7 +56,7 @@ public class JwtService {
 
     public PendingRegistrationTokenPayload parsePendingRegistrationToken(String token) {
         if (token == null || token.isBlank()) {
-            throw new JwtException("Pending registration token is missing");
+            throw new JwtException(AuthErrorCode.PENDING_REGISTRATION_TOKEN_MISSING.name());
         }
 
         Claims claims = Jwts.parser()
@@ -65,25 +68,34 @@ public class JwtService {
         String purpose = claims.get(PURPOSE_CLAIM, String.class);
 
         if (!PENDING_REGISTRATION_PURPOSE.equals(purpose)) {
-            throw new JwtException("Invalid pending registration token purpose");
+            throw new JwtException(
+                AuthErrorCode.INVALID_PENDING_REGISTRATION_TOKEN_PURPOSE.name());
         }
 
         String providerValue = claims.get(PROVIDER_CLAIM, String.class);
         String providerUserId = claims.get(PROVIDER_USER_ID_CLAIM, String.class);
+        String kakaoTalkNickname = claims.get(KAKAO_TALK_NICKNAME_CLAIM, String.class);
 
         if (providerValue == null
             || providerValue.isBlank()
             || providerUserId == null
             || providerUserId.isBlank()) {
-            throw new JwtException("Required pending registration token claim is missing");
+            throw new JwtException(
+                AuthErrorCode.PENDING_REGISTRATION_TOKEN_CLAIM_MISSING.name());
+        }
+        if (kakaoTalkNickname == null || kakaoTalkNickname.isBlank()) {
+            throw new JwtException(
+                AuthErrorCode.PENDING_REGISTRATION_NICKNAME_MISSING.name());
         }
 
         try {
             AuthProvider provider = AuthProvider.valueOf(providerValue);
 
-            return new PendingRegistrationTokenPayload(provider, providerUserId);
+            return new PendingRegistrationTokenPayload(
+                provider, providerUserId, kakaoTalkNickname);
         } catch (IllegalArgumentException exception) {
-            throw new JwtException("Invalid authentication provider", exception);
+            throw new JwtException(
+                AuthErrorCode.INVALID_PENDING_REGISTRATION_AUTH_PROVIDER.name(), exception);
         }
     }
 

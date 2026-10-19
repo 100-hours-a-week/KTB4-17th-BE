@@ -199,16 +199,30 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void ACTIVE_회원은_프로필을_조회하지_않고_COMPLETE를_반환한다() {
+    void ACTIVE_회원도_정면_사진이_존재하지_않으면_PROFILE_IMAGE를_반환한다() {
         User user = user(UserStatus.ACTIVE);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        givenProfile(completeProfile());
 
         OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
 
         assertThat(response.userStatus()).isEqualTo(UserStatus.ACTIVE);
-        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.COMPLETE);
-        assertThat(response.requirements()).isEqualTo(OnboardingRequirementsResponse.complete());
-        verifyNoInteractions(profileRepository, profileImageRepository);
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.PROFILE_IMAGE);
+        assertThat(response.requirements().profileImageComplete()).isFalse();
+    }
+
+    @Test
+    void ACTIVE_회원도_정면_사진이_검증되지_않았으면_FACE_VERIFICATION을_반환한다() {
+        User user = user(UserStatus.ACTIVE);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        givenProfile(completeProfile());
+        given(profileImageRepository.existsByProfileIdAndDeletedAtIsNullAndFrontalTrue(10L))
+            .willReturn(true);
+
+        OnboardingStatusResponse response = onboardingService.getOnboardingStatus(USER_ID);
+
+        assertThat(response.userStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.onboardingNextStep()).isEqualTo(OnboardingStep.FACE_VERIFICATION);
     }
 
     @ParameterizedTest

@@ -1,6 +1,8 @@
 package com.team.dating_backend.chat.config;
 
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.chat.websocket.RabbitUserDestinations;
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.security.BearerTokenResolver;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.security.config.SecurityProperties;
@@ -31,22 +33,23 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final String PRESENCE_DESTINATION = "/app/chat-rooms/presence";
-    private static final Set<String> USER_SUBSCRIPTIONS = Set.of(
-        "/user/queue/chat-messages",
-        "/user/queue/chat-read-receipts",
-        "/user/queue/chat-room-updates",
-        "/user/queue/ai-practice");
 
     private final SecurityProperties securityProperties;
     private final JwtService jwtService;
+    private final ChatRabbitProperties rabbitProperties;
+    private final RabbitUserDestinations destinations;
     private final ObjectProvider<MessageChannel> clientOutboundChannel;
 
     public ChatWebSocketConfig(
         SecurityProperties securityProperties,
         JwtService jwtService,
+        ChatRabbitProperties rabbitProperties,
+        RabbitUserDestinations destinations,
         @Qualifier("clientOutboundChannel") ObjectProvider<MessageChannel> clientOutboundChannel) {
         this.securityProperties = securityProperties;
         this.jwtService = jwtService;
+        this.rabbitProperties = rabbitProperties;
+        this.destinations = destinations;
         this.clientOutboundChannel = clientOutboundChannel;
     }
 
@@ -60,7 +63,17 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/queue");
+        // 접속 서버가 달라도 채팅을 전달하도록 공통 RabbitMQ로 중계한다.
+        registry.enableStompBrokerRelay("/exchange")
+            .setRelayHost(rabbitProperties.getHost())
+            .setRelayPort(rabbitProperties.getStompPort())
+            .setClientLogin(rabbitProperties.getUsername())
+            .setClientPasscode(rabbitProperties.getPassword())
+            .setSystemLogin(rabbitProperties.getUsername())
+            .setSystemPasscode(rabbitProperties.getPassword())
+            .setVirtualHost(rabbitProperties.getVirtualHost())
+            .setSystemHeartbeatSendInterval(10000)
+            .setSystemHeartbeatReceiveInterval(10000);
         registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
     }
@@ -108,9 +121,24 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
                 if (command == StompCommand.SUBSCRIBE) {
                     String destination = accessor.getDestination();
-                    if (destination == null || !USER_SUBSCRIPTIONS.contains(destination)) {
+                    if (destination == null || !RabbitUserDestinations.USER_SUBSCRIPTIONS.contains(destination)) {
                         return null;
                     }
+                    Authentication authentication = (Authentication) accessor.getUser();
+                    ServiceAuthenticationPrincipal principal = (ServiceAuthenticationPrincipal) authentication
+                        .getPrincipal();
+                    // 다른 사용자의 큐를 구독하지 못하도록 인증된 사용자로 경로를 결정한다.
+                    for (String header : Set.copyOf(accessor.toNativeHeaderMap().keySet())) {
+                        if (!Set.of("id", "destination", "receipt").contains(header)) {
+                            accessor.removeNativeHeader(header);
+                        }
+                    }
+                    accessor.setDestination(destinations.brokerDestination(
+                        principal.getName(), destination));
+                    accessor.setNativeHeader("ack", "auto");
+                    // 연결이 끝난 큐는 남기지 않고 미수신 메시지는 기존 이력 조회로 복구한다.
+                    accessor.setNativeHeader("durable", "false");
+                    accessor.setNativeHeader("auto-delete", "true");
                 }
 
                 return message;
@@ -122,8 +150,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 accessor.removeNativeHeader(HttpHeaders.AUTHORIZATION);
 
                 if (bearerToken == null) {
-                    throw new MessageDeliveryException(
-                        "STOMP Authorization bearer token is required");
+                    throw new MessageDeliveryException(CommonErrorCode.AUTH_REQUIRED.name());
                 }
 
                 try {
@@ -131,9 +158,28 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     accessor.setUser(UsernamePasswordAuthenticationToken.authenticated(
                         new ServiceAuthenticationPrincipal(userId), null, Set.of()));
                 } catch (JwtException exception) {
-                    throw new MessageDeliveryException(
-                        "STOMP Authorization bearer token is invalid");
+                    throw new MessageDeliveryException(CommonErrorCode.AUTH_REQUIRED.name());
                 }
+            }
+        });
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+                if (accessor.getCommand() == StompCommand.MESSAGE) {
+                    // 기존 클라이언트가 구독 경로를 바꾸지 않도록 응답 경로를 복원한다.
+                    String destination = destinations.clientDestination(accessor.getDestination());
+                    if (destination != null) {
+                        accessor.setDestination(destination);
+                        return MessageBuilder.createMessage(
+                            message.getPayload(), accessor.getMessageHeaders());
+                    }
+                }
+                return message;
             }
         });
     }

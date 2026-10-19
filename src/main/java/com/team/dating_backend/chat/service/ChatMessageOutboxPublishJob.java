@@ -1,28 +1,36 @@
 package com.team.dating_backend.chat.service;
 
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
+import com.team.dating_backend.chat.monitoring.ChatOutboxMetrics;
 import com.team.dating_backend.chat.entity.ChatMessage;
-import com.team.dating_backend.chat.entity.ChatMessageOutbox;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.enums.ChatOutboxFailureCode;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
-import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
+import com.team.dating_backend.chat.service.ChatMessageOutboxClaimService.ClaimedBatch;
+import com.team.dating_backend.chat.service.ChatMessageOutboxClaimService.ClaimedOutbox;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.LongSupplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.TransactionException;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(
+    prefix = "app.workers", name = "chat-outbox-enabled",
+    havingValue = "true", matchIfMissing = true
+)
 public class ChatMessageOutboxPublishJob {
 
     private static final int BATCH_SIZE = 100;
@@ -31,55 +39,78 @@ public class ChatMessageOutboxPublishJob {
     private static final int MAX_DATABASE_BACKOFF_EXPONENT = 6;
     private static final long MAX_DATABASE_BACKOFF_SECONDS = 60;
 
-    private final ChatMessageOutboxRepository outboxRepository;
+    private final ChatMessageOutboxClaimService claims;
+    private final ChatOutboxMetrics metrics;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatParticipantRepository chatParticipantRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final RabbitUserEventPublisher eventPublisher;
+    private final ChatOutboxStartGate startGate;
 
     @Value("${app.chat.outbox.max-failures:10}")
     private int maxFailures = 10;
 
     private int consecutiveDatabaseFailures;
     private Instant nextDatabaseAttemptAt = Instant.MIN;
+    private LongSupplier nanoTime = System::nanoTime;
 
     public ChatMessageOutboxPublishJob(
-        ChatMessageOutboxRepository outboxRepository,
+        ChatMessageOutboxClaimService claims,
         ChatMessageRepository chatMessageRepository,
         ChatParticipantRepository chatParticipantRepository,
-        SimpMessagingTemplate messagingTemplate) {
-        this.outboxRepository = outboxRepository;
+        RabbitUserEventPublisher eventPublisher, ChatOutboxMetrics metrics, ChatOutboxStartGate startGate) {
+        this.claims = claims;
+        this.metrics = metrics;
         this.chatMessageRepository = chatMessageRepository;
         this.chatParticipantRepository = chatParticipantRepository;
-        this.messagingTemplate = messagingTemplate;
+        this.eventPublisher = eventPublisher;
+        this.startGate = startGate;
     }
 
     @Scheduled(fixedDelayString = "${app.chat.outbox-publish-delay-ms:1000}")
     public void publishDueMessages() {
+        // 전환 전 동기화가 끝나기 전에 과거 메시지가 발행되는 것을 막는다.
+        if (!startGate.isOpen()) {
+            return;
+        }
         if (Instant.now().isBefore(nextDatabaseAttemptAt)) {
             return;
         }
 
         try {
-            List<ChatMessageOutbox> outboxes = outboxRepository
-                .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                    LocalDateTime.now(), PageRequest.of(0, BATCH_SIZE));
+            // DB 호출 전에 시간을 재서 느린 선점 조회가 유효기간을 늘리지 않게 한다.
+            long claimStartedAt = nanoTime.getAsLong();
+            ClaimedBatch batch = claims.claimBatch(BATCH_SIZE);
+            List<ClaimedOutbox> outboxes = batch.items();
+            BatchLease lease = new BatchLease(batch, claimStartedAt);
 
-            for (ChatMessageOutbox outbox : outboxes) {
-                publish(outbox);
+            for (ClaimedOutbox outbox : outboxes) {
+                try {
+                    lease.ensureValid();
+                    publish(outbox, batch.token(), lease);
+                    lease.finished(outbox.id());
+                } catch (RuntimeException exception) {
+                    log.error("Outbox processing failed: outboxId={}, messageId={}, errorType={}",
+                        outbox.id(), outbox.chatMessageId(), exception.getClass().getSimpleName());
+                    throw exception;
+                }
             }
 
+            metrics.pollSucceeded();
             consecutiveDatabaseFailures = 0;
             nextDatabaseAttemptAt = Instant.MIN;
-        } catch (DataAccessException ignored) {
-            scheduleDatabaseRetry();
+        } catch (DataAccessException | TransactionException exception) {
+            scheduleDatabaseRetry(exception);
+        } catch (ClaimLostException exception) {
+            // 미완료 행은 현재 작업자가 처리하거나 선점 만료 후 복구한다.
+            log.warn("Outbox claim lost; stop processing the current batch");
         }
     }
 
-    private void publish(ChatMessageOutbox outbox) {
-        ChatMessage message = chatMessageRepository.findByIdWithImageFile(outbox.getChatMessageId())
+    private void publish(ClaimedOutbox outbox, String token, BatchLease lease) {
+        ChatMessage message = chatMessageRepository.findByIdWithImageFile(outbox.chatMessageId())
             .orElse(null);
         if (message == null) {
-            markFailed(outbox, ChatOutboxFailureCode.MESSAGE_NOT_FOUND);
+            markFailed(outbox, token, ChatOutboxFailureCode.MESSAGE_NOT_FOUND);
             return;
         }
 
@@ -88,7 +119,7 @@ public class ChatMessageOutboxPublishJob {
         boolean senderIsParticipant = participants.stream()
             .anyMatch(participant -> participant.getId().equals(message.getSenderParticipantId()));
         if (participants.size() != 2 || !senderIsParticipant) {
-            markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
+            markFailed(outbox, token, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
             return;
         }
 
@@ -97,7 +128,7 @@ public class ChatMessageOutboxPublishJob {
             .findFirst()
             .orElse(null);
         if (otherParticipant == null) {
-            markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
+            markFailed(outbox, token, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
             return;
         }
 
@@ -120,58 +151,114 @@ public class ChatMessageOutboxPublishJob {
                 mine && unreadByOther ? 1 : 0,
                 message.getCreatedAt());
 
+            // 선점 상실을 RabbitMQ 발행 실패로 처리하지 않는다.
+            lease.ensureValid();
             try {
-                messagingTemplate.convertAndSendToUser(
+                eventPublisher.publish(
                     participant.getUserId().toString(), MESSAGE_DESTINATION, event);
-            } catch (RuntimeException ignored) {
-                retryOrFail(outbox, ChatOutboxFailureCode.BROKER_PUBLISH_FAILED);
+            } catch (RuntimeException exception) {
+                log.warn(
+                    "RabbitMQ publish failed: outboxId={}, messageId={}, recipientUserId={}, attempt={}, errorType={}",
+                    outbox.id(), message.getId(), participant.getUserId(),
+                    outbox.rabbitFailureCount() + 1, exception.getClass().getSimpleName());
+                retryOrFail(outbox, token, ChatOutboxFailureCode.BROKER_PUBLISH_FAILED);
                 return;
             }
         }
 
-        outbox.markPublished(LocalDateTime.now());
-        outboxRepository.save(outbox);
+        // 발행 성공 후 DB 저장이 실패할 수 있으므로 브로커 예외 처리와 분리한다.
+        requireOwned(claims.complete(outbox.id(), token));
+        metrics.completed(outbox.createdAt(), LocalDateTime.now());
     }
 
     private void retryOrFail(
-        ChatMessageOutbox outbox, ChatOutboxFailureCode failureCode) {
-        LocalDateTime now = LocalDateTime.now();
-        int nextFailureCount = outbox.getFailureCount() + 1;
+        ClaimedOutbox outbox, String token, ChatOutboxFailureCode failureCode) {
+        int nextFailureCount = outbox.rabbitFailureCount() + 1;
         if (nextFailureCount >= maxFailures) {
-            outbox.markFailed(now, failureCode.name());
-            outboxRepository.save(outbox);
-            log.error("채팅 메시지 Outbox 재시도 한도를 초과했습니다. outboxId={}, errorCode={}",
-                outbox.getId(), ChatOutboxFailureCode.RETRY_LIMIT_EXCEEDED.name());
+            requireOwned(claims.fail(outbox.id(), token, failureCode.name()));
+            metrics.failed();
+            log.error("Outbox retry limit reached: outboxId={}, messageId={}, failureCount={}, failureCode={}",
+                outbox.id(), outbox.chatMessageId(), nextFailureCount, failureCode);
             return;
         }
 
         long maxDelaySeconds = 1L << Math.min(
-            outbox.getFailureCount(), MAX_RETRY_BACKOFF_EXPONENT);
+            outbox.rabbitFailureCount(), MAX_RETRY_BACKOFF_EXPONENT);
         long retryDelaySeconds = jitteredDelay(maxDelaySeconds);
-        outbox.scheduleRetry(
-            now.plusSeconds(retryDelaySeconds), failureCode.name());
-        outboxRepository.save(outbox);
-        log.warn("채팅 메시지 Outbox 발행을 재시도합니다. outboxId={}, failureCount={}, errorCode={}",
-            outbox.getId(), nextFailureCount, failureCode.name());
+        requireOwned(claims.retry(outbox.id(), token, retryDelaySeconds, failureCode.name()));
+        metrics.retried();
+        log.warn("Outbox retry scheduled: outboxId={}, messageId={}, failureCount={}, failureCode={}, delaySeconds={}",
+            outbox.id(), outbox.chatMessageId(), nextFailureCount, failureCode, retryDelaySeconds);
     }
 
     private void markFailed(
-        ChatMessageOutbox outbox, ChatOutboxFailureCode failureCode) {
-        outbox.markFailed(LocalDateTime.now(), failureCode.name());
-        outboxRepository.save(outbox);
-        log.error("채팅 메시지 Outbox를 실패 상태로 격리했습니다. outboxId={}, errorCode={}",
-            outbox.getId(), failureCode.name());
+        ClaimedOutbox outbox, String token, ChatOutboxFailureCode failureCode) {
+        requireOwned(claims.fail(outbox.id(), token, failureCode.name()));
+        metrics.failed();
+        log.error("Outbox failed: outboxId={}, messageId={}, failureCode={}",
+            outbox.id(), outbox.chatMessageId(), failureCode);
     }
 
-    private void scheduleDatabaseRetry() {
+    private void requireOwned(boolean updated) {
+        if (!updated) {
+            throw new ClaimLostException("Claim token no longer owns the outbox row");
+        }
+    }
+
+    /** 메시지마다 조회하지 않고 미완료 행의 선점만 주기적으로 갱신한다. */
+    private final class BatchLease {
+
+        private final String token;
+        private final Set<Long> pending = new LinkedHashSet<>();
+        private long lastRenewalStartedAt;
+
+        private BatchLease(ClaimedBatch batch, long claimStartedAt) {
+            token = batch.token();
+            batch.items().forEach(outbox -> pending.add(outbox.id()));
+            lastRenewalStartedAt = claimStartedAt;
+        }
+
+        private void ensureValid() {
+            long now = nanoTime.getAsLong();
+            long elapsed = now - lastRenewalStartedAt;
+            if (elapsed >= claims.leaseNanos()) {
+                throw new ClaimLostException("Local lease deadline passed; stop publishing this batch");
+            }
+            if (elapsed >= claims.renewalNanos()) {
+                int renewed = claims.renew(token, List.copyOf(pending));
+                // 갱신이 지연돼도 이전 만료 시각을 넘긴 선점은 되살리지 않는다.
+                if (renewed != pending.size()
+                    || nanoTime.getAsLong() - lastRenewalStartedAt >= claims.leaseNanos()) {
+                    throw new ClaimLostException("Could not renew all remaining outbox claims");
+                }
+                lastRenewalStartedAt = now;
+            }
+        }
+
+        private void finished(long id) {
+            pending.remove(id);
+        }
+    }
+
+    private static final class ClaimLostException extends RuntimeException {
+
+        private ClaimLostException(String message) {
+            super(message);
+        }
+    }
+
+    private void scheduleDatabaseRetry(RuntimeException exception) {
+        metrics.databaseError();
         long maxDelaySeconds = Math.min(
             1L << Math.min(consecutiveDatabaseFailures, MAX_DATABASE_BACKOFF_EXPONENT),
             MAX_DATABASE_BACKOFF_SECONDS);
         long retryDelaySeconds = jitteredDelay(maxDelaySeconds);
         consecutiveDatabaseFailures++;
         nextDatabaseAttemptAt = Instant.now().plusSeconds(retryDelaySeconds);
-        log.error("채팅 메시지 Outbox DB 접근에 실패했습니다. errorCode={}, retryDelaySeconds={}",
-            ChatOutboxFailureCode.DATABASE_ACCESS_FAILED.name(), retryDelaySeconds);
+        log.error(
+            "Outbox database operation failed: failureCount={}, retryDelaySeconds={}, nextAttemptAt={}, errorType={}",
+            consecutiveDatabaseFailures, retryDelaySeconds, nextDatabaseAttemptAt,
+            exception.getClass().getSimpleName());
     }
 
     private long jitteredDelay(long maxDelaySeconds) {

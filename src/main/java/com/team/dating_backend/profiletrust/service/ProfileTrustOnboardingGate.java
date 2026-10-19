@@ -5,6 +5,7 @@ import com.team.dating_backend.onboarding.service.OnboardingTrustRequirement;
 import com.team.dating_backend.profiletrust.repository.FaceVerificationSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -14,6 +15,7 @@ public class ProfileTrustOnboardingGate implements OnboardingTrustRequirement {
     private final FaceVerificationSessionRepository sessions;
 
     @EventListener
+    @Order(0)
     public void bindVerifiedPhoto(FileUploadCompletedEvent event) {
         if (event.validatedVersionToken() != null) {
             sessions.bindVerifiedFile(event.ownerUserId(), event.uploadIntentId(),

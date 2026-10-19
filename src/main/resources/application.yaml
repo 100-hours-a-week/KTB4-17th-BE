@@ -8,7 +8,7 @@ spring:
 
   servlet:
     multipart:
-      # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
+      # 임계값을 전체 요청 제한보다 크게 설정해 허용된 업로드를 메모리에 유지한다.
       max-file-size: 5MB
       max-request-size: 6MB
       file-size-threshold: 6MB
@@ -18,6 +18,22 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:migration}
+    password: ${RABBITMQ_PASSWORD:migration-local}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    # 발행별 브로커 수신 확인을 받아 실패한 발행을 재시도할 수 있게 한다.
+    publisher-confirm-type: correlated
+    # 오프라인 사용자는 임시 WS 큐가 없어 REST로 이력을 조회한다.
+    template:
+      mandatory: false
+    connection-timeout: 5s
+
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:60s}
 
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
@@ -75,8 +91,26 @@ app:
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
 
   chat:
+    monitoring:
+      broker: rabbit
+      outbox-snapshot-enabled: ${CHAT_MONITORING_OUTBOX_SNAPSHOT_ENABLED:true}
+      snapshot-delay-ms: ${CHAT_MONITORING_SNAPSHOT_DELAY_MS:10000}
+      query-timeout-seconds: ${CHAT_MONITORING_QUERY_TIMEOUT_SECONDS:3}
+    # HTTP 발행과 WebSocket 구독이 같은 브로커·교환기를 사용하도록 맞춘다.
+    rabbit:
+      host: ${spring.rabbitmq.host}
+      stomp-port: ${RABBITMQ_STOMP_PORT:61613}
+      username: ${spring.rabbitmq.username}
+      password: ${spring.rabbitmq.password}
+      virtual-host: ${spring.rabbitmq.virtual-host}
+      exchange: ${RABBITMQ_CHAT_EXCHANGE:ecs.chat.events}
+      confirm-timeout-ms: ${RABBITMQ_CONFIRM_TIMEOUT_MS:5000}
+    outbox-publish-delay-ms: ${APP_CHAT_OUTBOX_PUBLISH_DELAY_MS:1000}
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
+      claim-lease-ms: ${APP_CHAT_OUTBOX_CLAIM_LEASE_MS:30000}
+      # 전환 전 DB 동기화가 끝난 컨테이너만 발행을 시작하도록 한다.
+      start-gate-file: ${APP_CHAT_OUTBOX_START_GATE_FILE:}
 
   chat-delegation:
     base-url: ${AI_CHAT_DELEGATION_BASE_URL:}
@@ -129,13 +163,21 @@ app:
       download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
 
 management:
+  metrics:
+    tags:
+      deployment: ${MIGRATION_DEPLOYMENT:green}
+      broker: ${app.chat.monitoring.broker}
   endpoints:
     web:
       exposure:
         include: health,prometheus
 
+server:
+  # 종료 시 처리 중인 HTTP 요청이 마무리될 시간을 준다.
+  shutdown: graceful
+
 sentry:
   dsn: https://3a23addb65af845726a75c610836d234@o4512169151496192.ingest.us.sentry.io/4512169955229696
-  # Add data like request headers and IP for users,
-  # see https://docs.sentry.io/platforms/java/guides/spring-boot/data-management/data-collected/ for more info
+  # 요청 헤더와 사용자 IP 등의 추가 정보 수집
+  # 수집 항목: https://docs.sentry.io/platforms/java/guides/spring-boot/data-management/data-collected/
   send-default-pii: true

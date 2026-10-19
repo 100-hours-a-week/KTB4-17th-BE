@@ -3,6 +3,7 @@ package com.team.dating_backend.onboarding.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.activityregion.entity.ActivityRegion;
@@ -166,15 +167,17 @@ class OnboardingCompletionServiceTest {
     }
 
     @Test
-    void ACTIVE_회원은_상태를_유지하고_완료_조건을_다시_조회하지_않는다() {
+    void ACTIVE_회원도_정면_인증_상태를_다시_조회한다() {
         User user = onboardingUser();
         user.activate(LocalDateTime.now());
         givenUser(user);
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(USER_ID))
+            .willReturn(Optional.of(completeProfile(user)));
 
         onboardingCompletionService.activateIfCompleted(USER_ID);
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
-        verifyNoInteractions(profileRepository, profileImageRepository);
+        verify(profileRepository).findByUserIdAndDeletedAtIsNull(USER_ID);
     }
 
     @ParameterizedTest

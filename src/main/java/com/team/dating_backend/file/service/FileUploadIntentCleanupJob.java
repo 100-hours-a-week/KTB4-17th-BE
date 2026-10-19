@@ -10,10 +10,16 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+// 파일 정리 작업이 여러 서버에서 겹치지 않도록 실행 서버를 선택한다.
+@ConditionalOnProperty(
+    prefix = "app.workers", name = "file-cleanup-enabled",
+    havingValue = "true", matchIfMissing = true
+)
 @RequiredArgsConstructor
 public class FileUploadIntentCleanupJob {
 

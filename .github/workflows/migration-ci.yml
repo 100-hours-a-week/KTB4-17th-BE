@@ -1,0 +1,46 @@
+name: BE Migration CI
+
+on:
+    pull_request:
+        branches: [migration]
+
+permissions:
+    contents: read
+
+jobs:
+    validate:
+        name: 코드 및 스크립트 검사
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: 코드 가져오기
+              uses: actions/checkout@v7
+
+            - name: Java 준비
+              uses: actions/setup-java@v6
+              with:
+                  distribution: temurin
+                  java-version: "25"
+
+            - name: Gradle 준비
+              uses: gradle/actions/setup-gradle@v6
+
+            - name: 스크립트 문법 검사
+              run: |
+                  set -euo pipefail
+
+                  for file in migration/*.sh; do
+                    bash -n "$file"
+                  done
+
+            - name: 코드 포맷 검사
+              run: bash ./gradlew spotlessCheck
+
+            - name: 단위 테스트
+              run: bash ./gradlew unitTest
+
+            - name: API 테스트
+              run: bash ./gradlew apiTest
+
+            - name: JAR 빌드 확인
+              run: bash ./gradlew bootJar

@@ -12,9 +12,15 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+// 같은 AI 작업을 여러 서버가 복구하지 않도록 실행 서버를 선택한다.
+@ConditionalOnProperty(
+    prefix = "app.workers", name = "ai-simulation-recovery-enabled",
+    havingValue = "true", matchIfMissing = true
+)
 @RequiredArgsConstructor
 @Slf4j
 public class AiSimulationRecoveryJob implements ApplicationRunner {

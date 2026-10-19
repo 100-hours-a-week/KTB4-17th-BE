@@ -38,7 +38,9 @@ public class AuthLoginResponseFactory {
 
         SocialLoginResult.PendingRegistration pendingRegistration = (SocialLoginResult.PendingRegistration) loginResult;
         String pendingToken = jwtService.createPendingRegistrationToken(
-            pendingRegistration.provider(), pendingRegistration.providerUserId());
+            pendingRegistration.provider(),
+            pendingRegistration.providerUserId(),
+            pendingRegistration.kakaoTalkNickname());
 
         return redirect(
             destinationFor(LoginDestination.REGISTRATION),
