@@ -13,6 +13,16 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
 
 import com.team.dating_backend.TestJwtSecret;
+import com.team.dating_backend.RabbitTestSupport;
+import com.team.dating_backend.chat.config.ChatRabbitConfig;
+import com.team.dating_backend.chat.monitoring.ChatConnectionMetrics;
+import com.team.dating_backend.chat.monitoring.ChatOutboxMetrics;
+import com.team.dating_backend.chat.monitoring.ChatOutboxSnapshot;
+import com.team.dating_backend.chat.monitoring.MigrationHttpMetricsFilter;
+import com.team.dating_backend.chat.service.ChatMessageOutboxClaimService;
+import com.team.dating_backend.chat.service.ChatOutboxStartGate;
+import com.team.dating_backend.chat.service.RabbitUserEventPublisher;
+import com.team.dating_backend.chat.websocket.RabbitUserDestinations;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
@@ -86,8 +96,8 @@ import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
 import org.springframework.messaging.converter.JacksonJsonMessageConverter;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.web.socket.WebSocketHttpHeaders;
-import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
@@ -101,7 +111,8 @@ import org.testcontainers.mysql.MySQLContainer;
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
-        "jwt.service-expiration-minutes=60"
+        "jwt.service-expiration-minutes=60",
+        "app.chat.monitoring.broker=rabbit"
     }
 )
 @Testcontainers(disabledWithoutDocker = true)
@@ -119,11 +130,15 @@ class ChatMessageFlowIntegrationTest {
     @DynamicPropertySource
     static void registerJwtSecret(DynamicPropertyRegistry registry) {
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+        RabbitTestSupport.properties(registry, RABBIT);
     }
 
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+
+    @Container
+    static final GenericContainer<?> RABBIT = RabbitTestSupport.container();
 
     @LocalServerPort
     private int port;
@@ -139,6 +154,9 @@ class ChatMessageFlowIntegrationTest {
 
     @Autowired
     private SimpUserRegistry simpUserRegistry;
+
+    @Autowired
+    private RabbitUserDestinations destinations;
 
     @Autowired
     private ChatRoomPresenceRegistry presenceRegistry;
@@ -213,8 +231,7 @@ class ChatMessageFlowIntegrationTest {
         BlockingQueue<ChatMessageCreatedEvent> senderEvents = new LinkedBlockingQueue<>();
         BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
         BlockingQueue<ChatMessageReadReceiptEvent> readReceiptEvents = new LinkedBlockingQueue<>();
-        WebSocketStompClient stompClient = new WebSocketStompClient(
-            new StandardWebSocketClient());
+        WebSocketStompClient stompClient = RabbitTestSupport.webSocketClient();
         stompClient.setMessageConverter(new JacksonJsonMessageConverter());
         StompSession senderSession = null;
         StompSession receiverSession = null;
@@ -333,8 +350,7 @@ class ChatMessageFlowIntegrationTest {
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
         BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
-        WebSocketStompClient stompClient = new WebSocketStompClient(
-            new StandardWebSocketClient());
+        WebSocketStompClient stompClient = RabbitTestSupport.webSocketClient();
         stompClient.setMessageConverter(new JacksonJsonMessageConverter());
         StompSession receiverSession = null;
 
@@ -376,7 +392,7 @@ class ChatMessageFlowIntegrationTest {
 
     @Test
     void 여러_연결의_화면_상태와_연결_종료에_따라_알림을_생략하거나_생성한다() throws Exception {
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         client.setMessageConverter(new JacksonJsonMessageConverter());
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
@@ -436,7 +452,7 @@ class ChatMessageFlowIntegrationTest {
             }
             return result;
         }).when(presenceService).updatePresence(anyLong(), anyString(), any(), anyMap());
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         client.setMessageConverter(new JacksonJsonMessageConverter());
         StompSession session = null;
         try {
@@ -539,7 +555,7 @@ class ChatMessageFlowIntegrationTest {
             connectHeaders,
             new StompSessionHandlerAdapter() {})
             .get(5, TimeUnit.SECONDS);
-        session.subscribe(MESSAGE_DESTINATION, new StompFrameHandler() {
+        RabbitTestSupport.subscribe(session, MESSAGE_DESTINATION, new StompFrameHandler() {
             @Override
             public java.lang.reflect.Type getPayloadType(StompHeaders stompHeaders) {
                 return ChatMessageCreatedEvent.class;
@@ -556,7 +572,7 @@ class ChatMessageFlowIntegrationTest {
     private void subscribeToReadReceipts(
         StompSession session,
         BlockingQueue<ChatMessageReadReceiptEvent> receivedEvents) {
-        session.subscribe(READ_RECEIPT_DESTINATION, new StompFrameHandler() {
+        RabbitTestSupport.subscribe(session, READ_RECEIPT_DESTINATION, new StompFrameHandler() {
             @Override
             public java.lang.reflect.Type getPayloadType(StompHeaders stompHeaders) {
                 return ChatMessageReadReceiptEvent.class;
@@ -628,7 +644,8 @@ class ChatMessageFlowIntegrationTest {
             SimpUser user = simpUserRegistry.getUser(userName);
             if (user != null && user.getSessions().stream()
                 .flatMap(session -> session.getSubscriptions().stream())
-                .anyMatch(subscription -> destination.equals(subscription.getDestination()))) {
+                .anyMatch(subscription -> destinations.brokerDestination(userName, destination)
+                    .equals(subscription.getDestination()))) {
                 return true;
             }
             Thread.sleep(10);
@@ -654,7 +671,7 @@ class ChatMessageFlowIntegrationTest {
         return jdbcTemplate.queryForObject(
             "select count(*) from chat_message_outbox outbox "
                 + "join chat_messages message on message.id = outbox.chat_message_id "
-                + "where message.chat_room_id = ? and outbox.published_at is not null",
+                + "where message.chat_room_id = ? and outbox.rabbit_published_at is not null",
             Integer.class, CHAT_ROOM_ID);
     }
 
@@ -701,6 +718,9 @@ class ChatMessageFlowIntegrationTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRabbitConfig.class,
+            RabbitUserDestinations.class,
+            RabbitUserEventPublisher.class,
             ChatRoomPresenceController.class,
             ChatRoomPresenceService.class,
             ChatRoomPresenceRegistry.class,
@@ -719,6 +739,12 @@ class ChatMessageFlowIntegrationTest {
             JpaFileRepositoryAdapter.class,
             ChatMessageRateLimiter.class,
             ChatMessageOutboxPublishJob.class,
+            ChatMessageOutboxClaimService.class,
+            ChatOutboxStartGate.class,
+            ChatOutboxMetrics.class,
+            ChatOutboxSnapshot.class,
+            ChatConnectionMetrics.class,
+            MigrationHttpMetricsFilter.class,
             JwtService.class,
             ApiAuthenticationEntryPoint.class,
             ApiAccessDeniedHandler.class

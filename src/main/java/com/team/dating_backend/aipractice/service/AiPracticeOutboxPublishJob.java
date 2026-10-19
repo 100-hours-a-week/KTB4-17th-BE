@@ -20,12 +20,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 @Slf4j
 @Component
+// AI 요청 중복 실행을 피하도록 서버별로 작업을 끌 수 있게 한다.
+@ConditionalOnProperty(
+    prefix = "app.workers", name = "ai-practice-enabled",
+    havingValue = "true", matchIfMissing = true
+)
 @RequiredArgsConstructor
 public class AiPracticeOutboxPublishJob {
 

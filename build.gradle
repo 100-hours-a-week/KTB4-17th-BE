@@ -28,6 +28,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    // RabbitMQ 발행과 STOMP 중계 연결에 필요한 의존성.
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+    implementation 'io.projectreactor.netty:reactor-netty'
 	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'

@@ -13,6 +13,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.TestJwtSecret;
+import com.team.dating_backend.RabbitTestSupport;
+import com.team.dating_backend.chat.config.ChatRabbitConfig;
+import com.team.dating_backend.chat.service.RabbitUserEventPublisher;
+import com.team.dating_backend.chat.websocket.RabbitUserDestinations;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -79,6 +86,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
         "jwt.service-expiration-minutes=60"
     }
 )
+@Testcontainers(disabledWithoutDocker = true)
 class ChatWebSocketHandshakeTest {
 
     private static final String TEST_JWT_SECRET = TestJwtSecret.generate();
@@ -86,7 +94,11 @@ class ChatWebSocketHandshakeTest {
     @DynamicPropertySource
     static void registerJwtSecret(DynamicPropertyRegistry registry) {
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+        RabbitTestSupport.properties(registry, RABBIT);
     }
+
+    @Container
+    static final GenericContainer<?> RABBIT = RabbitTestSupport.container();
 
     @LocalServerPort
     private int port;
@@ -106,6 +118,12 @@ class ChatWebSocketHandshakeTest {
     @Autowired
     private SimpUserRegistry simpUserRegistry;
 
+    @Autowired
+    private RabbitUserEventPublisher eventPublisher;
+
+    @Autowired
+    private RabbitUserDestinations destinations;
+
     @MockitoBean
     private UserAuthenticationService userAuthenticationService;
 
@@ -121,7 +139,7 @@ class ChatWebSocketHandshakeTest {
         headers.setSecWebSocketProtocol("v12.stomp");
         StompHeaders connectHeaders = bearerConnectHeaders(token);
 
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         StompSession session = null;
 
         try {
@@ -161,7 +179,7 @@ class ChatWebSocketHandshakeTest {
         headers.setSecWebSocketProtocol("v12.stomp");
         StompHeaders connectHeaders = bearerConnectHeaders(token);
 
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         client.setMessageConverter(new JacksonJsonMessageConverter());
         StompSession session = null;
         BlockingQueue<ChatMessageCreatedEvent> receivedEvents = new LinkedBlockingQueue<>();
@@ -183,7 +201,7 @@ class ChatWebSocketHandshakeTest {
                 connectHeaders,
                 new StompSessionHandlerAdapter() {})
                 .get(5, TimeUnit.SECONDS);
-            session.subscribe("/user/queue/chat-messages", new StompFrameHandler() {
+            RabbitTestSupport.subscribe(session, "/user/queue/chat-messages", new StompFrameHandler() {
                 @Override
                 public java.lang.reflect.Type getPayloadType(StompHeaders headers) {
                     return ChatMessageCreatedEvent.class;
@@ -198,7 +216,7 @@ class ChatWebSocketHandshakeTest {
             assertTrue(awaitUserSubscription("42", "/user/queue/chat-messages"));
             assertEquals("/user/", messagingTemplate.getUserDestinationPrefix());
 
-            messagingTemplate.convertAndSendToUser(
+            eventPublisher.publish(
                 "42", "/queue/chat-messages", expected);
             ChatMessageCreatedEvent receivedEvent = receivedEvents.poll(5, TimeUnit.SECONDS);
             assertEquals(expected, receivedEvent);
@@ -217,7 +235,7 @@ class ChatWebSocketHandshakeTest {
 
     @Test
     void 상태_전달_목적지의_유효한_요청만_인증_회원과_세션_정보로_전달한다() throws Exception {
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         client.setMessageConverter(new JacksonJsonMessageConverter());
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
         headers.setOrigin("http://localhost:5173");
@@ -280,7 +298,7 @@ class ChatWebSocketHandshakeTest {
             connectHeaders.add(HttpHeaders.AUTHORIZATION, "Bearer " + token);
         }
 
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        WebSocketStompClient client = RabbitTestSupport.webSocketClient();
         try {
             assertThrows(ExecutionException.class, () -> client.connectAsync(
                 "ws://127.0.0.1:" + port + "/ws/chat",
@@ -319,7 +337,8 @@ class ChatWebSocketHandshakeTest {
             SimpUser user = simpUserRegistry.getUser(userName);
             if (user != null && user.getSessions().stream()
                 .flatMap(session -> session.getSubscriptions().stream())
-                .anyMatch(subscription -> destination.equals(subscription.getDestination()))) {
+                .anyMatch(subscription -> destinations.brokerDestination(userName, destination)
+                    .equals(subscription.getDestination()))) {
                 return true;
             }
             Thread.sleep(10);
@@ -344,6 +363,9 @@ class ChatWebSocketHandshakeTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRabbitConfig.class,
+            RabbitUserDestinations.class,
+            RabbitUserEventPublisher.class,
             ChatRoomPresenceController.class,
             JwtService.class,
             ApiAuthenticationEntryPoint.class,

@@ -1,0 +1,73 @@
+name: BE Migration CD
+
+on:
+    push:
+        branches: [migration]
+
+permissions:
+    contents: read
+
+jobs:
+    migrate:
+        name: 이미지 빌드 및 마이그레이션 실행
+        runs-on: ubuntu-latest
+        timeout-minutes: 360
+        environment: production
+
+        # 배포가 겹쳐 같은 서버와 라우팅을 동시에 바꾸는 일을 막는다.
+        concurrency:
+            group: be-ecs-production
+            cancel-in-progress: false
+
+        permissions:
+            contents: read
+            id-token: write
+
+        env:
+            AWS_REGION: ap-northeast-2
+            ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+            ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+
+        steps:
+            - name: 머지된 코드와 스크립트 가져오기
+              uses: actions/checkout@v7
+              with:
+                  ref: ${{ github.sha }}
+
+            - name: AWS 인증
+              uses: aws-actions/configure-aws-credentials@v6
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: ECR 로그인
+              uses: aws-actions/amazon-ecr-login@v2
+
+            - name: Docker Buildx 준비
+              uses: docker/setup-buildx-action@v4
+
+            - name: 이미지 빌드 및 업로드
+              id: build
+              uses: docker/build-push-action@v7
+              with:
+                  context: .
+                  platforms: linux/amd64
+                  push: true
+                  provenance: false
+                  sbom: false
+                  tags: |
+                      ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:migration
+                      ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:migration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+            - name: EC2에 스크립트 전송 및 실행
+              env:
+                  PROD_EC2_INSTANCE_ID: ${{ secrets.PROD_EC2_INSTANCE_ID }}
+                  # 태그가 바뀌어도 이번에 빌드한 이미지를 정확히 사용한다.
+                  IMAGE_URI: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ steps.build.outputs.digest }}
+                  MIGRATION_APP_DIR: ${{ secrets.MIGRATION_APP_DIR || '/home/ubuntu/app' }}
+
+                  CF_DISTRIBUTION_ID: ${{ secrets.CF_DISTRIBUTION_ID }}
+                  CF_EC2_ORIGIN_ID: ${{ secrets.CF_EC2_ORIGIN_ID }}
+                  CF_ALB_ORIGIN_ID: ${{ secrets.CF_ALB_ORIGIN_ID }}
+
+              run: bash migration/dispatch.sh
