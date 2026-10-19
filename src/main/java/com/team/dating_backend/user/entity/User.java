@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -79,6 +80,13 @@ public class User {
     public void activate(LocalDateTime now) {
         if (status == UserStatus.ONBOARDING) {
             status = UserStatus.ACTIVE;
+            updatedAt = now;
+        }
+    }
+
+    public void updateName(String name, LocalDateTime now) {
+        if (!Objects.equals(this.name, name)) {
+            this.name = name;
             updatedAt = now;
         }
     }
