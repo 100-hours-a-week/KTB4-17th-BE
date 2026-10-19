@@ -17,6 +17,7 @@ import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.enums.LoginDestination;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.FaceVerificationStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -43,6 +44,7 @@ class SocialLoginServiceTest {
         // given
         UserAuthAccount account = linkedAccount(UserStatus.ACTIVE, 1L);
         User user = account.getUser();
+        given(user.getFaceVerificationStatus()).willReturn(FaceVerificationStatus.VERIFIED);
         given(
             userAuthAccountRepository.findByProviderAndProviderUserId(
                 AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID))
@@ -60,6 +62,25 @@ class SocialLoginServiceTest {
         verify(user).updateName(eq(KAKAO_TALK_NICKNAME), any(LocalDateTime.class));
         verify(userAuthAccountRepository)
             .findByProviderAndProviderUserId(AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID);
+    }
+
+    @Test
+    void 정면_사진_인증이_미완료된_ACTIVE_회원은_로그인_후_온보딩으로_이동한다() {
+        UserAuthAccount account = linkedAccount(UserStatus.ACTIVE, 1L);
+        User user = account.getUser();
+        given(user.getFaceVerificationStatus()).willReturn(FaceVerificationStatus.NOT_VERIFIED);
+        given(
+            userAuthAccountRepository.findByProviderAndProviderUserId(
+                AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID))
+            .willReturn(Optional.of(account));
+
+        SocialLoginResult result = socialLoginService.login(
+            AuthProvider.KAKAO, KAKAO_PROVIDER_USER_ID, KAKAO_TALK_NICKNAME);
+
+        SocialLoginResult.Authenticated authenticated = assertInstanceOf(
+            SocialLoginResult.Authenticated.class, result);
+        assertEquals(LoginDestination.ONBOARDING, authenticated.destination());
+        verify(user).updateName(eq(KAKAO_TALK_NICKNAME), any(LocalDateTime.class));
     }
 
     @Test

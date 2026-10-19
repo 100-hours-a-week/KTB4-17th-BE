@@ -6,6 +6,7 @@ import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.enums.LoginDestination;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.FaceVerificationStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +39,10 @@ public class SocialLoginService {
         String kakaoTalkNickname) {
         if (user.getStatus() == UserStatus.ACTIVE) {
             user.updateName(kakaoTalkNickname, LocalDateTime.now());
-            return new SocialLoginResult.Authenticated(user.getId(), LoginDestination.SERVICE);
+            LoginDestination destination = user.getFaceVerificationStatus() == FaceVerificationStatus.VERIFIED
+                ? LoginDestination.SERVICE
+                : LoginDestination.ONBOARDING;
+            return new SocialLoginResult.Authenticated(user.getId(), destination);
         }
 
         if (user.getStatus() == UserStatus.ONBOARDING) {

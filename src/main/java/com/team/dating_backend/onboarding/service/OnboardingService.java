@@ -31,13 +31,6 @@ public class OnboardingService {
         User user = findUser(userId);
         validateOnboardingAccess(userId, user);
 
-        if (user.getStatus() == UserStatus.ACTIVE) {
-            return new OnboardingStatusResponse(
-                user.getStatus(),
-                OnboardingStep.COMPLETE,
-                OnboardingRequirementsResponse.complete());
-        }
-
         OnboardingRequirementsResponse requirements = profileRepository
             .findByUserIdAndDeletedAtIsNull(userId)
             .map(profile -> calculateRequirements(user, profile))
