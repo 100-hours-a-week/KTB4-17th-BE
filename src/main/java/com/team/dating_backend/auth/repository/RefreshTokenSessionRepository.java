@@ -19,7 +19,7 @@ public interface RefreshTokenSessionRepository extends JpaRepository<RefreshToke
     Optional<RefreshTokenSession> findBySessionKeyForUpdate(
         @Param("sessionKey") UUID sessionKey);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("""
         update RefreshTokenSession session
         set session.revokedAt = :revokedAt, session.revocationReason = :reason
