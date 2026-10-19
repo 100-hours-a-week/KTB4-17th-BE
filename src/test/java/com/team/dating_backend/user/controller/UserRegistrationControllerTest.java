@@ -57,7 +57,6 @@ class UserRegistrationControllerTest {
                 .content(
                     """
                         {
-                          "name": "이안",
                           "birthDate": "2000-01-01",
                           "gender": "MALE"
                         }
@@ -95,7 +94,6 @@ class UserRegistrationControllerTest {
                 .content(
                     """
                         {
-                          "name": "이안",
                           "birthDate": "2000-01-01",
                           "gender": "MALE"
                         }

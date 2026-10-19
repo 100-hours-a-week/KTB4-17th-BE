@@ -102,6 +102,7 @@ class SocialLoginServiceTest {
             result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());
+        assertEquals(KAKAO_TALK_NICKNAME, pending.kakaoTalkNickname());
     }
 
     @Test
@@ -124,6 +125,7 @@ class SocialLoginServiceTest {
             result);
         assertEquals(AuthProvider.KAKAO, pending.provider());
         assertEquals(KAKAO_PROVIDER_USER_ID, pending.providerUserId());
+        assertEquals(KAKAO_TALK_NICKNAME, pending.kakaoTalkNickname());
         verify(user, never()).updateName(any(), any(LocalDateTime.class));
     }
 

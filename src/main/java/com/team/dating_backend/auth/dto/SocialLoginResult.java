@@ -8,7 +8,10 @@ public sealed interface SocialLoginResult
 
     record Authenticated(Long userId, LoginDestination destination) implements SocialLoginResult {}
 
-    record PendingRegistration(AuthProvider provider, String providerUserId)
+    record PendingRegistration(
+        AuthProvider provider,
+        String providerUserId,
+        String kakaoTalkNickname)
         implements
             SocialLoginResult {}
 }
