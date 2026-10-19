@@ -37,7 +37,7 @@ jobs:
             - name: AWS 인증
               uses: aws-actions/configure-aws-credentials@v6
               with:
-                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  role-to-assume: ${{ secrets.MIGRATION_AWS_ROLE_ARN }}
                   aws-region: ${{ env.AWS_REGION }}
 
             - name: ECR 로그인
