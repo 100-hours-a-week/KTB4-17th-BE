@@ -27,7 +27,8 @@ public class SocialLoginService {
                 account -> resolveExistingUser(
                     account.getUser(), provider, providerUserId, kakaoTalkNickname))
             .orElseGet(
-                () -> new SocialLoginResult.PendingRegistration(provider, providerUserId));
+                () -> new SocialLoginResult.PendingRegistration(
+                    provider, providerUserId, kakaoTalkNickname));
     }
 
     private SocialLoginResult resolveExistingUser(
@@ -46,7 +47,8 @@ public class SocialLoginService {
         }
 
         if (user.getStatus() == UserStatus.WITHDRAWN) {
-            return new SocialLoginResult.PendingRegistration(provider, providerUserId);
+            return new SocialLoginResult.PendingRegistration(
+                provider, providerUserId, kakaoTalkNickname);
         }
 
         throw new IllegalStateException(

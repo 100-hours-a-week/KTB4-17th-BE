@@ -53,7 +53,8 @@ public class UserRegistrationService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        User user = User.create(request.name(), request.birthDate(), request.gender(), now);
+        User user = User.create(
+            payload.kakaoTalkNickname(), request.birthDate(), request.gender(), now);
 
         User savedUser = userRepository.save(user);
 

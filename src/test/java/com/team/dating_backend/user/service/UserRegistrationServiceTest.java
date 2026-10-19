@@ -29,6 +29,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -37,6 +38,7 @@ class UserRegistrationServiceTest {
 
     private static final String PENDING_TOKEN = "pending-token";
     private static final String PROVIDER_USER_ID = "kakao-123";
+    private static final String KAKAO_TALK_NICKNAME = "Alice";
     private static final String ACCESS_TOKEN = "access-token";
     private static final String REFRESH_TOKEN = "refresh-token";
 
@@ -74,7 +76,9 @@ class UserRegistrationServiceTest {
         // then
         assertEquals(ACCESS_TOKEN, result.accessToken());
         assertEquals(REFRESH_TOKEN, result.refreshToken());
-        verify(userRepository).save(any(User.class));
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals(KAKAO_TALK_NICKNAME, userCaptor.getValue().getName());
         verify(userAuthAccountRepository).save(any(UserAuthAccount.class));
         verify(authTokenService).issue(10L);
     }
@@ -99,6 +103,9 @@ class UserRegistrationServiceTest {
         // then
         assertEquals(ACCESS_TOKEN, result.accessToken());
         assertEquals(REFRESH_TOKEN, result.refreshToken());
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals(KAKAO_TALK_NICKNAME, userCaptor.getValue().getName());
         verify(existingAccount).relink(eq(savedUser), any(LocalDateTime.class));
         verify(userAuthAccountRepository).save(existingAccount);
         verify(authTokenService).issue(20L);
@@ -125,7 +132,8 @@ class UserRegistrationServiceTest {
     private void givenPendingPayload() {
         given(jwtService.parsePendingRegistrationToken(PENDING_TOKEN))
             .willReturn(
-                new PendingRegistrationTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
+                new PendingRegistrationTokenPayload(
+                    AuthProvider.KAKAO, PROVIDER_USER_ID, KAKAO_TALK_NICKNAME));
     }
 
     private User savedUser(Long userId) {
@@ -144,7 +152,7 @@ class UserRegistrationServiceTest {
     }
 
     private UserRegistrationRequest registrationRequest() {
-        return new UserRegistrationRequest("우", LocalDate.of(2000, 1, 1), Gender.MALE);
+        return new UserRegistrationRequest(LocalDate.of(2000, 1, 1), Gender.MALE);
     }
 
     private IssuedAuthTokens issuedTokens() {
