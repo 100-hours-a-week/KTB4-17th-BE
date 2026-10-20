@@ -5,6 +5,7 @@ import com.team.dating_backend.chat.service.ChatRoomLeaveService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnProperty(prefix = "app.chat", name = "runtime-enabled", havingValue = "true")
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/chat-rooms/{chatRoomId}/leave")
 public class ChatRoomLeaveController {

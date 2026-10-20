@@ -75,6 +75,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
     properties = {
         "spring.config.name=chat-websocket-test",
         "server.address=127.0.0.1",
+        "app.chat.runtime-enabled=true",
         "app.security.allowed-origins=http://localhost:5173",
         "jwt.service-expiration-minutes=60"
     }

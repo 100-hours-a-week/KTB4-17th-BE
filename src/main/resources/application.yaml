@@ -75,6 +75,7 @@ app:
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
 
   chat:
+    runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 
