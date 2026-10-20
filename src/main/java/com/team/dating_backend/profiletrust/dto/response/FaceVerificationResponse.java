@@ -45,15 +45,15 @@ public record FaceVerificationResponse(
                     .toList();
                 FaceVerificationAttempt successfulAttempt = attempt != null
                     && attempt.getDecision() == VerificationDecision.VERIFIED
-                    ? attempt
-                    : attempts.getLast();
+                        ? attempt
+                        : attempts.getLast();
                 visibleAttempts = java.util.stream.Stream.concat(firstAttempts.stream(),
                     java.util.stream.Stream.of(Attempt.from(successfulAttempt, FaceVerificationSession.MAX_ATTEMPTS)))
                     .toList();
                 visibleAttempt = attempt != null
                     && attempt.getAttemptNo() < FaceVerificationSession.MAX_ATTEMPTS
-                    ? Attempt.from(attempt)
-                    : visibleAttempts.getLast();
+                        ? Attempt.from(attempt)
+                        : visibleAttempts.getLast();
             } else {
                 status = VerificationSessionStatus.EXHAUSTED;
                 visibleAttempts = attempts.stream()
