@@ -51,6 +51,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @WebMvcTest(
     controllers = ChatRoomListController.class,
+    properties = "app.chat.runtime-enabled=true",
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
         ServletWebSecurityAutoConfiguration.class

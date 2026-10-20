@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "app.chat", name = "runtime-enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class AiPracticeOutboxPublishJob {
 

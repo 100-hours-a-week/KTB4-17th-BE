@@ -7,6 +7,7 @@ import com.team.dating_backend.aipractice.service.AiPracticeCallbackSecretVerifi
 import com.team.dating_backend.aipractice.service.AiPracticeGenerationCallbackService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnProperty(prefix = "app.chat", name = "runtime-enabled", havingValue = "true")
 @RequiredArgsConstructor
 @RequestMapping("/internal/v1/ai-practice")
 public class AiPracticeGenerationCallbackController {

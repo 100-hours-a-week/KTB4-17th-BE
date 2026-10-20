@@ -98,6 +98,7 @@ import org.testcontainers.mysql.MySQLContainer;
     properties = {
         "spring.config.name=chat-message-flow-test",
         "server.address=127.0.0.1",
+        "app.chat.runtime-enabled=true",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
