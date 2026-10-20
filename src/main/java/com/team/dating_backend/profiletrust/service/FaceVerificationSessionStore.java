@@ -85,7 +85,8 @@ public class FaceVerificationSessionStore {
             throw failure(ProfileTrustErrorCode.VERIFICATION_SESSION_EXPIRED);
         }
         FaceVerificationSession session = sessionRepository.saveAndFlush(FaceVerificationSession.create(
-            ownerUserId, uploadIntentId, versionToken, challenge.challengeToken(), now, expiresAt));
+            ownerUserId, uploadIntentId, versionToken, challenge.challengeToken(),
+            challenge.challengePlan(), challenge.protocolVersion(), now, expiresAt));
         return response(session);
     }
 
@@ -162,6 +163,7 @@ public class FaceVerificationSessionStore {
 
     private void expire(FaceVerificationSession session, LocalDateTime now) {
         session.expireIfNecessary(now);
+        session.exhaustIfReadyAtAttemptLimit();
         if (session.getStatus() == VerificationSessionStatus.EXPIRED) {
             attemptRepository.findFirstBySessionIdOrderByAttemptNoDesc(session.getId())
                 .filter(attempt -> attempt.getStatus() == VerificationAttemptStatus.PROCESSING)
