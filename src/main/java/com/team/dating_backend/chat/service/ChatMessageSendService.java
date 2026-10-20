@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.service;
 
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
 import com.team.dating_backend.chat.dto.request.ChatMessageCreateRequest;
 import com.team.dating_backend.chat.dto.response.ChatMessageCreateResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
@@ -50,6 +51,7 @@ public class ChatMessageSendService {
     private final ChatRoomPresenceRegistry presenceRegistry;
     private final NotificationCreateService notificationCreateService;
     private final ProfileRepository profileRepository;
+    private final ChatDelegationRescheduleService delegationRescheduleService;
 
     @Transactional
     public ChatMessageCreateResponse sendTextMessage(
@@ -99,6 +101,7 @@ public class ChatMessageSendService {
             ? new ChatMessage(room, sender, request.clientMessageId(), request.textContent(), now)
             : ChatMessage.image(room, sender, request.clientMessageId(), imageFile, now);
         ChatMessage message = chatMessageRepository.save(newMessage);
+        delegationRescheduleService.rescheduleForNewMessage(message);
         outboxRepository.save(new ChatMessageOutbox(message.getId(), now));
 
         if (!presenceRegistry.isViewingChatRoom(receiver.getUserId(), chatRoomId)) {

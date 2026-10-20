@@ -129,6 +129,13 @@ public class ChatDelegation {
         status = ChatDelegationStatus.IN_PROGRESS;
     }
 
+    public void reschedule(LocalDateTime nextActionAt) {
+        if (status != ChatDelegationStatus.IN_PROGRESS) {
+            throw new IllegalStateException();
+        }
+        this.nextActionAt = Objects.requireNonNull(nextActionAt);
+    }
+
     private void requireGeneratingRequest(UUID expectedRequestId) {
         if (status != ChatDelegationStatus.DRAFT_GENERATING
             || !requestId.equals(expectedRequestId)) {
