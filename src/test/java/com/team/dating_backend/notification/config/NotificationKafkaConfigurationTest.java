@@ -85,6 +85,44 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Test
+    void YAML의_발행_timeout_기본값은_Kafka_제약과_결과_대기_예산을_만족한다() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            var configuration = ProducerConfig.configDef()
+                .parse(context.getBean(KafkaProperties.class).buildProducerProperties());
+            assertThat(configuration)
+                .containsEntry(ProducerConfig.MAX_BLOCK_MS_CONFIG, 3_000L)
+                .containsEntry(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3_000)
+                .containsEntry(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 10_000);
+            long deliveryTimeout = ((Number) configuration.get(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG)).longValue();
+            long requestTimeout = ((Number) configuration.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG)).longValue();
+            long linger = ((Number) configuration.get(ProducerConfig.LINGER_MS_CONFIG)).longValue();
+            assertThat(deliveryTimeout).isGreaterThanOrEqualTo(requestTimeout + linger);
+            assertThat(context.getBean(NotificationPublishProperties.class).getResultTimeoutMs())
+                .isEqualTo(15_000L).isGreaterThan(deliveryTimeout);
+        });
+    }
+
+    @Test
+    void 환경_변수로_Kafka_timeout과_발행_결과_대기_시간을_바꿀_수_있다() {
+        contextRunner.withPropertyValues(
+            "KAFKA_PRODUCER_MAX_BLOCK_MS=5000",
+            "KAFKA_PRODUCER_REQUEST_TIMEOUT_MS=4000",
+            "KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS=20000",
+            "APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS=25000")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(ProducerConfig.configDef()
+                    .parse(context.getBean(KafkaProperties.class).buildProducerProperties()))
+                    .containsEntry(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5_000L)
+                    .containsEntry(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 4_000)
+                    .containsEntry(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 20_000);
+                assertThat(context.getBean(NotificationPublishProperties.class).getResultTimeoutMs())
+                    .isEqualTo(25_000L);
+            });
+    }
+
+    @Test
     void 배포_환경_변수로_브로커와_토픽을_바꿀_수_있다() {
         contextRunner.withPropertyValues(
             "KAFKA_BOOTSTRAP_SERVERS=broker.internal:9092",
@@ -183,6 +221,6 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties(NotificationKafkaProperties.class)
+    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationPublishProperties.class})
     static class PropertiesConfiguration {}
 }
