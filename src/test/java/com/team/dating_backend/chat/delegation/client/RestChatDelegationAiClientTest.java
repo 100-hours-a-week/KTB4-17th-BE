@@ -1,4 +1,4 @@
-package com.team.dating_backend.chat.client;
+package com.team.dating_backend.chat.delegation.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -8,12 +8,13 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.team.dating_backend.chat.config.ChatDelegationProperties;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftRequest;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftResponse;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.RecentMessage;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Speaker;
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.config.ChatDelegationProperties;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.ConfirmResponse;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftRequest;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftResponse;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.RecentMessage;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Speaker;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import java.io.IOException;
@@ -72,6 +73,36 @@ class RestChatDelegationAiClientTest {
     void 인증키가_없으면_AI를_호출하지_않는다() {
         properties.setApiKey("");
         assertError(() -> client.createDraft(request), ChatErrorCode.CHAT_DELEGATION_AI_NOT_CONFIGURED);
+        server.verify();
+    }
+
+    @Test
+    void 인증키를_포함해_AI_초안을_확정한다() {
+        String draftId = "a".repeat(32);
+        server.expect(requestTo(
+            "http://ai.internal/ai/api/v1/chat_end/drafts/%s/confirm".formatted(draftId)))
+            .andExpect(header("X-Internal-Api-Key", "secret"))
+            .andRespond(withSuccess("""
+                {"draft_id":"%s","delegation_id":20,"status":"CONFIRMED"}
+                """.formatted(draftId), MediaType.APPLICATION_JSON));
+
+        ConfirmResponse response = client.confirmDraft(draftId, 20L);
+
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        server.verify();
+    }
+
+    @Test
+    void AI_서버가_요청과_다른_초안_정보를_반환하면_거부한다() {
+        String draftId = "a".repeat(32);
+        server.expect(requestTo(
+            "http://ai.internal/ai/api/v1/chat_end/drafts/%s/confirm".formatted(draftId)))
+            .andRespond(withSuccess("""
+                {"draft_id":"%s","delegation_id":21,"status":"CONFIRMED"}
+                """.formatted(draftId), MediaType.APPLICATION_JSON));
+
+        assertError(() -> client.confirmDraft(draftId, 20L),
+            ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
         server.verify();
     }
 

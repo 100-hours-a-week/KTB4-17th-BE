@@ -1,4 +1,4 @@
-package com.team.dating_backend.chat.config;
+package com.team.dating_backend.chat.delegation.config;
 
 import lombok.Getter;
 import lombok.Setter;

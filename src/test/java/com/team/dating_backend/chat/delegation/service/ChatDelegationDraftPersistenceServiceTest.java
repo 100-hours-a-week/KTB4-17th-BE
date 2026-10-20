@@ -1,4 +1,4 @@
-package com.team.dating_backend.chat.service;
+package com.team.dating_backend.chat.delegation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -7,19 +7,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.team.dating_backend.chat.entity.ChatDelegation;
+import com.team.dating_backend.chat.delegation.entity.ChatDelegation;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
-import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
-import com.team.dating_backend.chat.repository.ChatDelegationRepository;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
@@ -75,8 +75,8 @@ class ChatDelegationDraftPersistenceServiceTest {
             .containsExactly("안녕하세요", "(사진이 전달되었습니다)");
         assertThat(result.aiRequest().recentMessages()).extracting("speaker")
             .containsExactly(
-                com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Speaker.REQUESTER,
-                com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Speaker.TARGET);
+                com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Speaker.REQUESTER,
+                com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Speaker.TARGET);
         assertThat(result.delegationId()).isEqualTo(20L);
         ArgumentCaptor<ChatDelegation> captor = ArgumentCaptor.forClass(ChatDelegation.class);
         verify(delegationRepository).saveAndFlush(captor.capture());
@@ -133,7 +133,7 @@ class ChatDelegationDraftPersistenceServiceTest {
         when(delegationRepository.findWithLockById(20L)).thenReturn(Optional.of(delegation));
         service.fail(new ChatDelegationDraftPersistenceService.Preparation(
             20L, previousRequestId, mock(
-                com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftRequest.class)));
+                com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftRequest.class)));
         assertThat(delegation.getStatus()).isEqualTo(ChatDelegationStatus.DRAFT_FAILED);
 
         when(delegationRepository.findByChatRoomId(10L)).thenReturn(Optional.of(delegation));

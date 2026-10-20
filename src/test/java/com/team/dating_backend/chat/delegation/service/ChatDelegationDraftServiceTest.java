@@ -1,4 +1,4 @@
-package com.team.dating_backend.chat.service;
+package com.team.dating_backend.chat.delegation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -6,15 +6,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.team.dating_backend.chat.client.ChatDelegationAiClient;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftRequest;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftResponse;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Turn;
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
-import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.client.ChatDelegationAiClient;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftRequest;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftResponse;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Turn;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
-import com.team.dating_backend.chat.service.ChatDelegationDraftPersistenceService.Preparation;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftPersistenceService.Preparation;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +36,7 @@ class ChatDelegationDraftServiceTest {
     }
 
     @Test
-    void AI_초안을_저장하고_사용자에게_반환한다() {
+    void 초안을_생성하면_세_턴의_스크립트를_반환한다() {
         DraftRequest request = mock(DraftRequest.class);
         Preparation preparation = new Preparation(3L, REQUEST_ID, request);
         when(persistence.prepare(1L, 2L, ChatDelegationEndType.GENTLE))
@@ -51,7 +51,7 @@ class ChatDelegationDraftServiceTest {
     }
 
     @Test
-    void 최초_초안_생성에_실패하면_실패_상태를_저장한다() {
+    void AI_초안_생성에_실패하면_위임_상태를_실패로_변경한다() {
         DraftRequest request = mock(DraftRequest.class);
         Preparation preparation = new Preparation(3L, REQUEST_ID, request);
         ChatBusinessException failure = new ChatBusinessException(
@@ -66,7 +66,7 @@ class ChatDelegationDraftServiceTest {
     }
 
     @Test
-    void 기존_위임의_초안을_재생성한다() {
+    void 초안을_재생성하면_새로운_스크립트를_반환한다() {
         DraftRequest request = mock(DraftRequest.class);
         Preparation preparation = new Preparation(3L, REQUEST_ID, request);
         when(persistence.prepareRegeneration(
@@ -80,7 +80,7 @@ class ChatDelegationDraftServiceTest {
     }
 
     @Test
-    void 재생성에_실패하면_실패_상태를_저장한다() {
+    void 초안_재생성에_실패하면_위임_상태를_실패로_변경한다() {
         DraftRequest request = mock(DraftRequest.class);
         Preparation preparation = new Preparation(3L, REQUEST_ID, request);
         ChatBusinessException failure = new ChatBusinessException(

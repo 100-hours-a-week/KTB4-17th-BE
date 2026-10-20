@@ -1,14 +1,16 @@
-package com.team.dating_backend.chat.client;
+package com.team.dating_backend.chat.delegation.client;
 
-import com.team.dating_backend.chat.config.ChatDelegationProperties;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftRequest;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.DraftResponse;
-import com.team.dating_backend.chat.dto.ai.ChatDelegationAiPayloads.Turn;
+import com.team.dating_backend.chat.delegation.config.ChatDelegationProperties;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.ConfirmResponse;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftRequest;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftResponse;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Turn;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -23,6 +25,7 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
 
     private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
     private static final String DRAFTS_PATH = "/ai/api/v1/chat_end/drafts";
+    private static final String CONFIRM_PATH = DRAFTS_PATH + "/%s/confirm";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
     private static final int DRAFT_TURN_COUNT = 3;
@@ -55,17 +58,39 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
     @Override
     public DraftResponse createDraft(DraftRequest request) {
         requireConfiguration();
+        DraftResponse response = call(() -> restClient.post()
+            .uri(uri(DRAFTS_PATH))
+            .header(INTERNAL_API_KEY_HEADER, properties.getApiKey())
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .body(request)
+            .retrieve()
+            .body(DraftResponse.class));
+        validate(request, response);
+        return response;
+    }
+
+    @Override
+    public ConfirmResponse confirmDraft(String draftId, Long delegationId) {
+        requireConfiguration();
+        ConfirmResponse response = call(() -> restClient.post()
+            .uri(uri(CONFIRM_PATH.formatted(draftId)))
+            .header(INTERNAL_API_KEY_HEADER, properties.getApiKey())
+            .accept(MediaType.APPLICATION_JSON)
+            .retrieve()
+            .body(ConfirmResponse.class));
+        if (response == null
+            || !draftId.equals(response.draftId())
+            || !delegationId.equals(response.delegationId())
+            || !"CONFIRMED".equals(response.status())) {
+            throw failure(ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
+        }
+        return response;
+    }
+
+    private <T> T call(Supplier<T> request) {
         try {
-            DraftResponse response = restClient.post()
-                .uri(uri())
-                .header(INTERNAL_API_KEY_HEADER, properties.getApiKey())
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .body(DraftResponse.class);
-            validate(request, response);
-            return response;
+            return request.get();
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode().is5xxServerError()) {
                 throw failure(ChatErrorCode.CHAT_DELEGATION_AI_UNAVAILABLE);
@@ -107,10 +132,10 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
         }
     }
 
-    private URI uri() {
+    private URI uri(String path) {
         try {
             String baseUrl = properties.getBaseUrl().replaceAll("/$", "");
-            URI uri = URI.create(baseUrl + DRAFTS_PATH);
+            URI uri = URI.create(baseUrl + path);
             if (uri.getHost() == null || !("http".equals(uri.getScheme())
                 || "https".equals(uri.getScheme()))) {
                 throw new IllegalArgumentException();
