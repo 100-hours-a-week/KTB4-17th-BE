@@ -1,8 +1,11 @@
-package com.team.dating_backend.chat.controller;
+package com.team.dating_backend.chat.delegation.controller;
 
-import com.team.dating_backend.chat.dto.request.ChatDelegationCreateRequest;
-import com.team.dating_backend.chat.dto.response.ChatDelegationDraftResponse;
-import com.team.dating_backend.chat.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.dto.request.ChatDelegationConfirmRequest;
+import com.team.dating_backend.chat.delegation.dto.request.ChatDelegationCreateRequest;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationDraftResponse;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationStartResponse;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.validation.Valid;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatDelegationController {
 
     private final ChatDelegationDraftService draftService;
+    private final ChatDelegationStartService startService;
 
     @PostMapping
     public ResponseEntity<SuccessResponse<ChatDelegationDraftResponse>> createDraft(
@@ -46,5 +50,17 @@ public class ChatDelegationController {
             chatRoomId, delegationId, principal.userId(), request.endType());
         return ResponseEntity.ok(
             SuccessResponse.of("chat_delegation_draft_regenerated", response));
+    }
+
+    @PostMapping("/{delegationId}/confirm")
+    public ResponseEntity<SuccessResponse<ChatDelegationStartResponse>> confirmDraft(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long chatRoomId,
+        @PathVariable Long delegationId,
+        @Valid @RequestBody ChatDelegationConfirmRequest request) {
+        ChatDelegationStartResponse response = startService.start(
+            chatRoomId, delegationId, principal.userId(), request.draftId());
+        return ResponseEntity.ok(
+            SuccessResponse.of("chat_delegation_started", response));
     }
 }

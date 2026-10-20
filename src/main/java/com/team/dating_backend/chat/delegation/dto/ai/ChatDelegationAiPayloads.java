@@ -1,8 +1,8 @@
-package com.team.dating_backend.chat.dto.ai;
+package com.team.dating_backend.chat.delegation.dto.ai;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +33,12 @@ public final class ChatDelegationAiPayloads {
         @JsonProperty("draft_id") String draftId,
         String status,
         List<Turn> turns) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ConfirmResponse(
+        @JsonProperty("draft_id") String draftId,
+        @JsonProperty("delegation_id") Long delegationId,
+        String status) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Turn(Integer turn, String message) {}

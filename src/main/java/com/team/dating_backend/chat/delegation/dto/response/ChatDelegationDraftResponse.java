@@ -1,6 +1,6 @@
-package com.team.dating_backend.chat.dto.response;
+package com.team.dating_backend.chat.delegation.dto.response;
 
-import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import java.util.List;
 
 public record ChatDelegationDraftResponse(

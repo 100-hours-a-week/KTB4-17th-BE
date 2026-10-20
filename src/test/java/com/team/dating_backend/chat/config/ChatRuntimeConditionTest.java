@@ -14,7 +14,7 @@ import com.team.dating_backend.aipractice.service.AiPracticeGenerationCallbackSe
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxPublishJob;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxResultService;
 import com.team.dating_backend.aipractice.service.AiPracticeWebSocketEventPublisher;
-import com.team.dating_backend.chat.controller.ChatDelegationController;
+import com.team.dating_backend.chat.delegation.controller.ChatDelegationController;
 import com.team.dating_backend.chat.controller.ChatMessageImageAccessController;
 import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageReadController;
@@ -25,7 +25,8 @@ import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
-import com.team.dating_backend.chat.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.chat.service.ChatMessageImageAccessService;
 import com.team.dating_backend.chat.service.ChatMessageListService;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
@@ -48,6 +49,7 @@ class ChatRuntimeConditionTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
         .withUserConfiguration(ChatRuntimeComponentsConfiguration.class)
         .withBean(ChatDelegationDraftService.class, () -> mock(ChatDelegationDraftService.class))
+        .withBean(ChatDelegationStartService.class, () -> mock(ChatDelegationStartService.class))
         .withBean(ChatMessageImageAccessService.class,
             () -> mock(ChatMessageImageAccessService.class))
         .withBean(ChatMessageListService.class, () -> mock(ChatMessageListService.class))

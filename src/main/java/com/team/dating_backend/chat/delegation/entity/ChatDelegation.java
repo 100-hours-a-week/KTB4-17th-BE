@@ -1,7 +1,9 @@
-package com.team.dating_backend.chat.entity;
+package com.team.dating_backend.chat.delegation.entity;
 
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
-import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.entity.ChatParticipant;
+import com.team.dating_backend.chat.entity.ChatRoom;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -65,6 +67,12 @@ public class ChatDelegation {
     @Column(name = "context_message_id", nullable = false)
     private Long contextMessageId;
 
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "next_action_at")
+    private LocalDateTime nextActionAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -108,6 +116,17 @@ public class ChatDelegation {
         requestId = Objects.requireNonNull(newRequestId);
         contextMessageId = Objects.requireNonNull(newContextMessageId);
         status = ChatDelegationStatus.DRAFT_GENERATING;
+    }
+
+    public void start(String confirmedDraftId, LocalDateTime approvedAt,
+        LocalDateTime nextActionAt) {
+        if (status != ChatDelegationStatus.AWAITING_CONFIRMATION
+            || !Objects.equals(aiDraftId, confirmedDraftId)) {
+            throw new IllegalStateException();
+        }
+        this.approvedAt = Objects.requireNonNull(approvedAt);
+        this.nextActionAt = Objects.requireNonNull(nextActionAt);
+        status = ChatDelegationStatus.IN_PROGRESS;
     }
 
     private void requireGeneratingRequest(UUID expectedRequestId) {

@@ -1,6 +1,6 @@
-package com.team.dating_backend.chat.repository;
+package com.team.dating_backend.chat.delegation.repository;
 
-import com.team.dating_backend.chat.entity.ChatDelegation;
+import com.team.dating_backend.chat.delegation.entity.ChatDelegation;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;

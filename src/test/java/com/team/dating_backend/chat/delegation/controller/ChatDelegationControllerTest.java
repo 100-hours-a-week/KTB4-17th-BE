@@ -1,4 +1,4 @@
-package com.team.dating_backend.chat.controller;
+package com.team.dating_backend.chat.delegation.controller;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -7,12 +7,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.chat.dto.response.ChatDelegationDraftResponse;
-import com.team.dating_backend.chat.enums.ChatDelegationEndType;
-import com.team.dating_backend.chat.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationDraftResponse;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationStartResponse;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
-import com.team.dating_backend.chat.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.util.List;
@@ -31,12 +33,14 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 class ChatDelegationControllerTest {
 
     private ChatDelegationDraftService service;
+    private ChatDelegationStartService startService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = Mockito.mock(ChatDelegationDraftService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new ChatDelegationController(service))
+        startService = Mockito.mock(ChatDelegationStartService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new ChatDelegationController(service, startService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalResolver()).build();
     }
@@ -73,7 +77,33 @@ class ChatDelegationControllerTest {
     }
 
     @Test
-    void 잘못된_종료_유형은_errorCode만_반환한다() throws Exception {
+    void 초안을_확정하면_위임_진행_상태를_반환한다() throws Exception {
+        String draftId = "a".repeat(32);
+        when(startService.start(10L, 20L, 1L, draftId)).thenReturn(
+            new ChatDelegationStartResponse(20L, ChatDelegationStatus.IN_PROGRESS));
+
+        mvc.perform(post("/api/v1/chat-rooms/10/delegations/20/confirm")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"draftId\":\"%s\"}".formatted(draftId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("chat_delegation_started"))
+            .andExpect(jsonPath("$.data.delegationId").value(20))
+            .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.nextActionAt").doesNotExist());
+    }
+
+    @Test
+    void 초안_ID_형식이_올바르지_않으면_입력_오류로_응답한다() throws Exception {
+        mvc.perform(post("/api/v1/chat-rooms/10/delegations/20/confirm")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"draftId\":\"invalid\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().string("{\"errorCode\":\"INVALID_REQUEST\"}"));
+        verifyNoInteractions(startService);
+    }
+
+    @Test
+    void 지원하지_않는_종료_유형이면_입력_오류로_응답한다() throws Exception {
         mvc.perform(post("/api/v1/chat-rooms/10/delegations")
             .contentType(MediaType.APPLICATION_JSON).content("{\"endType\":\"UNKNOWN\"}"))
             .andExpect(status().isBadRequest())
@@ -82,7 +112,7 @@ class ChatDelegationControllerTest {
     }
 
     @Test
-    void 비즈니스_오류는_정의된_errorCode만_반환한다() throws Exception {
+    void 이미_위임이_존재하면_중복_위임_오류로_응답한다() throws Exception {
         when(service.create(10L, 1L, ChatDelegationEndType.CASUAL)).thenThrow(
             new ChatBusinessException(ChatErrorCode.CHAT_DELEGATION_ALREADY_EXISTS));
         mvc.perform(post("/api/v1/chat-rooms/10/delegations")
