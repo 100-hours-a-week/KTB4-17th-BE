@@ -56,7 +56,6 @@ jobs:
                   provenance: false
                   sbom: false
                   tags: |
-                      ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:migration
                       ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:migration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
             - name: EC2에 스크립트 전송 및 실행
