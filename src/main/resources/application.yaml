@@ -6,6 +6,25 @@ spring:
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092,localhost:39092,localhost:49092}
+    admin:
+      auto-create: false
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+    consumer:
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        "[allow.auto.create.topics]": false
+    listener:
+      ack-mode: record
+
   servlet:
     multipart:
       # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
@@ -70,6 +89,9 @@ app:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
   notification:
+    kafka:
+      create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
+      delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
     sse:
       timeout-ms: ${APP_NOTIFICATION_SSE_TIMEOUT_MS:1800000}
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
