@@ -3,6 +3,7 @@ package com.team.dating_backend.auth.controller;
 import com.team.dating_backend.auth.config.AuthWebProperties;
 import com.team.dating_backend.auth.config.JwtProperties;
 import java.time.Duration;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
@@ -18,11 +19,15 @@ public class AuthCookieFactory {
     private final AuthWebProperties authWebProperties;
     private final JwtProperties jwtProperties;
 
-    public ResponseCookie refreshToken(String token) {
+    public ResponseCookie refreshToken(String token, Instant expiresAt) {
+        Duration remaining = Duration.between(Instant.now(), expiresAt);
+        if (remaining.isNegative()) {
+            remaining = Duration.ZERO;
+        }
         return create(
             REFRESH_TOKEN_COOKIE,
             token,
-            Duration.ofDays(jwtProperties.getRefreshExpirationDays()),
+            remaining,
             "/api/v1/auth");
     }
     public ResponseCookie pendingRegistrationToken(String token) {

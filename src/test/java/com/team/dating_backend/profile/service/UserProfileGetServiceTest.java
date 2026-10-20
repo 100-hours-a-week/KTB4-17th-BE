@@ -76,7 +76,7 @@ class UserProfileGetServiceTest {
         givenActiveProfile(UserStatus.ACTIVE);
 
         assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
-        verifyNoInteractions(chatRoomRepository, recommendationItemRepository);
+        verifyNoInteractions(recommendationItemRepository);
     }
 
     @Test
@@ -100,6 +100,17 @@ class UserProfileGetServiceTest {
 
         assertUnavailable(21L);
         verifyNoInteractions(likeRepository, chatRoomRepository, recommendationItemRepository,
+            profileRepository, profileImageGetService);
+    }
+
+    @Test
+    void 한쪽이_채팅방을_나가면_서로의_프로필_조회를_차단한다() {
+        given(chatRoomRepository.existsLeftParticipantBetweenUsers(5L, 21L))
+            .willReturn(true);
+
+        assertUnavailable(21L);
+
+        verifyNoInteractions(likeRepository, recommendationItemRepository,
             profileRepository, profileImageGetService);
     }
 

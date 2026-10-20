@@ -7,6 +7,9 @@ spring:
         format_sql: true
 
 app:
+  chat:
+    runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:true}
+
   ai-practice:
     base-url: ${AI_PRACTICE_BASE_URL:http://localhost:8000}
 

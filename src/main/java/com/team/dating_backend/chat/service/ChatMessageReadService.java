@@ -14,6 +14,7 @@ import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.notification.service.ChatNotificationReadService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -28,6 +29,7 @@ public class ChatMessageReadService {
     private final ChatParticipantRepository chatParticipantRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ChatNotificationReadService chatNotificationReadService;
 
     @Transactional
     public ChatMessageReadResponse markAsRead(
@@ -60,6 +62,7 @@ public class ChatMessageReadService {
 
         viewer.advanceLastReadMessageId(request.lastReadMessageId());
         Long currentCursor = viewer.getLastReadMessageId();
+        chatNotificationReadService.markAsRead(viewerUserId, chatRoomId);
         publishReadReceipt(room, viewer, currentCursor);
 
         return new ChatMessageReadResponse(room.getId(), currentCursor);

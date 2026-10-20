@@ -55,6 +55,7 @@ kakao:
     authorization-uri: ${AUTHORIZATION_URI}
     token-uri: ${TOKEN_URI}
     user-info-uri: ${USER_INFO_URI}
+    talk-profile-uri: ${KAKAO_TALK_PROFILE_URI}
 
 app:
   auth:
@@ -74,8 +75,13 @@ app:
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
 
   chat:
+    runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
+
+  chat-delegation:
+    base-url: ${AI_CHAT_DELEGATION_BASE_URL:}
+    api-key: ${AI_CHAT_DELEGATION_API_KEY:}
 
   ai-practice:
     base-url: ${AI_PRACTICE_BASE_URL:}

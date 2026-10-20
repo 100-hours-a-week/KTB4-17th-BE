@@ -12,6 +12,10 @@ import org.springframework.data.repository.query.Param;
 public interface MatchRepository extends JpaRepository<Match, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select userMatch from Match userMatch where userMatch.id = :matchId")
+    Optional<Match> findByIdForUpdate(@Param("matchId") Long matchId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select userMatch from Match userMatch
         where userMatch.status = com.team.dating_backend.matching.enums.MatchStatus.ACTIVE

@@ -482,7 +482,10 @@ class RecommendationPreferenceFlowIntegrationTest {
     @Test
     void 인증이_없거나_토큰이_잘못되거나_Refresh_토큰이면_401로_거절한다() throws Exception {
         for (String rejectedToken : new String[]{
-            null, "invalid-token", jwtService.createRefreshAuthToken(userId)
+            null,
+            "invalid-token",
+            jwtService.createRefreshAuthToken(
+                userId, java.util.UUID.randomUUID(), java.time.Instant.now().plusSeconds(3600))
         }) {
             assertError(getPreferences(rejectedToken), 401, "AUTH_REQUIRED");
             assertError(putPreferences(rejectedToken, SAVED_PREFERENCE), 401, "AUTH_REQUIRED");

@@ -5,10 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreatedEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
+import com.team.dating_backend.notification.dto.response.NotificationListResponse;
 import com.team.dating_backend.notification.entity.Notification;
+import com.team.dating_backend.notification.enums.NotificationCategory;
+import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeleteService;
+import com.team.dating_backend.notification.service.NotificationListService;
+import com.team.dating_backend.notification.service.NotificationReadService;
+import com.team.dating_backend.notification.service.ChatNotificationReadService;
+import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -20,11 +28,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +55,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -56,7 +70,11 @@ import org.testcontainers.mysql.MySQLContainer;
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@Import({NotificationAccessService.class, NotificationDeleteService.class})
+@Import(
+    {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
+        NotificationUnreadCountService.class, NotificationReadService.class,
+        ChatNotificationReadService.class}
+)
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
 
@@ -87,11 +105,25 @@ class NotificationRepositoryIntegrationTest {
     @Autowired
     private NotificationDeleteService deleteService;
 
+    @Autowired
+    private NotificationListService listService;
+
+    @Autowired
+    private NotificationUnreadCountService unreadCountService;
+
+    @Autowired
+    private NotificationReadService readService;
+
+    @Autowired
+    private ChatNotificationReadService chatReadService;
+
     private TransactionTemplate transaction;
     private Long userId;
+    private Long otherUserId;
 
     @BeforeEach
     void setUp() {
+        otherUserId = null;
         transaction = new TransactionTemplate(transactionManager);
         userId = transaction.execute(status -> {
             User user = User.create("테스트", LocalDate.of(2000, 1, 1), Gender.FEMALE, NOW);
@@ -103,6 +135,10 @@ class NotificationRepositoryIntegrationTest {
     @AfterEach
     void cleanUp() {
         transaction.executeWithoutResult(status -> {
+            if (otherUserId != null) {
+                jdbc.update("DELETE FROM notifications WHERE user_id = ?", otherUserId);
+                jdbc.update("DELETE FROM users WHERE id = ?", otherUserId);
+            }
             jdbc.update("DELETE FROM notifications WHERE user_id = ?", userId);
             jdbc.update("DELETE FROM users WHERE id = ?", userId);
         });
@@ -117,6 +153,51 @@ class NotificationRepositoryIntegrationTest {
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
             Long.class, userId, "LIKE")).isEqualTo(2L);
+    }
+
+    @Test
+    void 채팅방_일괄_읽음은_해당_회원과_방의_미확인_채팅_알림만_갱신한다() {
+        otherUserId = saveOtherUser();
+        List<Long> ids = transaction.execute(status -> {
+            User owner = userRepository.getReferenceById(userId);
+            User other = userRepository.getReferenceById(otherUserId);
+            List<Notification> notifications = List.of(
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 20L, NOW),
+                new Notification(owner, NotificationType.MATCH, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "PROFILE", 10L, NOW),
+                new Notification(other, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW),
+                new Notification(owner, NotificationType.CHAT_MESSAGE, "제목", "본문", "CHAT_ROOM", 10L, NOW));
+            notifications.get(6).markAsRead(NOW.minusMinutes(1));
+            notifications.get(7).markAsDeleted(NOW);
+            return repository.saveAllAndFlush(notifications).stream().map(Notification::getId).toList();
+        });
+
+        int updated = transaction.execute(status -> repository.markVisibleUnreadChatNotificationsAsRead(
+            userId, 10L, NOW.plusMinutes(1)));
+        int repeated = transaction.execute(status -> repository.markVisibleUnreadChatNotificationsAsRead(
+            userId, 10L, NOW.plusMinutes(2)));
+
+        assertThat(updated).isEqualTo(2);
+        assertThat(repeated).isZero();
+        for (int index = 0; index < ids.size(); index++) {
+            Notification notification = repository.findById(ids.get(index)).orElseThrow();
+            if (index < 2) {
+                assertThat(notification.getReadAt()).isEqualTo(NOW.plusMinutes(1));
+            } else if (index == 6) {
+                assertThat(notification.getReadAt()).isEqualTo(NOW.minusMinutes(1));
+            } else {
+                assertThat(notification.getReadAt()).isNull();
+            }
+        }
+    }
+
+    @Test
+    void 채팅_알림_읽음은_기존_트랜잭션_없이_실행할_수_없다() {
+        assertThatThrownBy(() -> chatReadService.markAsRead(userId, 10L))
+            .isInstanceOf(IllegalTransactionStateException.class);
     }
 
     @Test
@@ -335,6 +416,370 @@ class NotificationRepositoryIntegrationTest {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(NotificationCategory.class)
+    void 카테고리별로_본인_미삭제_알림만_ID_내림차순으로_조회한다(NotificationCategory category) {
+        otherUserId = saveOtherUser();
+        Map<NotificationType, Long> visibleIds = new EnumMap<>(NotificationType.class);
+        int offset = 0;
+        for (NotificationType type : NotificationType.values()) {
+            visibleIds.put(type, saveNotification(userId, type, NOW.minusSeconds(offset++), false));
+            saveNotification(userId, type, NOW, true);
+            saveNotification(otherUserId, type, NOW, false);
+        }
+        List<NotificationType> expectedTypes = switch (category) {
+            case ALL -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
+                NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.CHAT_MESSAGE,
+                NotificationType.MATCH, NotificationType.LIKE);
+            case INTEREST -> List.of(NotificationType.MATCH, NotificationType.LIKE);
+            case CHAT -> List.of(NotificationType.CHAT_MESSAGE);
+            case SYSTEM -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
+                NotificationType.PERSONA_TRAINING_COMPLETED);
+        };
+
+        NotificationListResponse response = listService.getNotifications(userId, category, null, 20);
+
+        assertThat(response.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactlyElementsOf(expectedTypes.stream().map(visibleIds::get).toList());
+        assertThat(response.items()).extracting(NotificationListResponse.Item::type)
+            .containsExactlyElementsOf(expectedTypes.stream().map(NotificationType::name).toList());
+        assertThat(response.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
+    }
+
+    @ParameterizedTest
+    @EnumSource(NotificationCategory.class)
+    void 후속_페이지는_경계_중복_없이_이어지고_삭제된_ID도_커서로_사용한다(NotificationCategory category) {
+        NotificationType type = switch (category) {
+            case ALL, INTEREST -> NotificationType.LIKE;
+            case CHAT -> NotificationType.CHAT_MESSAGE;
+            case SYSTEM -> NotificationType.AI_PRACTICE_CHAT_COMPLETED;
+        };
+        Long oldest = saveNotification(userId, type, NOW, false);
+        otherUserId = saveOtherUser();
+        saveNotification(otherUserId, type, NOW, false);
+        if (category != NotificationCategory.ALL) {
+            NotificationType otherType = category == NotificationCategory.CHAT
+                ? NotificationType.LIKE
+                : NotificationType.CHAT_MESSAGE;
+            saveNotification(userId, otherType, NOW, false);
+        }
+        Long deletedCursor = saveNotification(userId, type, NOW, true);
+        Long newest = saveNotification(userId, type, NOW, false);
+
+        NotificationListResponse first = listService.getNotifications(userId, category, null, 1);
+        NotificationListResponse second = listService.getNotifications(
+            userId, category, first.pageInfo().nextCursor(), 1);
+        NotificationListResponse fromDeleted = listService.getNotifications(
+            userId, category, deletedCursor, 20);
+
+        assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactly(newest);
+        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(newest, true));
+        assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactly(oldest);
+        assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
+        assertThat(fromDeleted.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactly(oldest);
+    }
+
+    @Test
+    void 최대_크기_20건과_추가_한_건의_경계를_페이지_누락_없이_처리한다() {
+        List<Long> ids = new ArrayList<>();
+        for (int index = 0; index < 21; index++) {
+            ids.add(saveNotification(userId, NotificationType.NOTICE, NOW, false));
+        }
+
+        NotificationListResponse first = listService.getNotifications(
+            userId, NotificationCategory.ALL, Long.MAX_VALUE, 20);
+        NotificationListResponse second = listService.getNotifications(
+            userId, NotificationCategory.ALL, first.pageInfo().nextCursor(), 20);
+
+        assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactlyElementsOf(ids.subList(1, 21).reversed());
+        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(ids.get(1), true));
+        assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
+            .containsExactly(ids.getFirst());
+        assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
+    }
+
+    @Test
+    void 조회는_읽은_알림을_포함하고_저장된_문구와_대상과_상태를_변경하지_않는다() {
+        Long readId = saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, false);
+        Long unreadId = saveNotification(userId, NotificationType.NOTICE, NOW, false);
+        saveNotification(userId, NotificationType.MATCH, NOW, true);
+        transaction.executeWithoutResult(status -> {
+            Notification notification = repository.findById(readId).orElseThrow();
+            notification.markAsRead(NOW.plusMinutes(1));
+        });
+        List<Map<String, Object>> before = jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId);
+
+        NotificationListResponse response = listService.getNotifications(
+            userId, NotificationCategory.ALL, null, 20);
+
+        assertThat(response.items()).containsExactly(
+            new NotificationListResponse.Item(unreadId, "NOTICE", "저장된 제목", "저장된 본문",
+                "CHAT_ROOM", 999999L, null, NOW),
+            new NotificationListResponse.Item(readId, "CHAT_MESSAGE", "저장된 제목", "저장된 본문",
+                "CHAT_ROOM", 999999L, NOW.plusMinutes(1), NOW));
+        assertThat(jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId)).isEqualTo(before);
+    }
+
+    @ParameterizedTest
+    @EnumSource(NotificationCategory.class)
+    void 알림이_없거나_커서_이후_대상이_없으면_빈_목록을_반환한다(NotificationCategory category) {
+        NotificationListResponse empty = listService.getNotifications(userId, category, null, 20);
+        saveNotification(userId, NotificationType.AI_PRACTICE_CHAT_COMPLETED, NOW, false);
+
+        NotificationListResponse beyond = listService.getNotifications(userId, category, 1L, 20);
+
+        assertThat(empty).isEqualTo(new NotificationListResponse(
+            List.of(), new NotificationListResponse.PageInfo(null, false)));
+        assertThat(beyond).isEqualTo(empty);
+    }
+
+    @Test
+    void 미읽음_집계는_모든_업무_유형을_포함하고_다른_회원과_읽음과_삭제_알림을_제외한다() {
+        otherUserId = saveOtherUser();
+        for (NotificationType type : NotificationType.values()) {
+            saveNotification(userId, type, NOW, false);
+            saveNotification(otherUserId, type, NOW, false);
+        }
+        Long readId = saveNotification(userId, NotificationType.LIKE, NOW, false);
+        saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, true);
+        Long readDeletedId = saveNotification(userId, NotificationType.NOTICE, NOW, true);
+        transaction.executeWithoutResult(status -> {
+            repository.findById(readId).orElseThrow().markAsRead(NOW.plusMinutes(1));
+            repository.findById(readDeletedId).orElseThrow().markAsRead(NOW.plusMinutes(1));
+        });
+        List<Map<String, Object>> before = jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId);
+
+        long count = unreadCountService.getUnreadCount(userId).count();
+
+        assertThat(count).isEqualTo(NotificationType.values().length);
+        assertThat(jdbc.queryForList(
+            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id", userId)).isEqualTo(before);
+    }
+
+    @Test
+    void 알림이_없거나_집계에서_제외되는_알림만_있으면_0을_반환한다() {
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+        otherUserId = saveOtherUser();
+        saveNotification(otherUserId, NotificationType.LIKE, NOW, false);
+        saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, true);
+        Long readId = saveNotification(userId, NotificationType.NOTICE, NOW, false);
+        transaction.executeWithoutResult(status -> repository.findById(readId).orElseThrow()
+            .markAsRead(NOW.plusMinutes(1)));
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @Test
+    void 미읽음_개수에는_목록의_20건_제한을_적용하지_않는다() {
+        for (int index = 0; index < 25; index++) {
+            saveNotification(userId, NotificationType.AI_PRACTICE_CHAT_COMPLETED, NOW, false);
+        }
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(25L);
+    }
+
+    @Test
+    void 읽음과_삭제가_커밋되면_후속_미읽음_집계에서_제외한다() {
+        Long readId = saveNotification(userId, NotificationType.LIKE, NOW, false);
+        Long deleteId = saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, false);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(2L);
+
+        transaction.executeWithoutResult(status -> repository.findById(readId).orElseThrow()
+            .markAsRead(NOW.plusMinutes(1)));
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(1L);
+
+        deleteService.deleteNotification(userId, deleteId);
+
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 읽음_Service는_최초_시각과_다른_컬럼을_보존하고_목록과_집계에_반영한다(boolean alreadyRead) {
+        Long notificationId = saveNotification(userId, NotificationType.CHAT_MESSAGE, NOW, false);
+        if (alreadyRead) {
+            transaction.executeWithoutResult(status -> repository.findById(notificationId).orElseThrow()
+                .markAsRead(NOW.plusMinutes(1)));
+        }
+        Map<String, Object> before = jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(alreadyRead ? 0L : 1L);
+
+        readService.markAsRead(userId, notificationId);
+
+        Notification stored = repository.findById(notificationId).orElseThrow();
+        LocalDateTime readAt = stored.getReadAt();
+        assertThat(readAt).isNotNull();
+        if (alreadyRead) {
+            assertThat(readAt).isEqualTo(NOW.plusMinutes(1));
+        }
+        Map<String, Object> after = jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId);
+        before.put("read_at", after.get("read_at"));
+        assertThat(after).isEqualTo(before);
+        assertThat(listService.getNotifications(userId, NotificationCategory.ALL, null, 20)
+            .items().getFirst().readAt()).isEqualTo(readAt);
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+
+        readService.markAsRead(userId, notificationId);
+
+        assertThat(jdbc.queryForMap(
+            "SELECT * FROM notifications WHERE id = ?", notificationId)).isEqualTo(after);
+    }
+
+    @Test
+    void 읽음_변경을_flush한_트랜잭션이_롤백되면_DB와_집계에_반영하지_않는다() {
+        Long notificationId = saveNotification();
+
+        transaction.executeWithoutResult(status -> {
+            readService.markAsRead(userId, notificationId);
+            entityManager.flush();
+            status.setRollbackOnly();
+        });
+
+        assertThat(repository.findById(notificationId).orElseThrow().getReadAt()).isNull();
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isEqualTo(1L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 동시_읽음은_선행_커밋의_시각을_보존하고_롤백된_시각은_재사용하지_않는다(boolean rollbackFirst)
+        throws Exception {
+        Long notificationId = saveNotification();
+        AtomicReference<LocalDateTime> firstReadAt = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> {
+                readService.markAsRead(userId, notificationId);
+                firstReadAt.set(repository.findById(notificationId).orElseThrow().getReadAt());
+            },
+            () -> readService.markAsRead(userId, notificationId),
+            rollbackFirst);
+
+        LocalDateTime storedReadAt = repository.findById(notificationId).orElseThrow().getReadAt();
+        assertThat(storedReadAt).isNotNull();
+        if (rollbackFirst) {
+            assertThat(storedReadAt).isNotEqualTo(firstReadAt.get());
+        } else {
+            assertThat(storedReadAt).isEqualTo(firstReadAt.get());
+        }
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 읽음과_삭제가_겹치면_선행_커밋에_따라_읽음_시각_보존_또는_404로_처리한다(boolean readFirst)
+        throws Exception {
+        Long notificationId = saveNotification();
+        AtomicReference<LocalDateTime> firstChangedAt = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> {
+                if (readFirst) {
+                    readService.markAsRead(userId, notificationId);
+                } else {
+                    deleteService.deleteNotification(userId, notificationId);
+                }
+                Notification notification = repository.findById(notificationId).orElseThrow();
+                firstChangedAt.set(readFirst ? notification.getReadAt() : notification.getDeletedAt());
+            },
+            () -> {
+                if (readFirst) {
+                    deleteService.deleteNotification(userId, notificationId);
+                } else {
+                    assertThatThrownBy(() -> readService.markAsRead(userId, notificationId))
+                        .isInstanceOfSatisfying(NotificationBusinessException.class,
+                            exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(NotificationErrorCode.NOTIFICATION_NOT_FOUND));
+                }
+            },
+            false);
+
+        Notification stored = repository.findById(notificationId).orElseThrow();
+        assertThat(stored.getDeletedAt()).isNotNull();
+        if (readFirst) {
+            assertThat(stored.getReadAt()).isEqualTo(firstChangedAt.get());
+        } else {
+            assertThat(stored.getReadAt()).isNull();
+            assertThat(stored.getDeletedAt()).isEqualTo(firstChangedAt.get());
+        }
+        assertThat(unreadCountService.getUnreadCount(userId).count()).isZero();
+    }
+
+    private void runWhileFirstTransactionIsOpen(Runnable firstAction, Runnable secondAction,
+        boolean rollbackFirst) throws Exception {
+        CountDownLatch firstPrepared = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = executor.submit(() -> transaction.executeWithoutResult(status -> {
+                firstAction.run();
+                entityManager.flush();
+                firstPrepared.countDown();
+                awaitLatch(releaseFirst);
+                if (rollbackFirst) {
+                    status.setRollbackOnly();
+                }
+            }));
+            awaitLatch(firstPrepared);
+            Future<?> second = executor.submit(() -> {
+                secondStarted.countDown();
+                secondAction.run();
+            });
+            awaitLatch(secondStarted);
+            assertThatThrownBy(() -> second.get(200, TimeUnit.MILLISECONDS))
+                .isInstanceOf(TimeoutException.class);
+
+            releaseFirst.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private void awaitLatch(CountDownLatch latch) {
+        try {
+            assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("동시성 테스트 대기 중 중단", exception);
+        }
+    }
+
+    private Long saveOtherUser() {
+        return transaction.execute(status -> {
+            User user = User.create("다른회원", LocalDate.of(2000, 1, 1), Gender.MALE, NOW);
+            user.activate(NOW);
+            return userRepository.saveAndFlush(user).getId();
+        });
+    }
+
+    private Long saveNotification(Long recipientId, NotificationType type, LocalDateTime createdAt,
+        boolean deleted) {
+        return transaction.execute(status -> {
+            Notification notification = new Notification(userRepository.getReferenceById(recipientId),
+                type, "저장된 제목", "저장된 본문", "CHAT_ROOM", 999999L, createdAt);
+            if (deleted) {
+                notification.markAsDeleted(NOW.plusMinutes(2));
+            }
+            return repository.saveAndFlush(notification).getId();
+        });
     }
 
     private Long saveNotification() {

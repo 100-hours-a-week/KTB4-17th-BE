@@ -14,6 +14,17 @@ public final class PersonaAiPayloads {
         @JsonProperty("user_id") String userId,
         String mbti) {}
 
+    public record UpdateNicknameRequest(
+        @JsonProperty("user_id") String userId,
+        String nickname) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UpdateNicknameResponse(
+        @JsonProperty("user_id") String userId,
+        String nickname,
+        @JsonProperty("updated_sessions") Integer updatedSessions,
+        @JsonProperty("updated_at") OffsetDateTime updatedAt) {}
+
     public record AnswerRequest(
         String answer,
         @JsonProperty("turn_index") int turnIndex) {}

@@ -15,6 +15,7 @@ import com.team.dating_backend.auth.entity.UserAuthAccount;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
 import com.team.dating_backend.auth.repository.UserAuthAccountRepository;
+import com.team.dating_backend.auth.service.AuthTokenService;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.user.dto.request.UserRegistrationRequest;
 import com.team.dating_backend.user.entity.User;
@@ -23,10 +24,12 @@ import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -35,11 +38,15 @@ class UserRegistrationServiceTest {
 
     private static final String PENDING_TOKEN = "pending-token";
     private static final String PROVIDER_USER_ID = "kakao-123";
+    private static final String KAKAO_TALK_NICKNAME = "Alice";
     private static final String ACCESS_TOKEN = "access-token";
     private static final String REFRESH_TOKEN = "refresh-token";
 
     @Mock
     private JwtService jwtService;
+
+    @Mock
+    private AuthTokenService authTokenService;
 
     @Mock
     private UserRepository userRepository;
@@ -60,8 +67,7 @@ class UserRegistrationServiceTest {
             .willReturn(Optional.empty());
         User savedUser = savedUser(10L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
-        given(jwtService.createServiceAuthToken(10L)).willReturn(ACCESS_TOKEN);
-        given(jwtService.createRefreshAuthToken(10L)).willReturn(REFRESH_TOKEN);
+        given(authTokenService.issue(10L)).willReturn(issuedTokens());
 
         // when
         IssuedAuthTokens result = userRegistrationService.registerUser(
@@ -70,10 +76,11 @@ class UserRegistrationServiceTest {
         // then
         assertEquals(ACCESS_TOKEN, result.accessToken());
         assertEquals(REFRESH_TOKEN, result.refreshToken());
-        verify(userRepository).save(any(User.class));
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals(KAKAO_TALK_NICKNAME, userCaptor.getValue().getName());
         verify(userAuthAccountRepository).save(any(UserAuthAccount.class));
-        verify(jwtService).createServiceAuthToken(10L);
-        verify(jwtService).createRefreshAuthToken(10L);
+        verify(authTokenService).issue(10L);
     }
 
     @Test
@@ -87,8 +94,7 @@ class UserRegistrationServiceTest {
             .willReturn(Optional.of(existingAccount));
         User savedUser = savedUser(20L);
         given(userRepository.save(any(User.class))).willReturn(savedUser);
-        given(jwtService.createServiceAuthToken(20L)).willReturn(ACCESS_TOKEN);
-        given(jwtService.createRefreshAuthToken(20L)).willReturn(REFRESH_TOKEN);
+        given(authTokenService.issue(20L)).willReturn(issuedTokens());
 
         // when
         IssuedAuthTokens result = userRegistrationService.registerUser(
@@ -97,10 +103,12 @@ class UserRegistrationServiceTest {
         // then
         assertEquals(ACCESS_TOKEN, result.accessToken());
         assertEquals(REFRESH_TOKEN, result.refreshToken());
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals(KAKAO_TALK_NICKNAME, userCaptor.getValue().getName());
         verify(existingAccount).relink(eq(savedUser), any(LocalDateTime.class));
         verify(userAuthAccountRepository).save(existingAccount);
-        verify(jwtService).createServiceAuthToken(20L);
-        verify(jwtService).createRefreshAuthToken(20L);
+        verify(authTokenService).issue(20L);
     }
 
     @Test
@@ -124,7 +132,8 @@ class UserRegistrationServiceTest {
     private void givenPendingPayload() {
         given(jwtService.parsePendingRegistrationToken(PENDING_TOKEN))
             .willReturn(
-                new PendingRegistrationTokenPayload(AuthProvider.KAKAO, PROVIDER_USER_ID));
+                new PendingRegistrationTokenPayload(
+                    AuthProvider.KAKAO, PROVIDER_USER_ID, KAKAO_TALK_NICKNAME));
     }
 
     private User savedUser(Long userId) {
@@ -143,6 +152,11 @@ class UserRegistrationServiceTest {
     }
 
     private UserRegistrationRequest registrationRequest() {
-        return new UserRegistrationRequest("우", LocalDate.of(2000, 1, 1), Gender.MALE);
+        return new UserRegistrationRequest(LocalDate.of(2000, 1, 1), Gender.MALE);
+    }
+
+    private IssuedAuthTokens issuedTokens() {
+        return new IssuedAuthTokens(
+            ACCESS_TOKEN, REFRESH_TOKEN, Instant.now().plusSeconds(3600));
     }
 }

@@ -1,3 +1,8 @@
 package com.team.dating_backend.auth.dto;
 
-public record IssuedAuthTokens(String accessToken, String refreshToken) {}
+import java.time.Instant;
+
+public record IssuedAuthTokens(
+    String accessToken,
+    String refreshToken,
+    Instant refreshExpiresAt) {}

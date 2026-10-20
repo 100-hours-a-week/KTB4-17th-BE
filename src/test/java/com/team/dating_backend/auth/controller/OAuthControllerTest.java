@@ -17,6 +17,8 @@ import com.team.dating_backend.auth.dto.OAuthIdentity;
 import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.AuthProvider;
 import com.team.dating_backend.auth.enums.LoginDestination;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameRequiredException;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameTooLongException;
 import com.team.dating_backend.auth.exception.OAuthProviderUnavailableException;
 import com.team.dating_backend.auth.service.OAuthProviderClient;
 import com.team.dating_backend.auth.service.OAuthProviderClientRegistry;
@@ -24,7 +26,11 @@ import com.team.dating_backend.auth.service.OAuthStateService;
 import com.team.dating_backend.auth.service.SocialLoginService;
 import jakarta.servlet.http.HttpSession;
 import java.net.URI;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpStatus;
@@ -96,7 +102,8 @@ class OAuthControllerTest {
     void 카카오_콜백은_공통_로그인_결과를_HTTP_응답으로_변환한다() throws Exception {
         // given
         OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
-        OAuthIdentity identity = new OAuthIdentity(AuthProvider.KAKAO, "kakao-123");
+        OAuthIdentity identity = new OAuthIdentity(
+            AuthProvider.KAKAO, "kakao-123", "Alice");
         SocialLoginResult loginResult = new SocialLoginResult.Authenticated(1L,
             LoginDestination.SERVICE);
         ResponseEntity<Void> loginResponse = ResponseEntity.status(HttpStatus.FOUND)
@@ -105,7 +112,8 @@ class OAuthControllerTest {
 
         given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
         given(kakaoClient.requestIdentity("authorization-code")).willReturn(identity);
-        given(socialLoginService.login(AuthProvider.KAKAO, "kakao-123")).willReturn(loginResult);
+        given(socialLoginService.login(AuthProvider.KAKAO, "kakao-123", "Alice"))
+            .willReturn(loginResult);
         given(authLoginResponseFactory.create(eq(loginResult), any(HttpSession.class)))
             .willReturn(loginResponse);
 
@@ -121,7 +129,7 @@ class OAuthControllerTest {
             .validateAndConsumeState(
                 eq(AuthProvider.KAKAO), eq("state-value"), any(HttpSession.class));
         verify(kakaoClient).requestIdentity("authorization-code");
-        verify(socialLoginService).login(AuthProvider.KAKAO, "kakao-123");
+        verify(socialLoginService).login(AuthProvider.KAKAO, "kakao-123", "Alice");
         verify(authLoginResponseFactory).validateRedirectUris();
         verify(authLoginResponseFactory).create(eq(loginResult), any(HttpSession.class));
     }
@@ -149,5 +157,35 @@ class OAuthControllerTest {
         verify(kakaoClient).requestIdentity("authorization-code");
         verify(authLoginResponseFactory).validateRedirectUris();
         verifyNoInteractions(socialLoginService);
+    }
+
+    @ParameterizedTest
+    @MethodSource("kakaoTalkNicknameErrorCases")
+    void 카카오톡_닉네임_검증에_실패하면_오류_코드를_반환한다(
+        RuntimeException exception, String errorCode) throws Exception {
+        OAuthProviderClient kakaoClient = mock(OAuthProviderClient.class);
+        given(oauthProviderClientRegistry.get(AuthProvider.KAKAO)).willReturn(kakaoClient);
+        willThrow(exception)
+            .given(kakaoClient)
+            .requestIdentity("authorization-code");
+
+        mockMvc.perform(
+            get("/api/v1/auth/kakao/callback")
+                .param("code", "authorization-code")
+                .param("state", "state-value"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value(errorCode));
+
+        verifyNoInteractions(socialLoginService);
+    }
+
+    private static Stream<Arguments> kakaoTalkNicknameErrorCases() {
+        return Stream.of(
+            Arguments.of(
+                new KakaoTalkNicknameRequiredException(),
+                "KAKAO_TALK_NICKNAME_REQUIRED"),
+            Arguments.of(
+                new KakaoTalkNicknameTooLongException(),
+                "KAKAO_TALK_NICKNAME_TOO_LONG"));
     }
 }

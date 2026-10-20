@@ -11,6 +11,7 @@ public class PersonaAiProperties {
 
     private String baseUrl = "";
     private String startPath = "/ai/api/v1/persona/onboarding/start";
+    private String nicknamePath = "/ai/api/v1/persona/nickname";
     private String answerPath = "/ai/api/v1/persona/onboarding/%s/answer";
     private String skipPath = "/ai/api/v1/persona/onboarding/%s/skip";
     private String finishPath = "/ai/api/v1/persona/onboarding/%s/finish";

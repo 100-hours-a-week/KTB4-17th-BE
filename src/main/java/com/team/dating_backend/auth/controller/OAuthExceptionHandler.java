@@ -1,6 +1,8 @@
 package com.team.dating_backend.auth.controller;
 
 import com.team.dating_backend.auth.dto.AuthErrorResponse;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameRequiredException;
+import com.team.dating_backend.auth.exception.KakaoTalkNicknameTooLongException;
 import com.team.dating_backend.auth.exception.OAuthInvalidRequestException;
 import com.team.dating_backend.auth.exception.OAuthProviderUnavailableException;
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,18 @@ public class OAuthExceptionHandler {
     public ResponseEntity<AuthErrorResponse> handleProviderUnavailable(
         OAuthProviderUnavailableException exception) {
         return error(HttpStatus.BAD_GATEWAY, "AUTH_PROVIDER_UNAVAILABLE");
+    }
+
+    @ExceptionHandler(KakaoTalkNicknameRequiredException.class)
+    public ResponseEntity<AuthErrorResponse> handleKakaoTalkNicknameRequired(
+        KakaoTalkNicknameRequiredException exception) {
+        return error(HttpStatus.BAD_REQUEST, "KAKAO_TALK_NICKNAME_REQUIRED");
+    }
+
+    @ExceptionHandler(KakaoTalkNicknameTooLongException.class)
+    public ResponseEntity<AuthErrorResponse> handleKakaoTalkNicknameTooLong(
+        KakaoTalkNicknameTooLongException exception) {
+        return error(HttpStatus.BAD_REQUEST, "KAKAO_TALK_NICKNAME_TOO_LONG");
     }
 
     @ExceptionHandler(Exception.class)

@@ -5,6 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.TestJwtSecret;
 import java.net.URI;
@@ -16,6 +22,10 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
+import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
+import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
+import com.team.dating_backend.chat.enums.ChatRoomPresenceAction;
+import com.team.dating_backend.chat.service.ChatRoomPresenceService;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
@@ -27,6 +37,7 @@ import com.team.dating_backend.security.config.SecurityProperties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -64,6 +75,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
     properties = {
         "spring.config.name=chat-websocket-test",
         "server.address=127.0.0.1",
+        "app.chat.runtime-enabled=true",
         "app.security.allowed-origins=http://localhost:5173",
         "jwt.service-expiration-minutes=60"
     }
@@ -98,6 +110,9 @@ class ChatWebSocketHandshakeTest {
     @MockitoBean
     private UserAuthenticationService userAuthenticationService;
 
+    @MockitoBean
+    private ChatRoomPresenceService presenceService;
+
     @Test
     void 유효한_ACCESS_TOKEN이면_STOMP에_인증사용자가_전달된다() throws Exception {
         String token = jwtService.createServiceAuthToken(42L);
@@ -120,7 +135,7 @@ class ChatWebSocketHandshakeTest {
 
             assertTrue(session.isConnected());
 
-            SessionConnectEvent event = sessionConnectEvents.poll(5, TimeUnit.SECONDS);
+            SessionConnectEvent event = awaitAuthenticatedConnect();
             assertNotNull(event, "STOMP CONNECT 이벤트가 발생해야 합니다.");
 
             Authentication authentication = assertInstanceOf(Authentication.class, event.getUser());
@@ -202,6 +217,37 @@ class ChatWebSocketHandshakeTest {
     }
 
     @Test
+    void 상태_전달_목적지의_유효한_요청만_인증_회원과_세션_정보로_전달한다() throws Exception {
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+        headers.setOrigin("http://localhost:5173");
+        StompSession session = null;
+        ChatRoomPresenceRequest request = new ChatRoomPresenceRequest(30L, ChatRoomPresenceAction.ENTER);
+        try {
+            session = client.connectAsync(
+                "ws://127.0.0.1:" + port + "/ws/chat", headers,
+                bearerConnectHeaders(jwtService.createServiceAuthToken(42L)),
+                new StompSessionHandlerAdapter() {}).get(5, TimeUnit.SECONDS);
+            session.send("/app/other", request);
+            session.send("/queue/chat-messages", request);
+            session.send("/user/queue/chat-messages", request);
+            session.send("/app/chat-rooms/presence", Map.of("chatRoomId", -1, "action", "ENTER"));
+            session.send("/app/chat-rooms/presence", Map.of("chatRoomId", 30, "action", "UNKNOWN"));
+            session.send("/app/chat-rooms/presence", request);
+
+            verify(presenceService, timeout(3000)).updatePresence(
+                eq(42L), anyString(), eq(request), anyMap());
+            verifyNoMoreInteractions(presenceService);
+        } finally {
+            if (session != null && session.isConnected()) {
+                session.disconnect();
+            }
+            client.stop();
+        }
+    }
+
+    @Test
     void STOMP_CONNECT에_유효하지_않은_Bearer_토큰이_있으면_인증이_거부된다()
         throws Exception {
         assertStompConnectRejected("invalid-token", "http://localhost:5173");
@@ -254,6 +300,19 @@ class ChatWebSocketHandshakeTest {
         return headers;
     }
 
+    private SessionConnectEvent awaitAuthenticatedConnect() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            SessionConnectEvent event = sessionConnectEvents.poll(
+                Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            if (event != null && event.getUser() instanceof Authentication authentication
+                && authentication.isAuthenticated()) {
+                return event;
+            }
+        }
+        return null;
+    }
+
     private boolean awaitUserSubscription(String userName, String destination)
         throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -286,6 +345,7 @@ class ChatWebSocketHandshakeTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRoomPresenceController.class,
             JwtService.class,
             ApiAuthenticationEntryPoint.class,
             ApiAccessDeniedHandler.class,

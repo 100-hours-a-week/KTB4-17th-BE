@@ -3,6 +3,7 @@ package com.team.dating_backend.chat.service;
 import com.team.dating_backend.chat.dto.event.ChatMessageReadRequestedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -10,6 +11,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "app.chat", name = "runtime-enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ChatMessageReadReceiptPublisher {
 
