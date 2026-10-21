@@ -17,6 +17,9 @@ spring:
       properties:
         "[enable.idempotence]": true
         "[spring.json.add.type.headers]": false
+        "[max.block.ms]": ${KAFKA_PRODUCER_MAX_BLOCK_MS:3000}
+        "[request.timeout.ms]": ${KAFKA_PRODUCER_REQUEST_TIMEOUT_MS:3000}
+        "[delivery.timeout.ms]": ${KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS:10000}
     consumer:
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -92,6 +95,8 @@ app:
     kafka:
       create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
       delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
+    publish:
+      result-timeout-ms: ${APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS:15000}
     alert:
       enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
       environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
