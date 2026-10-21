@@ -40,6 +40,25 @@ public final class ChatDelegationAiPayloads {
         @JsonProperty("delegation_id") Long delegationId,
         String status) {}
 
+    public record MessageRequest(
+        @JsonProperty("request_id") UUID requestId,
+        @JsonProperty("room_id") Long roomId,
+        @JsonProperty("delegation_id") Long delegationId,
+        @JsonProperty("user_id") String userId,
+        @JsonProperty("target_user_id") String targetUserId,
+        @JsonProperty("end_type") ChatDelegationEndType endType,
+        @JsonProperty("recent_messages") List<RecentMessage> recentMessages) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record MessageResponse(
+        @JsonProperty("room_id") Long roomId,
+        @JsonProperty("message_id") Long messageId,
+        @JsonProperty("ai_response") String aiResponse,
+        String status,
+        @JsonProperty("ai_turn_count") Integer aiTurnCount,
+        @JsonProperty("is_final") Boolean isFinal,
+        @JsonProperty("end_turns") Integer endTurns) {}
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Turn(Integer turn, String message) {}
 }
