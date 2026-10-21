@@ -61,6 +61,7 @@ class NotificationKafkaConnectionIntegrationTest {
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
             .withUserConfiguration(NotificationKafkaConfiguration.class)
+            .withBean(NotificationCreationProperties.class, NotificationCreationProperties::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withInitializer(context -> {
                 var sources = context.getEnvironment().getPropertySources();

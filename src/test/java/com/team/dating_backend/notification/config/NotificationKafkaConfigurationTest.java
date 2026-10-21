@@ -1,11 +1,14 @@
 package com.team.dating_backend.notification.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.kafka.NotificationCreationConsumer;
+import com.team.dating_backend.notification.service.NotificationCreationProcessor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -30,8 +33,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.support.KafkaUtils;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
@@ -82,6 +88,62 @@ class NotificationKafkaConfigurationTest {
                 .doesNotContainKeys(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
                     JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, JacksonJsonDeserializer.USE_TYPE_INFO_HEADERS);
         });
+    }
+
+    @Test
+    void 생성_Listener는_공유_Group과_오류_중단_정책을_상속하고_기본적으로_기동하지_않는다() {
+        contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
+            .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                var container = context.getBean(KafkaListenerEndpointRegistry.class)
+                    .getListenerContainer("notificationCreationConsumer");
+                assertThat(container).isNotNull();
+                assertThat(container.isAutoStartup()).isFalse();
+                assertThat(container.isRunning()).isFalse();
+                assertThat(container.getContainerProperties().getGroupId()).isEqualTo("local-notification-create-v1");
+                assertThat(container.getContainerProperties().getTopics())
+                    .containsExactly("local-notification-create-requested-v1");
+                assertThat(container.getContainerProperties().getAckMode())
+                    .isEqualTo(ContainerProperties.AckMode.RECORD);
+                assertThat(container.getContainerProperties().isSyncCommits()).isTrue();
+                assertThat(container.getContainerProperties().isCheckDeserExWhenValueNull()).isTrue();
+                assertThat(((ConcurrentMessageListenerContainer<?, ?>) container).getCommonErrorHandler())
+                    .isInstanceOf(CommonContainerStoppingErrorHandler.class);
+            });
+    }
+
+    @Test
+    void 생성_전용_환경변수는_공통과_delivery_설정에_영향_없이_적용한다() {
+        contextRunner.withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true",
+            "APP_NOTIFICATION_CREATION_GROUP_ID=shared-creation", "APP_NOTIFICATION_CREATION_CONCURRENCY=2",
+            "APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS=5", "APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS=90000",
+            "spring.kafka.consumer.enable-auto-commit=true", "spring.kafka.listener.ack-mode=batch")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                var factory = context.getBean("notificationCreateRequestedKafkaListenerContainerFactory",
+                    ConcurrentKafkaListenerContainerFactory.class);
+                var container = (ConcurrentMessageListenerContainer<?, ?>) factory.createContainer("test-topic");
+                assertThat(container.isAutoStartup()).isTrue();
+                assertThat(container.getConcurrency()).isEqualTo(2);
+                assertThat(container.getContainerProperties().getGroupId()).isEqualTo("shared-creation");
+                assertThat(container.getContainerProperties().getAckMode())
+                    .isEqualTo(ContainerProperties.AckMode.RECORD);
+                assertThat(factory.getConsumerFactory().getConfigurationProperties())
+                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
+                    .containsEntry(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 5)
+                    .containsEntry(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 90_000);
+                var delivery = context.getBean("notificationDeliveryKafkaListenerContainerFactory",
+                    ConcurrentKafkaListenerContainerFactory.class);
+                assertThat(delivery.getContainerProperties().getGroupId()).isNull();
+                assertThat(delivery.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.BATCH);
+                assertThat(delivery.getConsumerFactory().getConfigurationProperties())
+                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true)
+                    .doesNotContainKey(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
+                assertThat(context.getBean("kafkaConsumerFactory", ConsumerFactory.class).getConfigurationProperties())
+                    .doesNotContainKeys(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+                        ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG);
+            });
     }
 
     @Test
@@ -221,6 +283,9 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationPublishProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationKafkaProperties.class, NotificationPublishProperties.class,
+            NotificationCreationProperties.class}
+    )
     static class PropertiesConfiguration {}
 }
