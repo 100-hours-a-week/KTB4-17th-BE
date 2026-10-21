@@ -40,7 +40,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void 시뮬레이션_요청을_snake_case와_10턴으로_보낸다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andExpect(method(HttpMethod.POST))
             .andExpect(content().json("""
                 {"me_user_id":"7","partner_user_id":"8","turns":10}
@@ -58,7 +58,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void 내_페르소나_없음과_상대_페르소나_없음을_구분한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withStatus(HttpStatus.NOT_FOUND)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
@@ -71,7 +71,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void 상대_페르소나가_없으면_상대_오류로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withStatus(HttpStatus.NOT_FOUND)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
@@ -84,7 +84,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void AI_처리중과_생성실패를_백엔드_오류로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withStatus(HttpStatus.CONFLICT)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
@@ -96,7 +96,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void AI가_요청을_거절하면_422로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
@@ -109,7 +109,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void AI_생성_실패는_서비스_이용불가로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("""
@@ -122,7 +122,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void 잘못된_JSON은_유효하지_않은_AI_응답으로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(withSuccess("{broken", MediaType.APPLICATION_JSON));
 
         assertError(AiSimulationErrorCode.AI_SERVER_RESPONSE_INVALID);
@@ -131,7 +131,7 @@ class RestAiSimulationAiClientTest {
 
     @Test
     void 네트워크_장애는_AI_서버_이용불가로_변환한다() {
-        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/simulation"))
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
             .andRespond(request -> {
                 throw new IOException("connection timed out");
             });

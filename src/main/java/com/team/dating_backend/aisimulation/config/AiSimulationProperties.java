@@ -15,7 +15,7 @@ import org.springframework.validation.annotation.Validated;
 public class AiSimulationProperties {
 
     private String baseUrl = "";
-    private String simulationPath = "/ai/api/v1/simulation";
+    private String simulationPath = "/ai/api/v2/simulation";
     private int connectTimeoutMs = 3_000;
     private int readTimeoutMs = 130_000;
 
