@@ -153,6 +153,109 @@ class NotificationRepositoryIntegrationTest {
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
             Long.class, userId, "LIKE")).isEqualTo(2L);
+        assertThat(repository.findById(firstId).orElseThrow().getSourceEventId()).isNull();
+        assertThat(repository.findById(secondId).orElseThrow().getSourceEventId()).isNull();
+    }
+
+    @Test
+    void 같은_원본_키의_저장을_거절한_뒤_별도_조회로_읽고_삭제한_기존_알림을_찾는다() {
+        String sourceEventId = "LIKE_SENT:501";
+        Long notificationId = transaction.execute(status -> {
+            Notification notification = sourceNotification(sourceEventId, userId, NotificationType.LIKE);
+            notification.markAsRead(NOW.plusMinutes(1));
+            notification.markAsDeleted(NOW.plusMinutes(2));
+            return repository.saveAndFlush(notification).getId();
+        });
+        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", notificationId);
+
+        assertThatThrownBy(() -> saveSourceNotification(sourceEventId, userId, NotificationType.LIKE))
+            .isInstanceOfSatisfying(DataIntegrityViolationException.class,
+                exception -> assertThat(exception.getMostSpecificCause()).isInstanceOfSatisfying(SQLException.class,
+                    sql -> {
+                        assertThat(sql.getErrorCode()).isEqualTo(1062);
+                        assertThat(sql.getMessage()).contains("uk_notifications_source_recipient_type");
+                    }));
+
+        Notification existing = transaction.execute(status -> repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow());
+
+        assertThat(existing.getId()).isEqualTo(notificationId);
+        assertThat(existing.getReadAt()).isEqualTo(NOW.plusMinutes(1));
+        assertThat(existing.getDeletedAt()).isEqualTo(NOW.plusMinutes(2));
+        assertThat(jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", notificationId)).isEqualTo(before);
+        assertThat(repository.countVisibleUnreadByUserId(userId)).isZero();
+    }
+
+    @Test
+    void 원본_식별자와_수신자와_유형을_모두_구분하여_저장하고_조회한다() {
+        otherUserId = saveOtherUser();
+        Long original = saveSourceNotification("event-1", userId, NotificationType.LIKE);
+        Long differentSource = saveSourceNotification("event-2", userId, NotificationType.LIKE);
+        Long differentUser = saveSourceNotification("event-1", otherUserId, NotificationType.LIKE);
+        Long differentType = saveSourceNotification("event-1", userId, NotificationType.MATCH);
+
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(original);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-2", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(differentSource);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", otherUserId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(differentUser);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", userId, NotificationType.MATCH)
+            .orElseThrow().getId()).isEqualTo(differentType);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-2", userId, NotificationType.MATCH)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"like_sent:501", "LIKE_SENT:501 "})
+    void 원본_식별자의_대소문자와_후행_공백을_다른_키로_저장하고_정확히_조회한다(String variant) {
+        Long original = saveSourceNotification("LIKE_SENT:501", userId, NotificationType.LIKE);
+        Long different = saveSourceNotification(variant, userId, NotificationType.LIKE);
+
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("LIKE_SENT:501", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(original);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType(variant, userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(different);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "😀"})
+    void 유니코드_255자_원본_식별자를_변형_없이_저장하고_조회한다(String character) {
+        String sourceEventId = character.repeat(255);
+        Long id = saveSourceNotification(sourceEventId, userId, NotificationType.LIKE);
+
+        Notification stored = repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow();
+
+        assertThat(stored.getId()).isEqualTo(id);
+        assertThat(stored.getSourceEventId()).isEqualTo(sourceEventId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 같은_원본_키의_동시_INSERT는_선행_commit이면_중복_거절하고_rollback이면_저장한다(boolean rollbackFirst)
+        throws Exception {
+        String sourceEventId = "LIKE_SENT:501";
+        AtomicReference<Long> firstId = new AtomicReference<>();
+        AtomicReference<Long> secondId = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> firstId
+                .set(repository.saveAndFlush(sourceNotification(sourceEventId, userId, NotificationType.LIKE)).getId()),
+            () -> {
+                if (rollbackFirst) {
+                    secondId.set(saveSourceNotification(sourceEventId, userId, NotificationType.LIKE));
+                } else {
+                    assertThatThrownBy(() -> saveSourceNotification(sourceEventId, userId, NotificationType.LIKE))
+                        .isInstanceOf(DataIntegrityViolationException.class);
+                }
+            }, rollbackFirst);
+
+        Notification stored = repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow();
+        assertThat(stored.getId()).isEqualTo(rollbackFirst ? secondId.get() : firstId.get());
+        assertThat(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM notifications WHERE source_event_id = ? AND user_id = ? AND type = 'LIKE'",
+            Long.class, sourceEventId, userId)).isEqualTo(1L);
     }
 
     @Test
@@ -760,6 +863,16 @@ class NotificationRepositoryIntegrationTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("동시성 테스트 대기 중 중단", exception);
         }
+    }
+
+    private Long saveSourceNotification(String sourceEventId, Long recipientId, NotificationType type) {
+        return transaction
+            .execute(status -> repository.saveAndFlush(sourceNotification(sourceEventId, recipientId, type)).getId());
+    }
+
+    private Notification sourceNotification(String sourceEventId, Long recipientId, NotificationType type) {
+        return Notification.fromSourceEvent(sourceEventId, userRepository.getReferenceById(recipientId),
+            type, "저장된 제목", "저장된 본문", "CHAT_ROOM", 999999L, NOW);
     }
 
     private Long saveOtherUser() {

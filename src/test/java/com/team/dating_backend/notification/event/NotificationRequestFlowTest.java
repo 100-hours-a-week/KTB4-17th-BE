@@ -20,6 +20,8 @@ import com.team.dating_backend.notification.service.NotificationRequestService;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -42,6 +45,7 @@ class NotificationRequestFlowTest {
     private static final Instant REQUESTED_AT = Instant.parse("2026-10-20T01:02:03.123456789Z");
     private final Connection connection = mock(Connection.class);
     private final NotificationPublishDispatcher dispatcher = mock(NotificationPublishDispatcher.class);
+    private final List<NotificationCreateRequested> publishedRequests = new ArrayList<>();
     private AnnotationConfigApplicationContext context;
     private NotificationRequestService service;
     private TransactionTemplate transaction;
@@ -53,6 +57,12 @@ class NotificationRequestFlowTest {
         given(connection.getAutoCommit()).willReturn(true);
         var manager = new DataSourceTransactionManager(dataSource);
         context = new AnnotationConfigApplicationContext();
+        context.addApplicationListener(event -> {
+            if (event instanceof PayloadApplicationEvent<?> payload
+                && payload.getPayload() instanceof NotificationCreateRequested request) {
+                publishedRequests.add(request);
+            }
+        });
         context.registerBean(PlatformTransactionManager.class, () -> manager);
         context.registerBean(NotificationPublishDispatcher.class, () -> dispatcher);
         context.register(TransactionConfiguration.class, NotificationRequestService.class,
@@ -122,7 +132,27 @@ class NotificationRequestFlowTest {
             .isInstanceOfSatisfying(NotificationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
+        assertThat(publishedRequests).isEmpty();
         verifyNoInteractions(dispatcher);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "😀"})
+    void 원본_식별자_255자를_보존해_commit_이후_전달한다(String character) {
+        String prefix = "Like_SENT:501 ";
+        String sourceEventId = prefix + character.repeat(255 - prefix.length());
+        var request = new NotificationCreateRequested(1, sourceEventId, 7L, NotificationType.LIKE,
+            "title", "body", null, null, REQUESTED_AT);
+
+        transaction.executeWithoutResult(status -> {
+            service.requestNotification(request);
+            assertThat(publishedRequests).containsExactly(request);
+            verifyNoInteractions(dispatcher);
+        });
+
+        verify(dispatcher).dispatch(same(request));
+        assertThat(request.sourceEventId()).isEqualTo(sourceEventId);
+        verifyNoMoreInteractions(dispatcher);
     }
 
     @Test
@@ -145,6 +175,10 @@ class NotificationRequestFlowTest {
             new NotificationCreateRequested(2, "id", 7L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
             new NotificationCreateRequested(1, " ", 7L, NotificationType.LIKE, "title", "body", null, null,
+                REQUESTED_AT),
+            new NotificationCreateRequested(1, "a".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
+                REQUESTED_AT),
+            new NotificationCreateRequested(1, "😀".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
             new NotificationCreateRequested(1, "id", 0L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),

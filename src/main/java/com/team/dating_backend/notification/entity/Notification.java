@@ -17,6 +17,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import lombok.AccessLevel;
@@ -33,10 +34,15 @@ import org.hibernate.type.SqlTypes;
     indexes = @Index(
         name = "idx_notifications_user_deleted_id",
         columnList = "user_id,deleted_at,id"
+    ),
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_notifications_source_recipient_type",
+        columnNames = {"source_event_id", "user_id", "type"}
     )
 )
 public class Notification {
 
+    private static final int MAX_SOURCE_EVENT_ID_LENGTH = 255;
     private static final int MAX_TITLE_LENGTH = 100;
     private static final int MAX_BODY_LENGTH = 500;
     private static final int MAX_TARGET_TYPE_LENGTH = 50;
@@ -44,6 +50,9 @@ public class Notification {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "source_event_id", updatable = false, length = MAX_SOURCE_EVENT_ID_LENGTH)
+    private String sourceEventId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
@@ -97,6 +106,25 @@ public class Notification {
         this.targetType = targetType;
         this.targetId = targetId;
         this.createdAt = requirePresent(createdAt).truncatedTo(ChronoUnit.MICROS);
+    }
+
+    public static Notification fromSourceEvent(
+        String sourceEventId,
+        User user,
+        NotificationType type,
+        String title,
+        String body,
+        String targetType,
+        Long targetId,
+        LocalDateTime createdAt) {
+        requireTextWithinLength(sourceEventId, MAX_SOURCE_EVENT_ID_LENGTH);
+        if (sourceEventId.isBlank()) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+
+        Notification notification = new Notification(user, type, title, body, targetType, targetId, createdAt);
+        notification.sourceEventId = sourceEventId;
+        return notification;
     }
 
     public Long getUserId() {

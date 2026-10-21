@@ -19,6 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NotificationTest {
 
@@ -33,6 +34,35 @@ class NotificationTest {
         assertThat(notification.getCreatedAt()).isEqualTo(NOW.truncatedTo(ChronoUnit.MICROS));
         assertThat(notification.getTargetType()).isNull();
         assertThat(notification.getTargetId()).isNull();
+        assertThat(notification.getSourceEventId()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "😀"})
+    void 원본_식별자는_유니코드_255자까지_보존하고_기존_알림_상태를_유지한다(String character) {
+        String prefix = "Like_SENT:501 ";
+        String sourceEventId = prefix + character.repeat(255 - prefix.length());
+        Notification notification = Notification.fromSourceEvent(sourceEventId, user(), NotificationType.LIKE,
+            "관심", "관심 도착", null, null, NOW);
+
+        assertThat(notification.getSourceEventId()).isEqualTo(sourceEventId);
+        assertThat(notification.getCreatedAt()).isEqualTo(NOW.truncatedTo(ChronoUnit.MICROS));
+        assertThat(notification.getReadAt()).isNull();
+        assertThat(notification.getDeletedAt()).isNull();
+
+        notification.markAsRead(NOW.plusMinutes(1));
+        notification.markAsDeleted(NOW.plusMinutes(2));
+
+        assertThat(notification.getSourceEventId()).isEqualTo(sourceEventId);
+        assertThat(notification.getReadAt()).isEqualTo(NOW.plusMinutes(1).truncatedTo(ChronoUnit.MICROS));
+        assertThat(notification.getDeletedAt()).isEqualTo(NOW.plusMinutes(2).truncatedTo(ChronoUnit.MICROS));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidSourceEventIds")
+    void 원본_식별자가_없거나_길이를_초과하면_서버_오류_코드로_실패한다(String sourceEventId) {
+        assertInternalError(() -> Notification.fromSourceEvent(sourceEventId, user(), NotificationType.LIKE,
+            "관심", "관심 도착", null, null, NOW));
     }
 
     @Test
@@ -123,6 +153,10 @@ class NotificationTest {
             Arguments.of(user(), NotificationType.LIKE, null, "관심 도착", NOW),
             Arguments.of(user(), NotificationType.LIKE, "관심", null, NOW),
             Arguments.of(user(), NotificationType.LIKE, "관심", "관심 도착", null));
+    }
+
+    private static Stream<String> invalidSourceEventIds() {
+        return Stream.of(null, "", " ", "a".repeat(256), "😀".repeat(256));
     }
 
     private static Stream<Arguments> invalidTargets() {
