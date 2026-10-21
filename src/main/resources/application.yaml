@@ -100,6 +100,8 @@ app:
       pool-size: ${APP_NOTIFICATION_PUBLISH_POOL_SIZE:2}
       queue-capacity: ${APP_NOTIFICATION_PUBLISH_QUEUE_CAPACITY:100}
       shutdown-wait-seconds: ${APP_NOTIFICATION_PUBLISH_SHUTDOWN_WAIT_SECONDS:20}
+    creation:
+      delivery-result-timeout-ms: ${APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
     alert:
       enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
       environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
