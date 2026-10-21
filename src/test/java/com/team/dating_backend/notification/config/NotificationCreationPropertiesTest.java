@@ -32,11 +32,38 @@ class NotificationCreationPropertiesTest {
         });
 
     @Test
-    void 기본_대기_시간은_15초다() {
+    void 기본값은_소비를_비활성화하고_건별_처리와_15초_발행_대기를_사용한다() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context.getBean(NotificationCreationProperties.class).getDeliveryResultTimeoutMs())
-                .isEqualTo(15_000L);
+            var properties = context.getBean(NotificationCreationProperties.class);
+            assertThat(properties.isEnabled()).isFalse();
+            assertThat(properties.getConcurrency()).isEqualTo(1);
+            assertThat(properties.getMaxPollRecords()).isEqualTo(1);
+            assertThat(properties.getMaxPollIntervalMs()).isEqualTo(300_000);
+            assertThat(properties.getDeliveryResultTimeoutMs()).isEqualTo(15_000L);
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"local", "dev", "prod"})
+    void 기본_Group은_환경별로_구분한다(String profile) {
+        contextRunner.withPropertyValues("SPRING_PROFILES_ACTIVE=" + profile).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(NotificationCreationProperties.class).getGroupId())
+                .isEqualTo(profile + "-notification-create-v1");
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = {"APP_NOTIFICATION_CREATION_GROUP_ID=",
+            "APP_NOTIFICATION_CREATION_CONCURRENCY=0", "APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS=0",
+            "APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS=0"}
+    )
+    void 잘못된_Group과_실행_설정을_거부한다(String property) {
+        contextRunner.withPropertyValues(property).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(BindValidationException.class);
         });
     }
 

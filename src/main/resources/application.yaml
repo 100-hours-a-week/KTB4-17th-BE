@@ -101,6 +101,11 @@ app:
       queue-capacity: ${APP_NOTIFICATION_PUBLISH_QUEUE_CAPACITY:100}
       shutdown-wait-seconds: ${APP_NOTIFICATION_PUBLISH_SHUTDOWN_WAIT_SECONDS:20}
     creation:
+      enabled: ${APP_NOTIFICATION_CREATION_ENABLED:false}
+      group-id: ${APP_NOTIFICATION_CREATION_GROUP_ID:${spring.profiles.active:local}-notification-create-v1}
+      concurrency: ${APP_NOTIFICATION_CREATION_CONCURRENCY:1}
+      max-poll-records: ${APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS:1}
+      max-poll-interval-ms: ${APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS:300000}
       delivery-result-timeout-ms: ${APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
     alert:
       enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
