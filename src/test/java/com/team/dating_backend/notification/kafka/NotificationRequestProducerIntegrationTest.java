@@ -2,6 +2,7 @@ package com.team.dating_backend.notification.kafka;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.config.NotificationPublishProperties;
@@ -107,6 +108,9 @@ class NotificationRequestProducerIntegrationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationPublishProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationKafkaProperties.class, NotificationPublishProperties.class,
+            NotificationCreationProperties.class}
+    )
     static class PropertiesConfiguration {}
 }
