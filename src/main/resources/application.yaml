@@ -97,6 +97,17 @@ app:
       delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
     publish:
       result-timeout-ms: ${APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS:15000}
+    alert:
+      enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
+      environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
+      webhook-url: ${NOTIFICATION_DISCORD_WEBHOOK_URL:}
+      pool-size: ${NOTIFICATION_ALERT_POOL_SIZE:1}
+      queue-capacity: ${NOTIFICATION_ALERT_QUEUE_CAPACITY:20}
+      shutdown-wait-seconds: ${NOTIFICATION_ALERT_SHUTDOWN_WAIT_SECONDS:10}
+      connect-timeout-ms: ${NOTIFICATION_ALERT_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${NOTIFICATION_ALERT_READ_TIMEOUT_MS:3000}
+      max-messages-per-window: ${NOTIFICATION_ALERT_MAX_MESSAGES_PER_WINDOW:5}
+      rate-limit-window-ms: ${NOTIFICATION_ALERT_RATE_LIMIT_WINDOW_MS:60000}
     sse:
       timeout-ms: ${APP_NOTIFICATION_SSE_TIMEOUT_MS:1800000}
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
