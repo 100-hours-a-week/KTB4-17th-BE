@@ -57,10 +57,18 @@ public class RestFaceVerificationAiClient implements FaceVerificationAiClient {
     public VerificationResponse verify(
         String challengeToken, byte[] primaryPhoto, String photoContentType,
         byte[] liveVideo, String videoContentType) {
+        return verify(challengeToken, primaryPhoto, photoContentType, liveVideo, videoContentType, 1);
+    }
+
+    @Override
+    public VerificationResponse verify(
+        String challengeToken, byte[] primaryPhoto, String photoContentType,
+        byte[] liveVideo, String videoContentType, int attemptNo) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("challenge_token", challengeToken);
         body.add("primary_photo", part(primaryPhoto, photoContentType, "primary-photo"));
         body.add("live_video", part(liveVideo, videoContentType, "live-video"));
+        body.add("attempt_no", attemptNo);
         return post(COMPLETE_PATH, body, VerificationResponse.class);
     }
 

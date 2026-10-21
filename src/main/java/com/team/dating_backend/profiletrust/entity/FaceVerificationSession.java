@@ -14,9 +14,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter
@@ -28,7 +31,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class FaceVerificationSession {
 
-    public static final int MAX_ATTEMPTS = 5;
+    public static final int MAX_ATTEMPTS = 3;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -49,6 +52,13 @@ public class FaceVerificationSession {
     @Column(name = "challenge_token", nullable = false, updatable = false, length = 2048)
     private String challengeToken;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "challenge_plan", columnDefinition = "json")
+    private List<List<String>> challengePlan;
+
+    @Column(name = "protocol_version", nullable = false, updatable = false)
+    private int protocolVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private VerificationSessionStatus status;
@@ -65,15 +75,32 @@ public class FaceVerificationSession {
     public static FaceVerificationSession create(
         Long ownerUserId, Long uploadIntentId, String photoVersionToken,
         String challengeToken, LocalDateTime createdAt, LocalDateTime expiresAt) {
+        return create(ownerUserId, uploadIntentId, photoVersionToken, challengeToken, null, 1,
+            createdAt, expiresAt);
+    }
+
+    public static FaceVerificationSession create(
+        Long ownerUserId, Long uploadIntentId, String photoVersionToken, String challengeToken,
+        List<List<String>> challengePlan, int protocolVersion, LocalDateTime createdAt, LocalDateTime expiresAt) {
         FaceVerificationSession session = new FaceVerificationSession();
         session.ownerUserId = ownerUserId;
         session.uploadIntentId = uploadIntentId;
         session.photoVersionToken = photoVersionToken;
         session.challengeToken = challengeToken;
+        session.challengePlan = challengePlan;
+        session.protocolVersion = protocolVersion;
         session.createdAt = createdAt;
         session.expiresAt = expiresAt;
         session.status = VerificationSessionStatus.READY;
         return session;
+    }
+
+    public List<String> challengesForAttempt(int attemptNo) {
+        if (protocolVersion == 2 && challengePlan != null
+            && attemptNo >= 1 && attemptNo <= challengePlan.size()) {
+            return List.copyOf(challengePlan.get(attemptNo - 1));
+        }
+        return List.of("LOOK_STRAIGHT");
     }
 
     public int beginAttempt() {
@@ -101,6 +128,12 @@ public class FaceVerificationSession {
     public void expireIfNecessary(LocalDateTime now) {
         if (status.isOpen() && !expiresAt.isAfter(now)) {
             invalidate();
+        }
+    }
+
+    public void exhaustIfReadyAtAttemptLimit() {
+        if (status == VerificationSessionStatus.READY && attemptsUsed >= MAX_ATTEMPTS) {
+            status = VerificationSessionStatus.EXHAUSTED;
         }
     }
 

@@ -10,4 +10,10 @@ public interface FaceVerificationAiClient {
     VerificationResponse verify(
         String challengeToken, byte[] primaryPhoto, String photoContentType,
         byte[] liveVideo, String videoContentType);
+
+    default VerificationResponse verify(
+        String challengeToken, byte[] primaryPhoto, String photoContentType,
+        byte[] liveVideo, String videoContentType, int attemptNo) {
+        return verify(challengeToken, primaryPhoto, photoContentType, liveVideo, videoContentType);
+    }
 }

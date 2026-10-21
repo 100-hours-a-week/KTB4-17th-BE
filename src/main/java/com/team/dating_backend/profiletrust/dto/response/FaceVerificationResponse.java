@@ -21,21 +21,62 @@ public record FaceVerificationResponse(
         List<VerificationReasonCode> reasonCodes, ProfileTrustErrorCode errorCode) {
 
         private static Attempt from(FaceVerificationAttempt attempt) {
-            return new Attempt(attempt.getAttemptNo(), attempt.getStatus(), attempt.getDecision(),
+            return from(attempt, attempt.getAttemptNo());
+        }
+
+        private static Attempt from(FaceVerificationAttempt attempt, int attemptNo) {
+            return new Attempt(attemptNo, attempt.getStatus(), attempt.getDecision(),
                 List.copyOf(attempt.getReasonCodes()), attempt.getErrorCode());
         }
     }
 
     public static FaceVerificationResponse from(
         FaceVerificationSession session, FaceVerificationAttempt attempt, List<FaceVerificationAttempt> attempts) {
-        boolean ready = session.getStatus() == VerificationSessionStatus.READY;
+        int attemptsUsed = Math.min(session.getAttemptsUsed(), FaceVerificationSession.MAX_ATTEMPTS);
+        boolean legacyAttemptOverflow = session.getAttemptsUsed() > FaceVerificationSession.MAX_ATTEMPTS;
+        VerificationSessionStatus status = session.getStatus();
+        List<Attempt> visibleAttempts;
+        Attempt visibleAttempt;
+        if (legacyAttemptOverflow) {
+            if (status == VerificationSessionStatus.VERIFIED && !attempts.isEmpty()) {
+                List<Attempt> firstAttempts = attempts.stream()
+                    .limit(FaceVerificationSession.MAX_ATTEMPTS - 1L)
+                    .map(Attempt::from)
+                    .toList();
+                FaceVerificationAttempt successfulAttempt = attempt != null
+                    && attempt.getDecision() == VerificationDecision.VERIFIED
+                        ? attempt
+                        : attempts.getLast();
+                visibleAttempts = java.util.stream.Stream.concat(firstAttempts.stream(),
+                    java.util.stream.Stream.of(Attempt.from(successfulAttempt, FaceVerificationSession.MAX_ATTEMPTS)))
+                    .toList();
+                visibleAttempt = attempt != null
+                    && attempt.getAttemptNo() < FaceVerificationSession.MAX_ATTEMPTS
+                        ? Attempt.from(attempt)
+                        : visibleAttempts.getLast();
+            } else {
+                status = VerificationSessionStatus.EXHAUSTED;
+                visibleAttempts = attempts.stream()
+                    .limit(FaceVerificationSession.MAX_ATTEMPTS)
+                    .map(Attempt::from)
+                    .toList();
+                visibleAttempt = visibleAttempts.isEmpty() ? null : visibleAttempts.getLast();
+            }
+        } else {
+            visibleAttempts = attempts.stream().map(Attempt::from).toList();
+            visibleAttempt = attempt == null ? null : Attempt.from(attempt);
+        }
+        boolean ready = status == VerificationSessionStatus.READY;
+        int challengeAttemptNo = ready
+            ? Math.min(attemptsUsed + 1, FaceVerificationSession.MAX_ATTEMPTS)
+            : Math.max(1, attemptsUsed);
         return new FaceVerificationResponse(
-            session.getId(), session.getUploadIntentId(), session.getStatus(),
-            session.getAttemptsUsed(), FaceVerificationSession.MAX_ATTEMPTS,
-            FaceVerificationSession.MAX_ATTEMPTS - session.getAttemptsUsed(),
-            ready ? session.getAttemptsUsed() + 1 : null, ready,
-            List.of("LOOK_STRAIGHT"), session.getExpiresAt().atZone(ZoneId.systemDefault()).toInstant(),
-            attempt == null ? null : Attempt.from(attempt),
-            attempts.stream().map(Attempt::from).toList());
+            session.getId(), session.getUploadIntentId(), status,
+            attemptsUsed, FaceVerificationSession.MAX_ATTEMPTS,
+            FaceVerificationSession.MAX_ATTEMPTS - attemptsUsed,
+            ready ? attemptsUsed + 1 : null, ready,
+            session.challengesForAttempt(challengeAttemptNo),
+            session.getExpiresAt().atZone(ZoneId.systemDefault()).toInstant(),
+            visibleAttempt, visibleAttempts);
     }
 }
