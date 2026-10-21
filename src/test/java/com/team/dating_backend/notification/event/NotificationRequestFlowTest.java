@@ -16,6 +16,7 @@ import com.team.dating_backend.notification.dto.event.NotificationCreateRequeste
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.kafka.NotificationPublishDispatcher;
+import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationRequestService;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -66,7 +67,7 @@ class NotificationRequestFlowTest {
         context.registerBean(PlatformTransactionManager.class, () -> manager);
         context.registerBean(NotificationPublishDispatcher.class, () -> dispatcher);
         context.register(TransactionConfiguration.class, NotificationRequestService.class,
-            NotificationCreateRequestedEventListener.class);
+            NotificationCreateRequestedValidator.class, NotificationCreateRequestedEventListener.class);
         context.refresh();
         service = context.getBean(NotificationRequestService.class);
         transaction = new TransactionTemplate(manager);
