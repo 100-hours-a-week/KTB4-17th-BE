@@ -18,6 +18,18 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Query("""
         select notification
         from Notification notification
+        where notification.sourceEventId = :sourceEventId
+          and notification.user.id = :userId
+          and notification.type = :type
+        """)
+    Optional<Notification> findBySourceEventIdAndUserIdAndType(
+        @Param("sourceEventId") String sourceEventId,
+        @Param("userId") Long userId,
+        @Param("type") NotificationType type);
+
+    @Query("""
+        select notification
+        from Notification notification
         where notification.user.id = :userId
           and notification.deletedAt is null
         order by notification.id desc
