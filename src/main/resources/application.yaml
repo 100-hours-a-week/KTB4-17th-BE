@@ -85,10 +85,10 @@ app:
 
   ai-practice:
     base-url: ${AI_PRACTICE_BASE_URL:}
-    initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/ai/api/v1/practice/start}
-    message-path: ${AI_PRACTICE_MESSAGE_PATH:/ai/api/v1/practice/%s/messages}
-    retry-path: ${AI_PRACTICE_RETRY_PATH:/ai/api/v1/practice/%s/retry}
-    end-session-path: ${AI_PRACTICE_END_SESSION_PATH:/ai/api/v1/practice/%s/end}
+    initial-session-path: ${AI_PRACTICE_INITIAL_SESSION_PATH:/ai/api/v2/practice/start}
+    message-path: ${AI_PRACTICE_MESSAGE_PATH:/ai/api/v2/practice/%s/messages}
+    retry-path: ${AI_PRACTICE_RETRY_PATH:/ai/api/v2/practice/%s/retry}
+    end-session-path: ${AI_PRACTICE_END_SESSION_PATH:/ai/api/v2/practice/%s/end}
     api-key: ${AI_PRACTICE_API_KEY:}
     callback-secret: ${AI_PRACTICE_CALLBACK_SECRET:}
     connect-timeout-ms: ${AI_PRACTICE_CONNECT_TIMEOUT_MS:3000}
@@ -108,7 +108,7 @@ app:
 
   ai-simulation:
     base-url: ${AI_SIMULATION_BASE_URL:}
-    simulation-path: ${AI_SIMULATION_PATH:/ai/api/v1/simulation}
+    simulation-path: ${AI_SIMULATION_PATH:/ai/api/v2/simulation}
     connect-timeout-ms: ${AI_SIMULATION_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${AI_SIMULATION_READ_TIMEOUT_MS:130000}
     async-pool-size: ${AI_SIMULATION_ASYNC_POOL_SIZE:1}

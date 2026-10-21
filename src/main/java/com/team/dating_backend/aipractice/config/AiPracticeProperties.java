@@ -10,10 +10,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AiPracticeProperties {
 
     private String baseUrl = "";
-    private String initialSessionPath = "/ai/api/v1/practice/start";
-    private String messagePath = "/ai/api/v1/practice/%s/messages";
-    private String retryPath = "/ai/api/v1/practice/%s/retry";
-    private String endSessionPath = "/ai/api/v1/practice/%s/end";
+    private String initialSessionPath = "/ai/api/v2/practice/start";
+    private String messagePath = "/ai/api/v2/practice/%s/messages";
+    private String retryPath = "/ai/api/v2/practice/%s/retry";
+    private String endSessionPath = "/ai/api/v2/practice/%s/end";
     private String apiKey = "";
     private String callbackSecret = "";
     private long connectTimeoutMs = 3000;
