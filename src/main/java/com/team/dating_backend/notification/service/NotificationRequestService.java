@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @RequiredArgsConstructor
 public class NotificationRequestService {
 
+    private static final int MAX_SOURCE_EVENT_ID_LENGTH = 255;
     private static final int MAX_TITLE_LENGTH = 100;
     private static final int MAX_BODY_LENGTH = 500;
     private static final int MAX_TARGET_TYPE_LENGTH = 50;
@@ -42,6 +43,7 @@ public class NotificationRequestService {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
 
+        validateTextWithinLength(request.sourceEventId(), MAX_SOURCE_EVENT_ID_LENGTH);
         validateTextWithinLength(request.title(), MAX_TITLE_LENGTH);
         validateTextWithinLength(request.body(), MAX_BODY_LENGTH);
         validateTarget(request.targetType(), request.targetId());
