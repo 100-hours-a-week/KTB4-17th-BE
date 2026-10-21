@@ -5,6 +5,8 @@ import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.C
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftRequest;
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftResponse;
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Turn;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.MessageRequest;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.MessageResponse;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import java.net.URI;
@@ -26,6 +28,7 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
     private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
     private static final String DRAFTS_PATH = "/ai/api/v1/chat_end/drafts";
     private static final String CONFIRM_PATH = DRAFTS_PATH + "/%s/confirm";
+    private static final String MESSAGES_PATH = "/ai/api/v1/chat_end/messages";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
     private static final int DRAFT_TURN_COUNT = 3;
@@ -88,6 +91,21 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
         return response;
     }
 
+    @Override
+    public MessageResponse createMessage(MessageRequest request, int expectedTurn) {
+        requireConfiguration();
+        MessageResponse response = call(() -> restClient.post()
+            .uri(uri(MESSAGES_PATH))
+            .header(INTERNAL_API_KEY_HEADER, properties.getApiKey())
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .body(request)
+            .retrieve()
+            .body(MessageResponse.class));
+        validate(request, expectedTurn, response);
+        return response;
+    }
+
     private <T> T call(Supplier<T> request) {
         try {
             return request.get();
@@ -122,6 +140,30 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
                 || turn.message().length() > MAX_MESSAGE_LENGTH) {
                 throw failure(ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
             }
+        }
+    }
+
+    private void validate(
+        MessageRequest request, int expectedTurn, MessageResponse response) {
+        if (response == null
+            || !request.roomId().equals(response.roomId())
+            || response.messageId() == null || response.messageId() <= 0
+            || response.aiTurnCount() == null || response.aiTurnCount() != expectedTurn
+            || response.endTurns() == null || response.isFinal() == null) {
+            throw failure(ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
+        }
+        if ("FAILED".equals(response.status())) {
+            if (response.endTurns() != 0 || response.isFinal()) {
+                throw failure(ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
+            }
+            return;
+        }
+        if (!"SUCCESS".equals(response.status())
+            || response.aiResponse() == null || response.aiResponse().isBlank()
+            || response.aiResponse().length() > MAX_MESSAGE_LENGTH
+            || response.endTurns() != expectedTurn
+            || response.isFinal() != (expectedTurn == DRAFT_TURN_COUNT)) {
+            throw failure(ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
         }
     }
 

@@ -14,6 +14,8 @@ import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.D
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.DraftResponse;
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.RecentMessage;
 import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.Speaker;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.MessageRequest;
+import com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.MessageResponse;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
@@ -93,6 +95,43 @@ class RestChatDelegationAiClientTest {
     }
 
     @Test
+    void 예약된_위임_메시지를_생성한다() {
+        MessageRequest messageRequest = new MessageRequest(REQUEST_ID, 10L, 20L,
+            "30", "40", ChatDelegationEndType.GENTLE,
+            List.of(new RecentMessage(Speaker.TARGET, "안녕하세요")));
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/messages"))
+            .andExpect(header("X-Internal-Api-Key", "secret"))
+            .andExpect(content().json("""
+                {"request_id":"11111111-1111-1111-1111-111111111111","room_id":10,
+                "delegation_id":20,"user_id":"30","target_user_id":"40",
+                "end_type":"GENTLE","recent_messages":[
+                {"speaker":"TARGET","content":"안녕하세요"}]}
+                """))
+            .andRespond(withSuccess("""
+                {"room_id":10,"message_id":50,"ai_response":"답장","status":"SUCCESS",
+                "ai_turn_count":1,"is_final":false,"end_turns":1}
+                """, MediaType.APPLICATION_JSON));
+
+        MessageResponse response = client.createMessage(messageRequest, 1);
+
+        assertThat(response.messageId()).isEqualTo(50L);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidMessageResponses")
+    void 위임_메시지_응답이_계약과_다르면_거부한다(String response) {
+        MessageRequest messageRequest = new MessageRequest(REQUEST_ID, 10L, 20L,
+            "30", "40", ChatDelegationEndType.GENTLE, List.of());
+        server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/messages"))
+            .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        assertError(() -> client.createMessage(messageRequest, 1),
+            ChatErrorCode.CHAT_DELEGATION_AI_RESPONSE_INVALID);
+        server.verify();
+    }
+
+    @Test
     void AI_서버가_요청과_다른_초안_정보를_반환하면_거부한다() {
         String draftId = "a".repeat(32);
         server.expect(requestTo(
@@ -167,6 +206,22 @@ class RestChatDelegationAiClientTest {
                 "[{\"turn\":1,\"message\":\"" + "가".repeat(1001)
                     + "\"},{\"turn\":2,\"message\":\"둘\"},"
                     + "{\"turn\":3,\"message\":\"셋\"}]")));
+    }
+
+    private static Stream<Arguments> invalidMessageResponses() {
+        return Stream.of(
+            Arguments.of("""
+                {"room_id":11,"message_id":50,"ai_response":"답장","status":"SUCCESS",
+                "ai_turn_count":1,"is_final":false,"end_turns":1}
+                """),
+            Arguments.of("""
+                {"room_id":10,"message_id":50,"ai_response":" ","status":"SUCCESS",
+                "ai_turn_count":1,"is_final":false,"end_turns":1}
+                """),
+            Arguments.of("""
+                {"room_id":10,"message_id":50,"ai_response":"오류","status":"FAILED",
+                "ai_turn_count":1,"is_final":true,"end_turns":0}
+                """));
     }
 
     private static String responseJson(int roomId, String draftId, String status, String turns) {
