@@ -9,6 +9,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationRetryConfiguration;
+import com.team.dating_backend.notification.config.NotificationRetryProperties;
+import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.enums.NotificationType;
@@ -86,7 +89,11 @@ import tools.jackson.databind.json.JsonMapper;
         "spring.kafka.producer.properties.spring.json.add.type.headers=false",
         "spring.kafka.consumer.enable-auto-commit=false",
         "spring.kafka.consumer.properties.allow.auto.create.topics=false",
-        "app.notification.creation.enabled=false"
+        "app.notification.creation.enabled=false",
+        "app.notification.retry.max-attempts=2",
+        "app.notification.retry.initial-delay-ms=100",
+        "app.notification.retry.max-delay-ms=1000",
+        "app.notification.retry.publish-result-timeout-ms=5000"
     }
 )
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -164,6 +171,8 @@ class NotificationCreationPipelineIntegrationTest {
         sourceEventId = UUID.randomUUID().toString();
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()));
         admin.createTopics(List.of(new NewTopic(topics.getCreateRequestedTopic(), 1, (short) 1),
+            new NewTopic(topics.getCreateRequestedTopic() + "-retry-0", 1, (short) 1),
+            new NewTopic(topics.getCreateRequestedTopic() + "-dlt", 1, (short) 1),
             new NewTopic(topics.getDeliveryTopic(), 1, (short) 1))).all().get(20, TimeUnit.SECONDS);
         deliveryConsumer = new KafkaConsumer<>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
@@ -178,8 +187,8 @@ class NotificationCreationPipelineIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        if (container != null) {
-            container.stop();
+        if (registry != null) {
+            registry.stop();
         }
         if (deliveryConsumer != null) {
             deliveryConsumer.close();
@@ -197,7 +206,7 @@ class NotificationCreationPipelineIntegrationTest {
 
     @Test
     void 정상_생성과_중복_요청은_DB_한_행과_기존_내용을_유지하고_delivery_후_commit한다() throws Exception {
-        container.start();
+        startConsumers();
         send(request("원본 제목", REQUESTED_AT));
         awaitCommitted(1L);
         var first = readDelivery(1).getFirst();
@@ -223,7 +232,7 @@ class NotificationCreationPipelineIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void DB_commit_후_두_실패_구간을_재처리해_기존_ID로_복구한다(boolean afterDelivery) throws Exception {
+    void DB_commit_후_두_실패_구간은_Retry로_복구되고_기존_ID를_보존한다(boolean afterDelivery) throws Exception {
         var firstAttempt = new AtomicBoolean(true);
         var transactionActive = new AtomicBoolean(true);
         var reached = new CountDownLatch(1);
@@ -242,7 +251,7 @@ class NotificationCreationPipelineIntegrationTest {
             }
             throw new TimeoutException();
         }).when(deliveryProducer).publishAndAwait(any());
-        container.start();
+        startConsumers();
         send(request("원본 제목", REQUESTED_AT));
         Map<String, Object> committedRow;
         try {
@@ -256,17 +265,10 @@ class NotificationCreationPipelineIntegrationTest {
         } finally {
             release.countDown();
         }
-        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-            assertThat(container.isRunning()).isFalse();
-            assertThat(container.getContainers()).isEmpty();
-        });
-        assertThat(committedOffset()).isNull();
-        assertThat(storedRow()).isEqualTo(committedRow);
-
-        container.start();
-        awaitCommitted(1L);
         var deliveries = readDelivery(afterDelivery ? 2 : 1);
+        awaitCommitted(1L);
 
+        assertThat(container.isRunning()).isTrue();
         assertThat(rowCount()).isEqualTo(1L);
         assertThat(storedRow()).isEqualTo(committedRow);
         assertThat(deliveries).allSatisfy(event -> {
@@ -291,7 +293,7 @@ class NotificationCreationPipelineIntegrationTest {
         });
         Map<String, Object> before = storedRow();
 
-        container.start();
+        startConsumers();
         send(request("재처리 제목", REQUESTED_AT.plusSeconds(3600)));
         awaitCommitted(1L);
 
@@ -300,6 +302,15 @@ class NotificationCreationPipelineIntegrationTest {
         assertThat(storedRow().get("deleted_at")).isNotNull();
         assertThat(deliveryEndOffset()).isZero();
         verifyNoInteractions(deliveryProducer);
+    }
+
+    private void startConsumers() {
+        registry.getListenerContainers().forEach(listener -> {
+            if (!List.of(listener.getContainerProperties().getTopics())
+                .contains(topics.getCreateRequestedTopic() + "-dlt")) {
+                listener.start();
+            }
+        });
     }
 
     private void send(NotificationCreateRequested request) throws Exception {
@@ -362,12 +373,16 @@ class NotificationCreationPipelineIntegrationTest {
     @EnableAutoConfiguration
     @EntityScan("com.team.dating_backend")
     @EnableJpaRepositories(basePackageClasses = {NotificationRepository.class, UserRepository.class})
-    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationCreationProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationKafkaProperties.class, NotificationCreationProperties.class,
+            NotificationRetryProperties.class}
+    )
     @Import(
-        {NotificationKafkaConfiguration.class, NotificationCreationConsumer.class,
+        {SchedulingConfig.class, NotificationKafkaConfiguration.class, NotificationCreationConsumer.class,
             NotificationCreationProcessor.class, NotificationCreateRequestedValidator.class,
             NotificationCreationService.class, NotificationPersistenceService.class, NotificationLookupService.class,
-            NotificationDeliveryProducer.class}
+            NotificationDeliveryProducer.class, NotificationCreationFailureClassifier.class,
+            NotificationRetryConfiguration.class}
     )
     static class TestApplication {}
 }
