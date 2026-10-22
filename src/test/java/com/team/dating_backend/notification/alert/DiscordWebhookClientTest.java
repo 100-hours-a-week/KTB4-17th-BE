@@ -8,6 +8,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
@@ -83,6 +85,62 @@ class DiscordWebhookClientTest {
 
         client.send(context("bad\n`" + "😀".repeat(1000)));
 
+        server.verify();
+    }
+
+    @Test
+    void DLT_위치와_시도를_표시하고_미확인_값은_구분한다() {
+        server.expect(requestTo(WEBHOOK + "?wait=true"))
+            .andExpect(request -> {
+                String content = JsonMapper.builder().build()
+                    .readTree(((MockClientHttpRequest) request).getBodyAsString())
+                    .path("content").stringValue();
+                assertThat(content).contains("failureStage: CREATION_PROCESSING", "consumerGroup: retry-group",
+                    "originalTopic: create", "originalPartition: 0", "originalOffset: 7",
+                    "inputTopic: create-retry-1", "inputOffset: 11", "destinationTopic: create-dlt",
+                    "destinationOffset: 99", "attempt: 3", "retryable: true",
+                    "processingExceptionType: TimeoutException",
+                    "processingCauseType: -");
+            }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
+        var details = new KafkaFailureDetails("retry-group", new KafkaLocation("create", 0, 7L),
+            new KafkaLocation("create-retry-1", 0, 11L), new KafkaLocation("create-dlt", 0, 99L),
+            3, true, "TimeoutException", null);
+        client.send(
+            NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now(), details));
+        server.verify();
+    }
+
+    @Test
+    void 모든_Kafka_필드가_길어도_항목과_코드_블록과_문자_경계를_유지한다() {
+        String longValue = "`\n\u2028\u202e" + "😀".repeat(300);
+        server.expect(requestTo(WEBHOOK + "?wait=true"))
+            .andExpect(request -> {
+                String content = JsonMapper.builder().build()
+                    .readTree(((MockClientHttpRequest) request).getBodyAsString())
+                    .path("content").stringValue();
+                assertThat(content.length()).isLessThanOrEqualTo(2000);
+                assertThat(content).endsWith("```\n").contains("…", "originalTopic: ", "inputTopic: ",
+                    "destinationTopic: ",
+                    "destinationOffset: 9223372036854775807", "attempt: 32767", "retryable: false",
+                    "processingCauseType: ", "errorCode: DLT_RECORDED");
+                assertThat(content.chars().filter(character -> character == '`').count()).isEqualTo(6);
+                assertThat(content).doesNotContain("\u2028", "\u202e");
+                for (int i = 0; i < content.length(); i++) {
+                    char value = content.charAt(i);
+                    if (Character.isHighSurrogate(value)) {
+                        assertThat(i + 1).isLessThan(content.length());
+                        assertThat(Character.isLowSurrogate(content.charAt(++i))).isTrue();
+                    } else {
+                        assertThat(Character.isLowSurrogate(value)).isFalse();
+                    }
+                }
+            }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
+        properties.setEnvironment(longValue);
+        var location = new KafkaLocation(longValue, Integer.MAX_VALUE, Long.MAX_VALUE);
+        var details = new KafkaFailureDetails(longValue, location, location, location, 32767, false, longValue,
+            longValue);
+        client.send(new NotificationFailureContext(NotificationFailureCode.DLT_RECORDED, longValue, Long.MAX_VALUE,
+            NotificationType.LIKE, Instant.now(), Instant.now(), longValue, longValue, details));
         server.verify();
     }
 
