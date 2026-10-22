@@ -382,7 +382,7 @@ class NotificationCreationPipelineIntegrationTest {
             NotificationCreationProcessor.class, NotificationCreateRequestedValidator.class,
             NotificationCreationService.class, NotificationPersistenceService.class, NotificationLookupService.class,
             NotificationDeliveryProducer.class, NotificationCreationFailureClassifier.class,
-            NotificationRetryConfiguration.class}
+            NotificationRetryConfiguration.class, NotificationRecoveryTestConfiguration.class}
     )
     static class TestApplication {}
 }

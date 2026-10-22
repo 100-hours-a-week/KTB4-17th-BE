@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import com.team.dating_backend.notification.alert.DiscordWebhookClient;
+import com.team.dating_backend.notification.alert.NotificationFailureContext;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
@@ -241,6 +246,19 @@ class NotificationCreationConsumerIntegrationTest {
         try (Admin admin = admin(topic, 1)) {
             contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
                 .run(context -> {
+                    var client = context.getBean(DiscordWebhookClient.class);
+                    doAnswer(invocation -> {
+                        NotificationFailureContext failure = invocation.getArgument(0);
+                        assertThat(failure.errorCode().name()).isEqualTo("DLT_RECORDED");
+                        assertThat(failure.kafkaDetails().attempt()).isEqualTo(3);
+                        assertThat(failure.kafkaDetails().consumerGroup()).isEqualTo(group + "-retry-1");
+                        assertThat(failure.kafkaDetails().inputLocation().topic()).isEqualTo(topic + "-retry-1");
+                        assertThat(failure.kafkaDetails().originalLocation().topic()).isEqualTo(topic);
+                        assertThat(failure.kafkaDetails().destinationLocation().offset()).isZero();
+                        assertThat(endOffset(admin, topic + "-dlt")).isEqualTo(1);
+                        assertThat(committed(admin, group + "-retry-1", topic + "-retry-1", 0)).isNull();
+                        return null;
+                    }).when(client).send(any());
                     var request = request("exhausted", 1);
                     send(context, topic, 0, request);
                     start(context, 1);
@@ -250,6 +268,10 @@ class NotificationCreationConsumerIntegrationTest {
                     assertThat(deadLetter.key()).isEqualTo("7");
                     assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
+                    await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                        verify(client).send(any());
+                        assertThat(committed(admin, group + "-retry-1", topic + "-retry-1", 0)).isEqualTo(1L);
+                    });
                     assertThat(attempts.get()).isEqualTo(3);
                 });
         }
@@ -297,6 +319,15 @@ class NotificationCreationConsumerIntegrationTest {
                     case UNSUPPORTED_SCHEMA -> assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class))
                         .isEqualTo(request("invalid", 2));
+                }
+                var failure = ArgumentCaptor.forClass(NotificationFailureContext.class);
+                verify(context.getBean(DiscordWebhookClient.class)).send(failure.capture());
+                assertThat(failure.getValue().errorCode().name()).isEqualTo("DLT_RECORDED");
+                assertThat(failure.getValue().kafkaDetails().destinationLocation().offset())
+                    .isEqualTo(deadLetter.offset());
+                assertThat(failure.getValue().kafkaDetails().attempt()).isEqualTo(1);
+                if (input != InvalidPayload.UNSUPPORTED_SCHEMA) {
+                    assertThat(failure.getValue().sourceEventId()).isNull();
                 }
                 verifyNoInteractions(creationService, deliveryProducer);
             });
@@ -369,6 +400,12 @@ class NotificationCreationConsumerIntegrationTest {
                         await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
                             assertThat(committed(admin, inputGroup, inputTopic, 0)).isNull();
                             assertThat(endOffset(admin, destination)).isZero();
+                            String errorCode = destination.endsWith("-dlt")
+                                ? "DLT_PUBLISH_FAILED"
+                                : "RETRY_PUBLISH_FAILED";
+                            assertThat(context.getBean(MeterRegistry.class).get("notification.failures")
+                                .tag("error_code", errorCode).counter().count()).isGreaterThanOrEqualTo(1);
+                            verifyNoInteractions(context.getBean(DiscordWebhookClient.class));
                         });
                     } finally {
                         reject.set(false);
@@ -427,6 +464,31 @@ class NotificationCreationConsumerIntegrationTest {
     }
 
     @Test
+    void 웹훅_실패에도_DLT_기록과_입력_commit을_완료한다() throws Exception {
+        String topic = "creation-alert-failure-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        doThrow(new IllegalArgumentException()).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor).run(context -> {
+                var client = context.getBean(DiscordWebhookClient.class);
+                doThrow(new IllegalStateException("private-webhook")).when(client).send(any());
+                send(context, topic, 0, request("alert-failure", 1));
+                start(context, 1);
+                await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                    assertThat(committed(admin, group, topic, 0)).isEqualTo(1L);
+                    assertThat(endOffset(admin, topic + "-dlt")).isEqualTo(1);
+                });
+                var failure = ArgumentCaptor.forClass(NotificationFailureContext.class);
+                verify(client).send(failure.capture());
+                assertThat(failure.getValue().errorCode().name()).isEqualTo("DLT_RECORDED");
+                assertThat(context.getBean(MeterRegistry.class).get("notification.alert.failures")
+                    .tag("error_code", "ALERT_WEBHOOK_FAILED").counter().count()).isEqualTo(1);
+            });
+        }
+    }
+
+    @Test
     void 동일_Group의_두_인스턴스는_파티션을_나누어_각_레코드를_한번씩_처리한다() throws Exception {
         String topic = "creation-shared-" + UUID.randomUUID();
         String group = "creation-group-" + UUID.randomUUID();
@@ -475,7 +537,8 @@ class NotificationCreationConsumerIntegrationTest {
                 TaskSchedulingAutoConfiguration.class))
             .withUserConfiguration(SchedulingConfig.class, NotificationKafkaConfiguration.class,
                 NotificationRetryConfiguration.class,
-                NotificationCreationConsumer.class, PropertiesConfiguration.class)
+                NotificationCreationConsumer.class, NotificationRecoveryTestConfiguration.class,
+                PropertiesConfiguration.class)
             .withBean(NotificationCreationProcessor.class, () -> processor)
             .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))

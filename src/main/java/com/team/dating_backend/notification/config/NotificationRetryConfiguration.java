@@ -4,9 +4,11 @@ import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.exception.NotificationRetryableCreationException;
+import com.team.dating_backend.notification.kafka.NotificationRecoveryReporter;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +16,7 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
+import org.springframework.kafka.retrytopic.DeadLetterPublishingRecovererFactory;
 import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.kafka.retrytopic.RetryTopicConfigurationBuilder;
 import org.springframework.kafka.retrytopic.RetryTopicConfigurationSupport;
@@ -26,6 +29,7 @@ import org.springframework.util.backoff.FixedBackOff;
 public class NotificationRetryConfiguration extends RetryTopicConfigurationSupport {
 
     private final NotificationRetryProperties retryProperties;
+    private final NotificationRecoveryReporter recoveryReporter;
 
     @Bean
     public RetryTopicConfiguration notificationRetryTopicConfiguration(
@@ -66,6 +70,14 @@ public class NotificationRetryConfiguration extends RetryTopicConfigurationSuppo
     @Override
     protected void manageNonBlockingFatalExceptions(List<Class<? extends Throwable>> nonBlockingFatalExceptions) {
         nonBlockingFatalExceptions.add(NotificationInvalidCreateRequestException.class);
+    }
+
+    @Override
+    protected Consumer<DeadLetterPublishingRecovererFactory> configureDeadLetterPublishingContainerFactory() {
+        return factory -> {
+            factory.setDeadLetterPublisherCreator(recoveryReporter::createRecoverer);
+            factory.neverLogListenerException();
+        };
     }
 
     @Override
