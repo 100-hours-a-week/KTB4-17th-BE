@@ -151,6 +151,12 @@ public class ChatDelegation {
         status = ChatDelegationStatus.FAILED;
     }
 
+    public void complete() {
+        requireInProgress();
+        nextActionAt = null;
+        status = ChatDelegationStatus.COMPLETED;
+    }
+
     private void requireInProgress() {
         if (status != ChatDelegationStatus.IN_PROGRESS) {
             throw new IllegalStateException();

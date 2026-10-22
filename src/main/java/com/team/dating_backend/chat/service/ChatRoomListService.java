@@ -26,6 +26,7 @@ public class ChatRoomListService {
     private static final String DELETED_PREVIEW = "삭제된 메시지입니다.";
     private static final String EMPTY_ACTIVE_PREVIEW = "대화를 시작해보세요";
     private static final String EMPTY_ENDED_PREVIEW = "대화가 종료되었습니다.";
+    private static final String DELEGATION_PREVIEW = "AI가 자연스럽게 대화를 마무리하고 있어요.";
 
     private final ChatRoomRepository chatRoomRepository;
 
@@ -69,6 +70,9 @@ public class ChatRoomListService {
     }
 
     private ChatRoomPreview toPreview(ChatRoomListRow row) {
+        if (row.delegationInProgress()) {
+            return new ChatRoomPreview(ChatRoomPreviewType.TEXT, DELEGATION_PREVIEW, null);
+        }
         if (row.lastMessageId() == null) {
             String text = row.roomStatus() == ChatRoomStatus.ACTIVE
                 ? EMPTY_ACTIVE_PREVIEW

@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.delegation.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 class ChatDelegationGenerationWorkerTest {
 
     private ChatDelegationGenerationPersistenceService persistenceService;
+    private ChatDelegationDeliveryService deliveryService;
     private ChatDelegationAiClient aiClient;
     private ChatDelegationGenerationWorker worker;
     private GenerationInput input;
@@ -27,8 +29,10 @@ class ChatDelegationGenerationWorkerTest {
     @BeforeEach
     void setUp() {
         persistenceService = mock(ChatDelegationGenerationPersistenceService.class);
+        deliveryService = mock(ChatDelegationDeliveryService.class);
         aiClient = mock(ChatDelegationAiClient.class);
-        worker = new ChatDelegationGenerationWorker(persistenceService, aiClient);
+        worker = new ChatDelegationGenerationWorker(
+            persistenceService, deliveryService, aiClient);
         UUID requestId = UUID.randomUUID();
         input = new GenerationInput(
             30L, requestId, 1, mock(MessageRequest.class));
@@ -45,6 +49,7 @@ class ChatDelegationGenerationWorkerTest {
         worker.generate(20L);
 
         verify(persistenceService).complete(input, response);
+        verify(deliveryService).deliver(eq(30L), any(LocalDateTime.class));
     }
 
     @Test
@@ -56,6 +61,13 @@ class ChatDelegationGenerationWorkerTest {
         worker.generate(20L);
 
         verify(persistenceService).retryGeneration(any(), any(LocalDateTime.class));
+    }
+
+    @Test
+    void AI_답장_전송_작업을_실행한다() {
+        worker.deliver(30L);
+
+        verify(deliveryService).deliver(eq(30L), any(LocalDateTime.class));
     }
 
     @Test

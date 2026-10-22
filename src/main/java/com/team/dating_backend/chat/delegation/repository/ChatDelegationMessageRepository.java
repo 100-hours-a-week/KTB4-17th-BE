@@ -26,6 +26,26 @@ public interface ChatDelegationMessageRepository
 
     long countByDelegationId(Long delegationId);
 
+    List<ChatDelegationMessage> findByDelegationIdOrderByTurn(Long delegationId);
+
+    @Query("""
+        select message.id
+        from ChatDelegationMessage message
+        where message.status = :status
+        order by message.id
+        """)
+    List<Long> findIdsByStatus(
+        @Param("status") ChatDelegationMessageStatus status,
+        Limit limit);
+
+    @Query("""
+        select message.delegation.requesterParticipant.id
+        from ChatDelegationMessage message
+        where message.chatMessage.id = :chatMessageId
+        """)
+    Optional<Long> findRequesterParticipantIdByChatMessageId(
+        @Param("chatMessageId") Long chatMessageId);
+
     @Query("""
         select message.id
         from ChatDelegationMessage message

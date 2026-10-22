@@ -36,10 +36,17 @@ public class ChatDelegationGenerationJob {
         try {
             LocalDateTime now = LocalDateTime.now();
             int remaining = dispatch(
+                messageRepository.findIdsByStatus(
+                    ChatDelegationMessageStatus.READY, Limit.of(MAX_DISPATCH_COUNT)),
+                MAX_DISPATCH_COUNT, worker::deliver);
+            if (remaining == 0) {
+                return;
+            }
+            remaining = dispatch(
                 messageRepository.findRecoverableIds(
                     ChatDelegationMessageStatus.GENERATING,
-                    now.minusMinutes(RECOVERY_MINUTES), Limit.of(MAX_DISPATCH_COUNT)),
-                MAX_DISPATCH_COUNT, worker::recover);
+                    now.minusMinutes(RECOVERY_MINUTES), Limit.of(remaining)),
+                remaining, worker::recover);
             if (remaining == 0) {
                 return;
             }

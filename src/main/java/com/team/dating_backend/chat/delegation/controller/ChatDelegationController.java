@@ -3,8 +3,10 @@ package com.team.dating_backend.chat.delegation.controller;
 import com.team.dating_backend.chat.delegation.dto.request.ChatDelegationConfirmRequest;
 import com.team.dating_backend.chat.delegation.dto.request.ChatDelegationCreateRequest;
 import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationDraftResponse;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationProgressResponse;
 import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationStartResponse;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationProgressService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -15,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,6 +31,17 @@ public class ChatDelegationController {
 
     private final ChatDelegationDraftService draftService;
     private final ChatDelegationStartService startService;
+    private final ChatDelegationProgressService progressService;
+
+    @GetMapping("/{delegationId}")
+    public SuccessResponse<ChatDelegationProgressResponse> getProgress(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long chatRoomId,
+        @PathVariable Long delegationId) {
+        ChatDelegationProgressResponse response = progressService.getProgress(
+            chatRoomId, delegationId, principal.userId());
+        return SuccessResponse.of("chat_delegation_progress_retrieved", response);
+    }
 
     @PostMapping
     public ResponseEntity<SuccessResponse<ChatDelegationDraftResponse>> createDraft(

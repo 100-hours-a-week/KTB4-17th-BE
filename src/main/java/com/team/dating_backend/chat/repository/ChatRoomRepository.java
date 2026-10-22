@@ -93,6 +93,7 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
             lastMessage.textContent, lastMessage.imageFile.id,
             lastMessage.senderDeletedAt,
             lastMessage.receiverDeletedAt,
+            case when activeDelegation.id is not null then true else false end,
             (select count(unreadMessage.id)
                 from ChatMessage unreadMessage
                 where unreadMessage.chatRoom.id = room.id
@@ -113,11 +114,21 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
         join ChatParticipant other
           on other.chatRoom.id = room.id
          and other.userId <> :viewerUserId
+        left join ChatDelegation activeDelegation
+          on activeDelegation.chatRoom.id = room.id
+         and activeDelegation.requesterParticipant.id = viewer.id
+         and activeDelegation.status = com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus.IN_PROGRESS
         left join ChatMessage lastMessage
           on lastMessage.id = (
                 select max(message.id) from ChatMessage message
                 where message.chatRoom.id = room.id
                   and message.status = :sentMessageStatus
+                  and not exists (
+                      select delegationMessage.id
+                      from ChatDelegationMessage delegationMessage
+                      where delegationMessage.chatMessage.id = message.id
+                        and delegationMessage.delegation.requesterParticipant.id = viewer.id
+                  )
           )
         where room.status in :visibleRoomStatuses
           and (

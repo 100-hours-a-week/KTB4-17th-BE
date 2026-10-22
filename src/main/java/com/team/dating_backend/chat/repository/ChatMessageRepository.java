@@ -78,11 +78,18 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
         from ChatMessage message
         where message.chatRoom.id = :chatRoomId
           and message.status = :status
+          and not exists (
+              select delegationMessage.id
+              from ChatDelegationMessage delegationMessage
+              where delegationMessage.chatMessage.id = message.id
+                and delegationMessage.delegation.requesterParticipant.id = :viewerParticipantId
+          )
         order by message.id desc
         """)
-    List<ChatMessage> findByChatRoomIdAndStatusOrderByIdDesc(
+    List<ChatMessage> findVisibleByChatRoomIdAndStatusOrderByIdDesc(
         @Param("chatRoomId") Long chatRoomId,
         @Param("status") ChatMessageStatus status,
+        @Param("viewerParticipantId") Long viewerParticipantId,
         Pageable pageable);
 
     @Query("""
@@ -117,11 +124,18 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
         where message.chatRoom.id = :chatRoomId
           and message.status = :status
           and message.id < :cursorMessageId
+          and not exists (
+              select delegationMessage.id
+              from ChatDelegationMessage delegationMessage
+              where delegationMessage.chatMessage.id = message.id
+                and delegationMessage.delegation.requesterParticipant.id = :viewerParticipantId
+          )
         order by message.id desc
         """)
-    List<ChatMessage> findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+    List<ChatMessage> findVisibleByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
         @Param("chatRoomId") Long chatRoomId,
         @Param("status") ChatMessageStatus status,
         @Param("cursorMessageId") Long cursorMessageId,
+        @Param("viewerParticipantId") Long viewerParticipantId,
         Pageable pageable);
 }

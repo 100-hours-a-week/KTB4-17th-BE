@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.service;
 
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatMessageOutbox;
 import com.team.dating_backend.chat.entity.ChatParticipant;
@@ -36,6 +37,7 @@ public class ChatMessageOutboxPublishJob {
     private final ChatMessageOutboxRepository outboxRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatParticipantRepository chatParticipantRepository;
+    private final ChatDelegationMessageRepository delegationMessageRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     @Value("${app.chat.outbox.max-failures:10}")
@@ -48,10 +50,12 @@ public class ChatMessageOutboxPublishJob {
         ChatMessageOutboxRepository outboxRepository,
         ChatMessageRepository chatMessageRepository,
         ChatParticipantRepository chatParticipantRepository,
+        ChatDelegationMessageRepository delegationMessageRepository,
         SimpMessagingTemplate messagingTemplate) {
         this.outboxRepository = outboxRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.chatParticipantRepository = chatParticipantRepository;
+        this.delegationMessageRepository = delegationMessageRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -103,8 +107,13 @@ public class ChatMessageOutboxPublishJob {
             return;
         }
 
+        Long hiddenParticipantId = delegationMessageRepository
+            .findRequesterParticipantIdByChatMessageId(message.getId())
+            .orElse(null);
+
         for (ChatParticipant participant : participants) {
-            if (participant.getStatus() != ChatParticipantStatus.ACTIVE) {
+            if (participant.getStatus() != ChatParticipantStatus.ACTIVE
+                || participant.getId().equals(hiddenParticipantId)) {
                 continue;
             }
 

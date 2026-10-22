@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatMessageOutbox;
 import com.team.dating_backend.chat.entity.ChatParticipant;
@@ -44,6 +45,7 @@ class ChatMessageOutboxPublishJobTest {
     private ChatMessageOutboxRepository outboxRepository;
     private ChatMessageRepository chatMessageRepository;
     private ChatParticipantRepository chatParticipantRepository;
+    private ChatDelegationMessageRepository delegationMessageRepository;
     private SimpMessagingTemplate messagingTemplate;
     private ChatMessageOutboxPublishJob job;
     private ChatMessageOutbox outbox;
@@ -57,11 +59,14 @@ class ChatMessageOutboxPublishJobTest {
         outboxRepository = org.mockito.Mockito.mock(ChatMessageOutboxRepository.class);
         chatMessageRepository = org.mockito.Mockito.mock(ChatMessageRepository.class);
         chatParticipantRepository = org.mockito.Mockito.mock(ChatParticipantRepository.class);
+        delegationMessageRepository = org.mockito.Mockito.mock(
+            ChatDelegationMessageRepository.class);
         messagingTemplate = org.mockito.Mockito.mock(SimpMessagingTemplate.class);
         job = new ChatMessageOutboxPublishJob(
             outboxRepository,
             chatMessageRepository,
             chatParticipantRepository,
+            delegationMessageRepository,
             messagingTemplate);
 
         outbox = new ChatMessageOutbox(100L, CREATED_AT);
@@ -102,6 +107,21 @@ class ChatMessageOutboxPublishJobTest {
             .extracting(event -> ((ChatMessageCreatedEvent) event).mine())
             .containsExactly(true, false);
         verify(outboxRepository).save(outbox);
+    }
+
+    @Test
+    void 위임_답장은_요청자에게_보내지_않는다() {
+        given(delegationMessageRepository
+            .findRequesterParticipantIdByChatMessageId(100L))
+            .willReturn(Optional.of(SENDER_PARTICIPANT_ID));
+
+        job.publishDueMessages();
+
+        verify(messagingTemplate).convertAndSendToUser(
+            eq("2"), eq(MESSAGE_DESTINATION), any(ChatMessageCreatedEvent.class));
+        verify(messagingTemplate, never()).convertAndSendToUser(
+            eq("1"), eq(MESSAGE_DESTINATION), any());
+        assertThat(outbox.getPublishedAt()).isNotNull();
     }
 
     @Test
