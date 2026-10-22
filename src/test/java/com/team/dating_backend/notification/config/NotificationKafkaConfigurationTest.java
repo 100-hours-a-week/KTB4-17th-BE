@@ -8,6 +8,7 @@ import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.kafka.NotificationCreationConsumer;
+import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
 import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.service.NotificationCreationProcessor;
 import java.io.IOException;
@@ -59,8 +60,9 @@ class NotificationKafkaConfigurationTest {
         .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class,
             TaskSchedulingAutoConfiguration.class))
         .withUserConfiguration(SchedulingConfig.class, NotificationKafkaConfiguration.class,
-            NotificationRetryConfiguration.class,
+            NotificationRetryConfiguration.class, NotificationRecoveryTestConfiguration.class,
             PropertiesConfiguration.class)
+        .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
         .withInitializer(context -> {
             var sources = context.getEnvironment().getPropertySources();
             sources.remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
@@ -105,7 +107,6 @@ class NotificationKafkaConfigurationTest {
     void 생성_Listener는_공유_Group과_Retry_오류_정책을_상속하고_기본적으로_기동하지_않는다() {
         contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
             .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
-            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 var container = context.getBean(KafkaListenerEndpointRegistry.class)
@@ -154,7 +155,6 @@ class NotificationKafkaConfigurationTest {
     void 실제_Listener는_시도_횟수에_따라_독립_Topic과_Group을_구성한다(int attempts) {
         contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
             .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
-            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withPropertyValues("APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=" + attempts)
             .run(context -> {
                 assertThat(context).hasNotFailed();

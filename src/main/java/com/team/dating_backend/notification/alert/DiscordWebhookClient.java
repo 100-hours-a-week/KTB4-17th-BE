@@ -1,9 +1,12 @@
 package com.team.dating_backend.notification.alert;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -17,6 +20,9 @@ import tools.jackson.databind.JsonNode;
 public class DiscordWebhookClient {
 
     private static final int MAX_FIELD_LENGTH = 128;
+    private static final int MAX_CONTENT_LENGTH = 2_000;
+    private static final String CONTENT_HEADER = "@everyone 알림 처리 실패\n```text\n";
+    private static final String CONTENT_FOOTER = "```\n";
 
     private final RestClient restClient;
     private final NotificationAlertProperties properties;
@@ -56,36 +62,73 @@ public class DiscordWebhookClient {
     }
 
     private String content(NotificationFailureContext context) {
-        return """
-            @everyone 알림 처리 실패
-            ```text
-            environment: %s
-            errorCode: %s
-            sourceEventId: %s
-            recipientUserId: %s
-            type: %s
-            requestedAt: %s
-            occurredAt: %s
-            exceptionType: %s
-            causeType: %s
-            ```
-            """.formatted(
-            field(properties.getEnvironment()),
-            field(context.errorCode()),
-            field(context.sourceEventId()),
-            field(context.recipientUserId()),
-            field(context.type()),
-            field(context.requestedAt()),
-            field(context.occurredAt()),
-            field(context.exceptionType()),
-            field(context.causeType()));
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("environment", field(properties.getEnvironment()));
+        fields.put("errorCode", field(context.errorCode()));
+        fields.put("failureStage", field(context.failureStage()));
+        fields.put("sourceEventId", field(context.sourceEventId()));
+        fields.put("recipientUserId", field(context.recipientUserId()));
+        fields.put("type", field(context.type()));
+        fields.put("requestedAt", field(context.requestedAt()));
+        fields.put("occurredAt", field(context.occurredAt()));
+        fields.put("exceptionType", field(context.exceptionType()));
+        fields.put("causeType", field(context.causeType()));
+
+        KafkaFailureDetails details = context.kafkaDetails();
+        if (details != null) {
+            fields.put("consumerGroup", field(details.consumerGroup()));
+            addLocation(fields, "original", details.originalLocation());
+            addLocation(fields, "input", details.inputLocation());
+            addLocation(fields, "destination", details.destinationLocation());
+            fields.put("attempt", field(details.attempt()));
+            fields.put("retryable", field(details.retryable()));
+            fields.put("processingExceptionType", field(details.processingExceptionType()));
+            fields.put("processingCauseType", field(details.processingCauseType()));
+        }
+
+        int available = MAX_CONTENT_LENGTH - CONTENT_HEADER.length() - CONTENT_FOOTER.length()
+            - fields.keySet().stream().mapToInt(name -> name.length() + 3).sum();
+        int lower = 1;
+        int upper = fields.values().stream().mapToInt(String::length).max().orElse(1);
+        while (lower < upper) {
+            int candidate = (lower + upper + 1) / 2;
+            int length = fields.values().stream().mapToInt(value -> Math.min(value.length(), candidate)).sum();
+            if (length <= available) {
+                lower = candidate;
+            } else {
+                upper = candidate - 1;
+            }
+        }
+
+        var content = new StringBuilder(CONTENT_HEADER);
+        for (var entry : fields.entrySet()) {
+            content.append(entry.getKey()).append(": ").append(limit(entry.getValue(), lower)).append('\n');
+        }
+        return content.append(CONTENT_FOOTER).toString();
+    }
+
+    private void addLocation(Map<String, String> fields, String prefix, KafkaLocation location) {
+        fields.put(prefix + "Topic", field(location == null ? null : location.topic()));
+        fields.put(prefix + "Partition", field(location == null ? null : location.partition()));
+        fields.put(prefix + "Offset", field(location == null ? null : location.offset()));
+    }
+
+    private String limit(String value, int maxLength) {
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        int end = maxLength - 1;
+        if (end > 0 && Character.isHighSurrogate(value.charAt(end - 1))) {
+            end--;
+        }
+        return value.substring(0, end) + "…";
     }
 
     private String field(Object value) {
         if (value == null) {
             return "-";
         }
-        String text = value.toString().replaceAll("[\\p{Cntrl}`]", " ").strip();
+        String text = value.toString().replaceAll("[\\p{Cntrl}\\p{Cf}\\p{Zl}\\p{Zp}`]", " ").strip();
         int length = Math.min(text.codePointCount(0, text.length()), MAX_FIELD_LENGTH);
         return text.isEmpty() ? "-" : text.substring(0, text.offsetByCodePoints(0, length));
     }

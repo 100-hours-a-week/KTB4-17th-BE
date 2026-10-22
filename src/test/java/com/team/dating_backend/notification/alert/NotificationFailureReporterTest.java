@@ -3,12 +3,17 @@ package com.team.dating_backend.notification.alert;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.spy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
@@ -87,7 +92,84 @@ class NotificationFailureReporterTest {
     }
 
     @Test
-    void 빈도_제한으로_통보가_생략돼도_원본_실패는_모두_기록한다() {
+    void Kafka_문맥을_기록하고_DLT_통보에도_같은_문맥을_전달한다(CapturedOutput output) {
+        var details = KafkaFailureDetails.from("retry-group", new KafkaLocation("create", 0, 4L),
+            new KafkaLocation("create-retry-1", 1, 8L), new KafkaLocation("create-dlt", 1, 99L),
+            3, true, new TimeoutException("private-processing"));
+        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null,
+            new TimeoutException("private-exception"), Instant.now(), details);
+        reporter.report(context);
+        verify(dispatcher).dispatch(context);
+        assertThat(output.getAll()).contains("failureStage=CREATION_PROCESSING", "consumerGroup=retry-group",
+            "originalLocation=create:0:4", "inputLocation=create-retry-1:1:8", "destinationLocation=create-dlt:1:99",
+            "attempt=3", "retryable=true", "processingExceptionType=TimeoutException")
+            .doesNotContain("private-processing", "private-exception");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = NotificationFailureCode.class, names = {"RETRY_PUBLISH_FAILED", "DLT_PUBLISH_FAILED"})
+    void 인계_실패는_지표에_기록하고_Discord를_제출하지_않는다(NotificationFailureCode code) {
+        reporter.report(code, null, new TimeoutException());
+        verifyNoInteractions(dispatcher);
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count()).isEqualTo(1);
+    }
+
+    @Test
+    void 지표_실패에도_통보를_시도하고_통보_제출_예외를_전파하지_않는다() {
+        var failingRegistry = spy(registry);
+        doThrow(new IllegalStateException()).when(failingRegistry)
+            .counter("notification.failures", "error_code", "DLT_RECORDED");
+        doThrow(new IllegalStateException()).when(dispatcher).dispatch(any());
+        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
+            .doesNotThrowAnyException();
+        verify(dispatcher).dispatch(context);
+        assertThat(registry.get("notification.reporting.failures").tag("operation", "METRIC").counter().count())
+            .isEqualTo(1);
+        assertThat(registry.get("notification.reporting.failures").tag("operation", "ALERT_DISPATCH").counter().count())
+            .isEqualTo(1);
+    }
+
+    @Test
+    void DLT_통보의_거절과_웹훅_실패는_기록하고_전파하지_않는다() {
+        var properties = new NotificationAlertProperties();
+        properties.setEnabled(true);
+        var client = mock(DiscordWebhookClient.class);
+        var rejected = new NotificationAlertDispatcher(task -> {
+            throw new java.util.concurrent.RejectedExecutionException();
+        },
+            client, properties, registry);
+        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        assertThatCode(() -> new NotificationFailureReporter(rejected, registry).report(context))
+            .doesNotThrowAnyException();
+        verifyNoInteractions(client);
+        doThrow(new IllegalStateException()).when(client).send(any());
+        var failed = new NotificationAlertDispatcher(Runnable::run, client, properties, registry);
+        assertThatCode(() -> new NotificationFailureReporter(failed, registry).report(context))
+            .doesNotThrowAnyException();
+        assertThat(registry.get("notification.failures").tag("error_code", "DLT_RECORDED").counter().count())
+            .isEqualTo(2);
+        assertThat(registry.get("notification.alert.failures").tag("error_code", "ALERT_SUBMISSION_REJECTED").counter()
+            .count()).isEqualTo(1);
+        assertThat(
+            registry.get("notification.alert.failures").tag("error_code", "ALERT_WEBHOOK_FAILED").counter().count())
+            .isEqualTo(1);
+    }
+
+    @Test
+    void 보고_실패_진단마저_실패해도_통보_제출을_시도한다() {
+        var failingRegistry = mock(io.micrometer.core.instrument.MeterRegistry.class);
+        org.mockito.Mockito.when(failingRegistry.counter(any(String.class), any(String[].class)))
+            .thenThrow(new IllegalStateException("private-metric"));
+        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
+            .doesNotThrowAnyException();
+        verify(dispatcher).dispatch(context);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = NotificationFailureCode.class, names = {"PUBLISH_CALL_FAILED", "DLT_RECORDED"})
+    void 빈도_제한으로_통보가_생략돼도_원본_실패는_모두_기록한다(NotificationFailureCode code) {
         var properties = new NotificationAlertProperties();
         properties.setEnabled(true);
         var client = mock(DiscordWebhookClient.class);
@@ -95,7 +177,7 @@ class NotificationFailureReporterTest {
         var limitedReporter = new NotificationFailureReporter(limitedDispatcher, registry);
 
         for (int i = 0; i < 6; i++) {
-            limitedReporter.report(NotificationFailureCode.PUBLISH_CALL_FAILED, null, null);
+            limitedReporter.report(code, null, null);
         }
 
         verify(client, times(5)).send(any());
