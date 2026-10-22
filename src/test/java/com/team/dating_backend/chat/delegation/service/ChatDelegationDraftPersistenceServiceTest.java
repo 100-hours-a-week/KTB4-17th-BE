@@ -30,7 +30,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Limit;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class ChatDelegationDraftPersistenceServiceTest {
@@ -49,7 +49,8 @@ class ChatDelegationDraftPersistenceServiceTest {
         messageRepository = mock(ChatMessageRepository.class);
         delegationRepository = mock(ChatDelegationRepository.class);
         service = new ChatDelegationDraftPersistenceService(
-            roomRepository, messageRepository, delegationRepository);
+            roomRepository, delegationRepository,
+            new ChatDelegationConversationService(messageRepository));
         room = room();
         requester = participant(11L, 1L);
         target = participant(12L, 2L);
@@ -65,8 +66,8 @@ class ChatDelegationDraftPersistenceServiceTest {
     void 최근_대화를_시간순으로_AI_요청에_변환한다() {
         ChatMessage newest = message(102L, target, ChatMessageType.IMAGE, null, 2);
         ChatMessage oldest = message(101L, requester, ChatMessageType.TEXT, "안녕하세요", 1);
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            10L, ChatMessageStatus.SENT, PageRequest.of(0, 20)))
+        when(messageRepository.findRecentByChatRoomIdAndStatus(
+            10L, ChatMessageStatus.SENT, Limit.of(20)))
             .thenReturn(List.of(newest, oldest));
 
         var result = service.prepare(10L, 1L, ChatDelegationEndType.GENTLE);
@@ -98,7 +99,7 @@ class ChatDelegationDraftPersistenceServiceTest {
             .thenReturn(Optional.of(completedDelegation(UUID.randomUUID())));
         assertError(ChatErrorCode.CHAT_DELEGATION_ALREADY_EXISTS);
         when(delegationRepository.findByChatRoomId(10L)).thenReturn(Optional.empty());
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(any(), any(), any()))
+        when(messageRepository.findRecentByChatRoomIdAndStatus(any(), any(), any()))
             .thenReturn(List.of());
         assertError(ChatErrorCode.CHAT_DELEGATION_CONVERSATION_REQUIRED);
     }
@@ -110,8 +111,8 @@ class ChatDelegationDraftPersistenceServiceTest {
         when(delegationRepository.findWithLockById(20L)).thenReturn(Optional.of(delegation));
         ChatMessage newest = message(102L, target, ChatMessageType.TEXT, "최근 답장", 2);
         ChatMessage oldest = message(101L, requester, ChatMessageType.TEXT, "이전 대화", 1);
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            10L, ChatMessageStatus.SENT, PageRequest.of(0, 20)))
+        when(messageRepository.findRecentByChatRoomIdAndStatus(
+            10L, ChatMessageStatus.SENT, Limit.of(20)))
             .thenReturn(List.of(newest, oldest));
 
         var result = service.prepareRegeneration(
@@ -138,7 +139,7 @@ class ChatDelegationDraftPersistenceServiceTest {
 
         when(delegationRepository.findByChatRoomId(10L)).thenReturn(Optional.of(delegation));
         ChatMessage latest = message(102L, target, ChatMessageType.TEXT, "답장", 2);
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(any(), any(), any()))
+        when(messageRepository.findRecentByChatRoomIdAndStatus(any(), any(), any()))
             .thenReturn(List.of(latest));
         var retry = service.prepare(10L, 1L, ChatDelegationEndType.CASUAL);
 

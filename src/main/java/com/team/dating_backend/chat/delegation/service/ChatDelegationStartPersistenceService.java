@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,8 +67,8 @@ public class ChatDelegationStartPersistenceService {
         }
 
         ChatMessage latestMessage = chatMessageRepository
-            .findByChatRoomIdAndStatusOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT, PageRequest.of(0, 1))
+            .findRecentByChatRoomIdAndStatus(
+                chatRoomId, ChatMessageStatus.SENT, Limit.of(1))
             .stream()
             .findFirst()
             .orElseThrow(() -> failure(ChatErrorCode.CHAT_DELEGATION_CONVERSATION_REQUIRED));

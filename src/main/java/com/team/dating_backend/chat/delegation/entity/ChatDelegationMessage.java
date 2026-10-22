@@ -115,7 +115,6 @@ public class ChatDelegationMessage {
             return false;
         }
         requestId = UUID.randomUUID();
-        contextMessageId = null;
         status = ChatDelegationMessageStatus.RETRY_WAIT;
         this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt);
         return true;

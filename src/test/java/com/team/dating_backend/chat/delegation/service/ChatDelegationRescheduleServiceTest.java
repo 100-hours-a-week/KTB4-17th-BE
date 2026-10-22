@@ -54,7 +54,7 @@ class ChatDelegationRescheduleServiceTest {
         ChatMessage latest = message(target, NOW.plusMinutes(10));
         LocalDateTime firstSchedule = NOW.plusHours(3);
         LocalDateTime latestSchedule = NOW.plusHours(4);
-        when(delegationRepository.findByChatRoomId(10L))
+        when(delegationRepository.findWithLockByChatRoomId(10L))
             .thenReturn(Optional.of(delegation));
         when(schedulePolicy.nextActionAt(first, requester.getId(), NOW))
             .thenReturn(firstSchedule);
@@ -73,7 +73,7 @@ class ChatDelegationRescheduleServiceTest {
     @Test
     void 마지막_메시지를_요청자가_보낸_경우_예약_시각을_변경하지_않는다() {
         ChatDelegation delegation = startedDelegation();
-        when(delegationRepository.findByChatRoomId(10L))
+        when(delegationRepository.findWithLockByChatRoomId(10L))
             .thenReturn(Optional.of(delegation));
 
         service.rescheduleForNewMessage(message(requester, NOW));
@@ -85,7 +85,7 @@ class ChatDelegationRescheduleServiceTest {
     @Test
     void 진행_중인_위임만_예약_시각을_변경한다() {
         ChatDelegation delegation = awaitingConfirmationDelegation();
-        when(delegationRepository.findByChatRoomId(10L))
+        when(delegationRepository.findWithLockByChatRoomId(10L))
             .thenReturn(Optional.of(delegation));
 
         service.rescheduleForNewMessage(message(target, NOW));

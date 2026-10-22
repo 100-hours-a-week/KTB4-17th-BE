@@ -18,10 +18,10 @@ class ChatDelegationMessageTest {
 
         assertThat(message.retryGeneration(now.plusMinutes(1))).isTrue();
         assertThat(message.getRequestId()).isNotEqualTo(initialRequestId);
-        assertThat(message.getContextMessageId()).isNull();
-        message.resume(101L, now.plusMinutes(1));
+        assertThat(message.getContextMessageId()).isEqualTo(100L);
+        message.resume(100L, now.plusMinutes(1));
         assertThat(message.retryGeneration(now.plusMinutes(3))).isTrue();
-        message.resume(102L, now.plusMinutes(3));
+        message.resume(100L, now.plusMinutes(3));
         assertThat(message.retryGeneration(now.plusMinutes(5))).isFalse();
 
         assertThat(message.getGenerationFailureCount()).isEqualTo(3);

@@ -20,7 +20,7 @@ public class ChatDelegationRescheduleService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void rescheduleForNewMessage(ChatMessage message) {
         ChatDelegation delegation = delegationRepository
-            .findByChatRoomId(message.getChatRoomId())
+            .findWithLockByChatRoomId(message.getChatRoomId())
             .orElse(null);
         if (delegation == null
             || delegation.getStatus() != ChatDelegationStatus.IN_PROGRESS

@@ -30,7 +30,7 @@ public class RestChatDelegationAiClient implements ChatDelegationAiClient {
     private static final String CONFIRM_PATH = DRAFTS_PATH + "/%s/confirm";
     private static final String MESSAGES_PATH = "/ai/api/v1/chat_end/messages";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(90);
     private static final int DRAFT_TURN_COUNT = 3;
     private static final int MAX_MESSAGE_LENGTH = 1000;
 
