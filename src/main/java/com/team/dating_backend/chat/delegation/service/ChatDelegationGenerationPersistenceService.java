@@ -68,14 +68,10 @@ public class ChatDelegationGenerationPersistenceService {
         if (delegation == null) {
             return Optional.empty();
         }
-        MessageContext context = message.getContextMessageId() == null
-            ? conversationService.latest(
-                delegation.getChatRoom().getId(),
-                delegation.getRequesterParticipant().getId())
-            : conversationService.upTo(
-                delegation.getChatRoom().getId(),
-                delegation.getRequesterParticipant().getId(),
-                message.getContextMessageId());
+        MessageContext context = conversationService.upTo(
+            delegation.getChatRoom().getId(),
+            delegation.getRequesterParticipant().getId(),
+            message.getContextMessageId());
         message.resume(context.messageId(), now);
         return Optional.of(input(message, delegation, context));
     }

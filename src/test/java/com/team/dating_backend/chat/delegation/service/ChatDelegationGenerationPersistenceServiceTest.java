@@ -91,13 +91,13 @@ class ChatDelegationGenerationPersistenceServiceTest {
         when(messageRepository.findWithLockById(30L)).thenReturn(Optional.of(generation));
         when(delegationRepository.findWithLockById(20L))
             .thenReturn(Optional.of(fixture.delegation()));
-        when(conversationService.latest(10L, fixture.requester().getId()))
-            .thenReturn(context(105L));
+        when(conversationService.upTo(10L, fixture.requester().getId(), 101L))
+            .thenReturn(context(101L));
 
         GenerationInput regenerated = service.prepareRetry(30L, NOW).orElseThrow();
 
         assertThat(regenerated.requestId()).isNotEqualTo(generationRequestId);
-        assertThat(generation.getContextMessageId()).isEqualTo(105L);
+        assertThat(generation.getContextMessageId()).isEqualTo(101L);
 
         ChatDelegationMessage transport = message(fixture.delegation(), 31L, 105L);
         UUID transportRequestId = transport.getRequestId();
