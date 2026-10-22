@@ -143,6 +143,7 @@ class ChatRoomListServiceTest {
             900L,
             null,
             null,
+            false,
             3L,
             BASE_TIME);
 
@@ -193,6 +194,21 @@ class ChatRoomListServiceTest {
             .containsExactly("원문", "원문");
     }
 
+    @Test
+    void 위임_진행_중에는_요청자에게_진행_안내를_표시한다() {
+        ChatRoomListRow row = new ChatRoomListRow(
+            10L, VIEWER_PARTICIPANT_ID, true, 2L, ChatRoomStatus.ACTIVE,
+            100L, VIEWER_PARTICIPANT_ID, ChatMessageType.TEXT, "숨길 메시지", null,
+            null, null, true, 0L, BASE_TIME);
+
+        ChatRoomPage result = listSingle(row);
+
+        assertThat(result.items().getFirst().preview())
+            .isEqualTo(new com.team.dating_backend.chat.dto.read.ChatRoomPreview(
+                ChatRoomPreviewType.TEXT,
+                "AI가 자연스럽게 대화를 마무리하고 있어요.", null));
+    }
+
     private ChatRoomPage listSingle(ChatRoomListRow row) {
         given(chatRoomRepository.findVisibleRoomList(
             VIEWER_USER_ID, null, null, PageRequest.of(0, 2)))
@@ -214,6 +230,7 @@ class ChatRoomListServiceTest {
             null,
             null,
             null,
+            false,
             0L,
             BASE_TIME);
     }
@@ -232,6 +249,7 @@ class ChatRoomListServiceTest {
             null,
             null,
             null,
+            false,
             0L,
             activityAt);
     }
@@ -254,6 +272,7 @@ class ChatRoomListServiceTest {
             null,
             senderDeletedAt,
             receiverDeletedAt,
+            false,
             0L,
             activityAt);
     }

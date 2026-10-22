@@ -25,6 +25,7 @@ public class ChatDelegationGenerationWorker {
     private static final int RECOVERY_MINUTES = 2;
 
     private final ChatDelegationGenerationPersistenceService persistenceService;
+    private final ChatDelegationDeliveryService deliveryService;
     private final ChatDelegationAiClient aiClient;
 
     @Async("chatDelegationExecutor")
@@ -46,6 +47,11 @@ public class ChatDelegationGenerationWorker {
             messageId, now.minusMinutes(RECOVERY_MINUTES), now));
     }
 
+    @Async("chatDelegationExecutor")
+    public void deliver(Long messageId) {
+        deliveryService.deliver(messageId, LocalDateTime.now());
+    }
+
     private void execute(Optional<GenerationInput> candidate) {
         if (candidate.isEmpty()) {
             return;
@@ -57,6 +63,7 @@ public class ChatDelegationGenerationWorker {
                 persistenceService.retryGeneration(input, LocalDateTime.now());
             } else {
                 persistenceService.complete(input, response);
+                deliveryService.deliver(input.messageId(), LocalDateTime.now());
             }
         } catch (ChatBusinessException exception) {
             handleAiFailure(input, exception);

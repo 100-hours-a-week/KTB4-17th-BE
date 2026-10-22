@@ -5,6 +5,7 @@ public enum ChatDelegationStatus {
     AWAITING_CONFIRMATION,
     DRAFT_FAILED,
     IN_PROGRESS,
+    COMPLETED,
     RETRY_REQUIRED,
     FAILED
 }

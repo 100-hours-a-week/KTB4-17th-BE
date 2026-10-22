@@ -57,12 +57,12 @@ public class ChatMessageListService {
         }
 
         List<ChatMessage> fetched = cursor == null
-            ? chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT,
+            ? chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+                chatRoomId, ChatMessageStatus.SENT, viewer.getId(),
                 PageRequest.of(0, size + 1))
             : chatMessageRepository
-                .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
-                    chatRoomId, ChatMessageStatus.SENT, cursor,
+                .findVisibleByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+                    chatRoomId, ChatMessageStatus.SENT, cursor, viewer.getId(),
                     PageRequest.of(0, size + 1));
 
         boolean hasNext = fetched.size() > size;

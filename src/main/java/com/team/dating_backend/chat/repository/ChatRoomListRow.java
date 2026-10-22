@@ -17,5 +17,6 @@ public record ChatRoomListRow(
     Long lastMessageImageFileId,
     LocalDateTime lastMessageSenderDeletedAt,
     LocalDateTime lastMessageReceiverDeletedAt,
+    boolean delegationInProgress,
     Long unreadCount,
     LocalDateTime activityAt) {}
