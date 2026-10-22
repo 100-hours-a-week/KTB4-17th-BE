@@ -13,4 +13,8 @@ public class NotificationBusinessException extends BusinessException {
     public NotificationBusinessException(CommonErrorCode errorCode) {
         super(errorCode);
     }
+
+    public NotificationBusinessException(CommonErrorCode errorCode, Throwable cause) {
+        super(errorCode, cause);
+    }
 }
