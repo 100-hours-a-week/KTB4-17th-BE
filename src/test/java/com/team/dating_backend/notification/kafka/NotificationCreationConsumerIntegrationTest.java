@@ -5,12 +5,18 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
+import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationRetryConfiguration;
+import com.team.dating_backend.notification.config.NotificationRetryProperties;
+import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
@@ -18,31 +24,45 @@ import com.team.dating_backend.notification.service.NotificationCreationProcesso
 import com.team.dating_backend.notification.service.NotificationCreationService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
@@ -51,12 +71,16 @@ import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.support.KafkaHeaders;
+import tools.jackson.databind.json.JsonMapper;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
@@ -107,7 +131,7 @@ class NotificationCreationConsumerIntegrationTest {
 
     @ParameterizedTest
     @MethodSource("processingFailures")
-    void 처리_실패시_중단하고_성공한_이전_offset만_commit한다(Exception failure) throws Exception {
+    void 영구_오류는_DLT로_인계한_뒤_후속_요청을_처리한다(Exception failure) throws Exception {
         String topic = "creation-failure-" + UUID.randomUUID();
         String group = "creation-group-" + UUID.randomUUID();
         var processor = mock(NotificationCreationProcessor.class);
@@ -124,23 +148,116 @@ class NotificationCreationConsumerIntegrationTest {
                 .run(context -> {
                     var first = request("first", 1);
                     var failed = request("failed", 1);
+                    var afterFailure = request("after-failure", 1);
                     send(context, topic, 0, first);
                     send(context, topic, 0, failed);
-                    send(context, topic, 0, request("after-failure", 1));
-                    var container = listener(context);
-                    container.start();
-                    awaitStopped(container);
-                    assertThat(committed(admin, group, topic, 0)).isEqualTo(1L);
+                    send(context, topic, 0, afterFailure);
+                    var container = start(context, 1);
+                    await().atMost(Duration.ofSeconds(15))
+                        .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(3L));
+                    assertThat(container.isRunning()).isTrue();
                     verify(processor).process(first);
                     verify(processor).process(failed);
+                    verify(processor).process(afterFailure);
                     verifyNoMoreInteractions(processor);
+                    var deadLetter = readRecord(topic + "-dlt", 0);
+                    assertThat(deadLetter.key()).isEqualTo("7");
+                    assertThat(context.getBean(JsonMapper.class)
+                        .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(failed);
+                });
+        }
+    }
+
+    @Test
+    void 일시_오류는_Retry로_인계한_뒤_원본_Group이_후속_요청을_계속_처리한다() throws Exception {
+        String topic = "creation-retry-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        var transientAttempts = new AtomicInteger();
+        var processed = new ConcurrentLinkedQueue<String>();
+        var retryEntered = new CountDownLatch(1);
+        var releaseRetry = new CountDownLatch(1);
+        var retryCompleted = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            var request = (NotificationCreateRequested) invocation.getArgument(0);
+            processed.add(request.sourceEventId());
+            if (request.sourceEventId().equals("transient")) {
+                int attempt = transientAttempts.getAndIncrement();
+                if (attempt == 0) {
+                    throw new TimeoutException();
+                }
+                if (attempt == 1) {
+                    retryEntered.countDown();
+                    if (!releaseRetry.await(20, TimeUnit.SECONDS)) {
+                        throw new TimeoutException();
+                    }
+                    retryCompleted.countDown();
+                }
+            }
+            return null;
+        }).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
+                .run(context -> {
+                    send(context, topic, 0, request("transient", 1));
+                    send(context, topic, 0, request("after-retry", 1));
+                    var container = start(context, 1);
+                    try {
+                        assertThat(retryEntered.await(15, TimeUnit.SECONDS)).isTrue();
+                        await().atMost(Duration.ofSeconds(15))
+                            .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(2L));
+                        assertThat(processed).contains("after-retry");
+                        assertThat(container.isRunning()).isTrue();
+                        var retryRecord = readRecord(topic + "-retry-0", 0);
+                        assertThat(retryRecord.key()).isEqualTo("7");
+                        assertThat(retryRecord.headers().lastHeader("__TypeId__")).isNull();
+                        assertThat(context.getBean(JsonMapper.class)
+                            .readValue(retryRecord.value(), NotificationCreateRequested.class))
+                            .isEqualTo(request("transient", 1));
+                    } finally {
+                        releaseRetry.countDown();
+                    }
+                    assertThat(retryCompleted.await(15, TimeUnit.SECONDS)).isTrue();
+                    await().atMost(Duration.ofSeconds(15))
+                        .untilAsserted(() -> assertThat(transientAttempts.get()).isEqualTo(2));
+                    assertThat(processed).contains("after-retry");
+                    verify(processor, times(2)).process(request("transient", 1));
+                    verify(processor).process(request("after-retry", 1));
+                    verifyNoMoreInteractions(processor);
+                });
+        }
+    }
+
+    @Test
+    void 재시도_횟수를_모두_소진하면_DLT로_인계한다() throws Exception {
+        String topic = "creation-exhausted-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        var attempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            attempts.incrementAndGet();
+            throw new TimeoutException();
+        }).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
+                .run(context -> {
+                    var request = request("exhausted", 1);
+                    send(context, topic, 0, request);
+                    start(context, 1);
+                    await().atMost(Duration.ofSeconds(20))
+                        .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
+                    var deadLetter = readRecord(topic + "-dlt", 0);
+                    assertThat(deadLetter.key()).isEqualTo("7");
+                    assertThat(context.getBean(JsonMapper.class)
+                        .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
+                    assertThat(attempts.get()).isEqualTo(3);
                 });
         }
     }
 
     @ParameterizedTest
     @EnumSource(InvalidPayload.class)
-    void 잘못된_입력은_저장과_발행_없이_중단하고_offset을_넘기지_않는다(InvalidPayload input) throws Exception {
+    void 잘못된_입력은_DLT에_보관하고_malformed_byte를_보존한다(InvalidPayload input) throws Exception {
         String topic = "creation-invalid-" + UUID.randomUUID();
         String group = "creation-group-" + UUID.randomUUID();
         var creationService = mock(NotificationCreationService.class);
@@ -149,26 +266,163 @@ class NotificationCreationConsumerIntegrationTest {
             new NotificationCreateRequestedValidator(), creationService, deliveryProducer);
         try (Admin admin = admin(topic, 1)) {
             contextRunner(topic, group, processor).run(context -> {
-                String payload = switch (input) {
-                    case MALFORMED_JSON -> "{invalid";
-                    case JSON_NULL -> "null";
+                byte[] payload = switch (input) {
+                    case MALFORMED_JSON -> "{invalid".getBytes(StandardCharsets.UTF_8);
+                    case JSON_NULL -> "null".getBytes(StandardCharsets.UTF_8);
                     case TOMBSTONE -> null;
                     case UNSUPPORTED_SCHEMA ->
-                        context.getBean(JsonMapper.class).writeValueAsString(request("invalid", 2));
+                        context.getBean(JsonMapper.class).writeValueAsBytes(request("invalid", 2));
                 };
-                try (var producer = new KafkaProducer<String, String>(Map.of(
+                try (var producer = new KafkaProducer<String, byte[]>(Map.of(
                     ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
                     ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
-                    ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class))) {
+                    ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class))) {
                     producer.send(new ProducerRecord<>(topic, 0, "7", payload)).get(10, TimeUnit.SECONDS);
                 }
-                send(context, topic, 0, request("after-invalid", 1));
-                var container = listener(context);
-                container.start();
-                awaitStopped(container);
-                assertThat(committed(admin, group, topic, 0)).isNull();
+                var container = start(context, 1);
+                await().atMost(Duration.ofSeconds(15))
+                    .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
+                assertThat(container.isRunning()).isTrue();
+                var deadLetter = readRecord(topic + "-dlt", 0);
+                assertThat(deadLetter.key()).isEqualTo("7");
+                assertThat(new String(deadLetter.headers().lastHeader(KafkaHeaders.ORIGINAL_TOPIC).value(),
+                    StandardCharsets.UTF_8)).isEqualTo(topic);
+                assertThat(ByteBuffer.wrap(deadLetter.headers().lastHeader(KafkaHeaders.ORIGINAL_PARTITION)
+                    .value()).getInt()).isZero();
+                assertThat(ByteBuffer.wrap(deadLetter.headers().lastHeader(KafkaHeaders.ORIGINAL_OFFSET)
+                    .value()).getLong()).isZero();
+                switch (input) {
+                    case MALFORMED_JSON -> assertThat(deadLetter.value()).isEqualTo(payload);
+                    case JSON_NULL, TOMBSTONE -> assertThat(deadLetter.value()).isNull();
+                    case UNSUPPORTED_SCHEMA -> assertThat(context.getBean(JsonMapper.class)
+                        .readValue(deadLetter.value(), NotificationCreateRequested.class))
+                        .isEqualTo(request("invalid", 2));
+                }
                 verifyNoInteractions(creationService, deliveryProducer);
             });
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("stoppingFailures")
+    void 중단_예외와_Error는_입력_위치를_진행하지_않고_컨테이너를_중지한다(Throwable failure) throws Exception {
+        String topic = "creation-stop-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        doAnswer(invocation -> {
+            throw failure;
+        }).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
+                .run(context -> {
+                    var container = start(context, 1);
+                    send(context, topic, 0, request("stop", 1));
+                    await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                        assertThat(container.isRunning()).isFalse();
+                        assertThat(container.isInExpectedState()).isFalse();
+                    });
+                    assertThat(committed(admin, group, topic, 0)).isNull();
+                    assertThat(endOffset(admin, topic + "-retry-0")).isZero();
+                    assertThat(endOffset(admin, topic + "-dlt")).isZero();
+                });
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(HandoffStage.class)
+    void 인계_발행이_실패하면_입력_Offset을_유지하고_같은_요청을_재처리한다(HandoffStage stage) throws Exception {
+        String topic = "creation-handoff-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        var processingAttempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            processingAttempts.incrementAndGet();
+            if (stage == HandoffStage.MAIN_DLT) {
+                throw new IllegalStateException();
+            }
+            throw new TimeoutException();
+        }).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor)
+                .withUserConfiguration(SpyTemplateConfiguration.class)
+                .withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
+                .run(context -> {
+                    var template = context.getBean(KafkaTemplate.class);
+                    var reject = new AtomicBoolean(true);
+                    var rejected = new CountDownLatch(1);
+                    String destination = topic + stage.destinationSuffix;
+                    doAnswer(invocation -> {
+                        ProducerRecord<?, ?> record = invocation.getArgument(0);
+                        if (record.topic().equals(destination) && reject.get()) {
+                            rejected.countDown();
+                            return CompletableFuture.failedFuture(new TimeoutException());
+                        }
+                        return invocation.callRealMethod();
+                    }).when(template).send(any(ProducerRecord.class));
+                    var request = request("handoff", 1);
+                    send(context, topic, 0, request);
+                    start(context, 1);
+                    String inputTopic = topic + stage.inputSuffix;
+                    String inputGroup = groupFor(context, inputTopic);
+                    try {
+                        assertThat(rejected.await(15, TimeUnit.SECONDS)).isTrue();
+                        await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                            assertThat(committed(admin, inputGroup, inputTopic, 0)).isNull();
+                            assertThat(endOffset(admin, destination)).isZero();
+                        });
+                    } finally {
+                        reject.set(false);
+                    }
+                    await().atMost(Duration.ofSeconds(20))
+                        .untilAsserted(() -> assertThat(committed(admin, inputGroup, inputTopic, 0)).isEqualTo(1L));
+                    var deadLetter = readRecord(topic + "-dlt", 0);
+                    assertThat(context.getBean(JsonMapper.class)
+                        .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
+                    assertThat(processingAttempts.get()).isGreaterThan(stage == HandoffStage.MAIN_DLT ? 1 : 3);
+                });
+        }
+    }
+
+    @Test
+    void 인계_결과가_대기_시간_안에_완료되지_않으면_commit하지_않고_재처리한다() throws Exception {
+        String topic = "creation-handoff-timeout-" + UUID.randomUUID();
+        String group = "creation-group-" + UUID.randomUUID();
+        var processor = mock(NotificationCreationProcessor.class);
+        var attempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            attempts.incrementAndGet();
+            throw new TimeoutException();
+        }).when(processor).process(any());
+        try (Admin admin = admin(topic, 1)) {
+            contextRunner(topic, group, processor)
+                .withUserConfiguration(SpyTemplateConfiguration.class)
+                .withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true",
+                    "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=100",
+                    "KAFKA_PRODUCER_REQUEST_TIMEOUT_MS=500", "KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS=1000")
+                .run(context -> {
+                    var template = context.getBean(KafkaTemplate.class);
+                    var pending = new AtomicBoolean(true);
+                    var entered = new CountDownLatch(1);
+                    doAnswer(invocation -> {
+                        ProducerRecord<?, ?> record = invocation.getArgument(0);
+                        if (record.topic().equals(topic + "-retry-0") && pending.getAndSet(false)) {
+                            entered.countDown();
+                            return new CompletableFuture<>();
+                        }
+                        return invocation.callRealMethod();
+                    }).when(template).send(any(ProducerRecord.class));
+                    send(context, topic, 0, request("timeout", 1));
+                    start(context, 1);
+                    assertThat(entered.await(15, TimeUnit.SECONDS)).isTrue();
+                    await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                        assertThat(committed(admin, group, topic, 0)).isNull();
+                        assertThat(endOffset(admin, topic + "-retry-0")).isZero();
+                    });
+                    await().atMost(Duration.ofSeconds(25))
+                        .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
+                    assertThat(readRecord(topic + "-dlt", 0).value()).isNotEmpty();
+                    assertThat(attempts.get()).isGreaterThan(3);
+                });
         }
     }
 
@@ -217,13 +471,20 @@ class NotificationCreationConsumerIntegrationTest {
     private ApplicationContextRunner contextRunner(String topic, String group,
         NotificationCreationProcessor processor) {
         return new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
-            .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationCreationConsumer.class,
-                PropertiesConfiguration.class)
+            .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class,
+                TaskSchedulingAutoConfiguration.class))
+            .withUserConfiguration(SchedulingConfig.class, NotificationKafkaConfiguration.class,
+                NotificationRetryConfiguration.class,
+                NotificationCreationConsumer.class, PropertiesConfiguration.class)
             .withBean(NotificationCreationProcessor.class, () -> processor)
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("NOTIFICATION_CREATE_REQUESTED_TOPIC=" + topic,
-                "APP_NOTIFICATION_CREATION_GROUP_ID=" + group)
+                "APP_NOTIFICATION_CREATION_GROUP_ID=" + group,
+                "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=3",
+                "APP_NOTIFICATION_RETRY_INITIAL_DELAY_MS=100",
+                "APP_NOTIFICATION_RETRY_MAX_DELAY_MS=1000",
+                "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=5000")
             .withInitializer(context -> {
                 var sources = context.getEnvironment().getPropertySources();
                 sources.remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
@@ -240,7 +501,12 @@ class NotificationCreationConsumerIntegrationTest {
     private Admin admin(String topic, int partitions) throws Exception {
         Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()));
         try {
-            admin.createTopics(List.of(new NewTopic(topic, partitions, (short) 1))).all().get(15, TimeUnit.SECONDS);
+            List<NewTopic> topics = new ArrayList<>();
+            topics.add(new NewTopic(topic, partitions, (short) 1));
+            topics.add(new NewTopic(topic + "-retry-0", partitions, (short) 1));
+            topics.add(new NewTopic(topic + "-retry-1", partitions, (short) 1));
+            topics.add(new NewTopic(topic + "-dlt", partitions, (short) 1));
+            admin.createTopics(topics).all().get(15, TimeUnit.SECONDS);
             return admin;
         } catch (Exception exception) {
             admin.close();
@@ -262,13 +528,6 @@ class NotificationCreationConsumerIntegrationTest {
         return container;
     }
 
-    private void awaitStopped(ConcurrentMessageListenerContainer<?, ?> container) {
-        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-            assertThat(container.isRunning()).isFalse();
-            assertThat(container.isInExpectedState()).isFalse();
-        });
-    }
-
     private Long committed(Admin admin, String group, String topic, int partition) throws Exception {
         OffsetAndMetadata offset = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata()
             .get(10, TimeUnit.SECONDS).get(new TopicPartition(topic, partition));
@@ -280,6 +539,39 @@ class NotificationCreationConsumerIntegrationTest {
         context.getBean(KafkaTemplate.class).send(topic, partition, "7", request).get(10, TimeUnit.SECONDS);
     }
 
+    private String groupFor(AssertableApplicationContext context, String topic) {
+        return context.getBean(KafkaListenerEndpointRegistry.class).getListenerContainers().stream()
+            .filter(container -> List.of(container.getContainerProperties().getTopics()).contains(topic))
+            .findFirst().orElseThrow().getContainerProperties().getGroupId();
+    }
+
+    private long endOffset(Admin admin, String topic) throws Exception {
+        var partition = new TopicPartition(topic, 0);
+        return admin.listOffsets(Map.of(partition, OffsetSpec.latest()))
+            .partitionResult(partition).get(10, TimeUnit.SECONDS).offset();
+    }
+
+    private ConsumerRecord<String, byte[]> readRecord(String topic, int partition) throws Exception {
+        try (var consumer = new KafkaConsumer<String, byte[]>(Map.of(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+            ConsumerConfig.GROUP_ID_CONFIG, "read-" + UUID.randomUUID(),
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class,
+            ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
+            var topicPartition = new TopicPartition(topic, partition);
+            consumer.assign(List.of(topicPartition));
+            consumer.seekToBeginning(List.of(topicPartition));
+            long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+            while (System.nanoTime() < deadline) {
+                var records = consumer.poll(Duration.ofMillis(200));
+                if (!records.isEmpty()) {
+                    return records.iterator().next();
+                }
+            }
+            throw new AssertionError("Expected a record in " + topic);
+        }
+    }
+
     private static NotificationCreateRequested request(String sourceEventId, int schemaVersion) {
         return new NotificationCreateRequested(schemaVersion, sourceEventId, 7L, NotificationType.LIKE,
             "제목", "본문", null, null, Instant.parse("2026-10-22T01:00:00Z"));
@@ -287,14 +579,46 @@ class NotificationCreationConsumerIntegrationTest {
 
     private static Stream<Exception> processingFailures() {
         return Stream.of(new DataAccessResourceFailureException("storage failure"),
-            new ExecutionException(new IllegalStateException()), new TimeoutException());
+            new ExecutionException(new IllegalStateException()));
+    }
+
+    private static Stream<Throwable> stoppingFailures() {
+        return Stream.of(new InterruptedException(), new ExecutionException(new InterruptedException()),
+            new AssertionError());
     }
 
     private enum InvalidPayload {
         MALFORMED_JSON, JSON_NULL, TOMBSTONE, UNSUPPORTED_SCHEMA
     }
 
+    private enum HandoffStage {
+        MAIN_RETRY("", "-retry-0"),
+        MAIN_DLT("", "-dlt"),
+        RETRY_RETRY("-retry-0", "-retry-1"),
+        RETRY_DLT("-retry-1", "-dlt");
+
+        private final String inputSuffix;
+        private final String destinationSuffix;
+
+        HandoffStage(String inputSuffix, String destinationSuffix) {
+            this.inputSuffix = inputSuffix;
+            this.destinationSuffix = destinationSuffix;
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties(NotificationCreationProperties.class)
+    static class SpyTemplateConfiguration {
+
+        @Bean
+        KafkaTemplate<Object, Object> kafkaTemplate(ProducerFactory<Object, Object> producerFactory) {
+            return spy(new KafkaTemplate<>(producerFactory));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(
+        {NotificationKafkaProperties.class, NotificationCreationProperties.class,
+            NotificationRetryProperties.class}
+    )
     static class PropertiesConfiguration {}
 }

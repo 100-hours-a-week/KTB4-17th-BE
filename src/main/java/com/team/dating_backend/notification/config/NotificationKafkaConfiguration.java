@@ -5,6 +5,8 @@ import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.Serializer;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.boot.kafka.autoconfigure.DefaultKafkaProducerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +16,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
@@ -26,7 +29,14 @@ public class NotificationKafkaConfiguration {
     public DefaultKafkaProducerFactoryCustomizer notificationKafkaProducerFactoryCustomizer(
         JsonMapper jsonMapper) {
         return factory -> factory.setValueSerializerSupplier(
-            () -> new JacksonJsonSerializer<>(jsonMapper));
+            () -> notificationValueSerializer(jsonMapper));
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> Serializer<T> notificationValueSerializer(JsonMapper jsonMapper) {
+        return (Serializer<T>) new DelegatingByTypeSerializer(Map.of(
+            byte[].class, new ByteArraySerializer(),
+            Object.class, new JacksonJsonSerializer<>(jsonMapper)), true);
     }
 
     @Bean("notificationCreateRequestedKafkaListenerContainerFactory")

@@ -8,6 +8,7 @@ import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.kafka.NotificationCreationConsumer;
+import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.service.NotificationCreationProcessor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -16,12 +17,17 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
@@ -37,18 +43,23 @@ import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
+import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.kafka.support.KafkaUtils;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import tools.jackson.databind.PropertyNamingStrategies;
+import com.team.dating_backend.common.config.SchedulingConfig;
 
 class NotificationKafkaConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-        .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
-        .withUserConfiguration(NotificationKafkaConfiguration.class,
+        .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class,
+            TaskSchedulingAutoConfiguration.class))
+        .withUserConfiguration(SchedulingConfig.class, NotificationKafkaConfiguration.class,
+            NotificationRetryConfiguration.class,
             PropertiesConfiguration.class)
         .withInitializer(context -> {
             var sources = context.getEnvironment().getPropertySources();
@@ -91,9 +102,10 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Test
-    void 생성_Listener는_공유_Group과_오류_중단_정책을_상속하고_기본적으로_기동하지_않는다() {
+    void 생성_Listener는_공유_Group과_Retry_오류_정책을_상속하고_기본적으로_기동하지_않는다() {
         contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
             .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 var container = context.getBean(KafkaListenerEndpointRegistry.class)
@@ -109,7 +121,83 @@ class NotificationKafkaConfigurationTest {
                 assertThat(container.getContainerProperties().isSyncCommits()).isTrue();
                 assertThat(container.getContainerProperties().isCheckDeserExWhenValueNull()).isTrue();
                 assertThat(((ConcurrentMessageListenerContainer<?, ?>) container).getCommonErrorHandler())
-                    .isInstanceOf(CommonContainerStoppingErrorHandler.class);
+                    .isInstanceOf(CommonDelegatingErrorHandler.class)
+                    .isNotInstanceOf(CommonContainerStoppingErrorHandler.class);
+            });
+    }
+
+    @Test
+    void Retry는_생성_요청에만_연결하고_시도별_목적지를_만든다() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            var configuration = context.getBean("notificationRetryTopicConfiguration",
+                RetryTopicConfiguration.class);
+            assertThat(configuration.hasConfigurationForTopics(new String[]{"local-notification-create-requested-v1"}))
+                .isTrue();
+            assertThat(configuration.hasConfigurationForTopics(new String[]{"local-notification-delivery-v1"}))
+                .isFalse();
+            assertThat(configuration.getDestinationTopicProperties()).hasSize(8);
+            assertThat(configuration.getDestinationTopicProperties()).extracting(destination -> destination.suffix())
+                .containsExactly("", "-retry-0", "-retry-1", "-retry-2", "-retry-3", "-retry-4", "-retry-5", "-dlt");
+            assertThat(configuration.getDestinationTopicProperties()).extracting(destination -> destination.delay())
+                .containsExactly(0L, 1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 0L);
+            assertThat(configuration.getConcurrency()).isEqualTo(1);
+            var factory = context.getBean("notificationCreateRequestedKafkaListenerContainerFactory",
+                ConcurrentKafkaListenerContainerFactory.class);
+            assertThat(factory.createContainer("unrelated-topic").getCommonErrorHandler())
+                .isInstanceOf(CommonContainerStoppingErrorHandler.class);
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 7, 9})
+    void 실제_Listener는_시도_횟수에_따라_독립_Topic과_Group을_구성한다(int attempts) {
+        contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
+            .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
+            .withPropertyValues("APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=" + attempts)
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                var containers = context.getBean(KafkaListenerEndpointRegistry.class).getListenerContainers();
+                assertThat(containers).hasSize(attempts + 1);
+                for (int i = 0; i < attempts - 1; i++) {
+                    String suffix = "-retry-" + i;
+                    var retry = containers.stream()
+                        .filter(container -> java.util.List.of(container.getContainerProperties().getTopics())
+                            .contains("local-notification-create-requested-v1" + suffix))
+                        .findFirst().orElseThrow();
+                    assertThat(retry.getContainerProperties().getGroupId())
+                        .isEqualTo("local-notification-create-v1" + suffix);
+                    assertThat(((ConcurrentMessageListenerContainer<?, ?>) retry).getConcurrency()).isEqualTo(1);
+                    assertThat(retry.isAutoStartup()).isFalse();
+                }
+                var dlt = containers.stream()
+                    .filter(container -> java.util.List.of(container.getContainerProperties().getTopics())
+                        .contains("local-notification-create-requested-v1-dlt"))
+                    .findFirst().orElseThrow();
+                assertThat(dlt.isAutoStartup()).isFalse();
+                assertThat(dlt.isRunning()).isFalse();
+                assertThat(context.getBeansOfType(NewTopic.class)).isEmpty();
+            });
+    }
+
+    @Test
+    void 파생_Topic_이름이_길이_제한을_넘으면_시작을_거부한다() {
+        contextRunner.withPropertyValues("NOTIFICATION_CREATE_REQUESTED_TOPIC=" + "a".repeat(242))
+            .run(context -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(NotificationBusinessException.class);
+            });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-retry-0", "-dlt"})
+    void 파생_Topic이_delivery와_겹치면_시작을_거부한다(String suffix) {
+        contextRunner.withPropertyValues(
+            "NOTIFICATION_DELIVERY_TOPIC=local-notification-create-requested-v1" + suffix)
+            .run(context -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(NotificationBusinessException.class);
             });
     }
 
@@ -229,6 +317,20 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Test
+    void byte_array는_변경없이_원시_바이트로_발행한다() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            var serializer = context.getBean(DefaultKafkaProducerFactory.class).getValueSerializer();
+            byte[] value = {0x00, 0x01, (byte) 0xff, 0x20};
+            var headers = new RecordHeaders();
+
+            assertThat(serializer.serialize("test-topic", headers, value)).isEqualTo(value);
+            assertThat(headers).isEmpty();
+            serializer.close();
+        });
+    }
+
+    @Test
     void 잘못된_JSON은_역직렬화_오류_헤더로_전달한다() {
         contextRunner.run(context -> {
             var factory = context.getBean("notificationCreateRequestedKafkaListenerContainerFactory",
@@ -285,7 +387,7 @@ class NotificationKafkaConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(
         {NotificationKafkaProperties.class, NotificationPublishProperties.class,
-            NotificationCreationProperties.class}
+            NotificationCreationProperties.class, NotificationRetryProperties.class}
     )
     static class PropertiesConfiguration {}
 }
