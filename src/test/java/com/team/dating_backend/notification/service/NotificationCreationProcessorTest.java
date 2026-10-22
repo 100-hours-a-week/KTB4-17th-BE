@@ -14,7 +14,7 @@ import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.dto.result.NotificationCreationResult;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryProducer;
 import java.sql.Connection;
 import java.time.Instant;
@@ -109,7 +109,7 @@ class NotificationCreationProcessorTest {
                 schemaVersion, "event-1", 7L, NotificationType.LIKE, "제목", "본문", null, null, REQUEST.requestedAt());
 
         assertThatThrownBy(() -> processor.process(invalid))
-            .isInstanceOfSatisfying(NotificationBusinessException.class,
+            .isInstanceOfSatisfying(NotificationInvalidCreateRequestException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
         verifyNoInteractions(creationService, producer);

@@ -1,8 +1,7 @@
 package com.team.dating_backend.notification.service;
 
-import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
-import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -22,7 +21,7 @@ public class NotificationCreateRequestedValidator {
             || request.recipientUserId() <= 0
             || request.type() == null
             || request.requestedAt() == null) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            throw new NotificationInvalidCreateRequestException();
         }
 
         validateTextWithinLength(request.sourceEventId(), MAX_SOURCE_EVENT_ID_LENGTH);
@@ -33,20 +32,20 @@ public class NotificationCreateRequestedValidator {
 
     private void validateTarget(String targetType, Long targetId) {
         if ((targetType == null) != (targetId == null)) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            throw new NotificationInvalidCreateRequestException();
         }
         if (targetType == null) {
             return;
         }
         validateTextWithinLength(targetType, MAX_TARGET_TYPE_LENGTH);
         if (targetType.isBlank() || targetId <= 0) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            throw new NotificationInvalidCreateRequestException();
         }
     }
 
     private void validateTextWithinLength(String value, int maxLength) {
         if (value == null || value.codePointCount(0, value.length()) > maxLength) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            throw new NotificationInvalidCreateRequestException();
         }
     }
 }

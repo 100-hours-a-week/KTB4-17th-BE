@@ -14,7 +14,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.kafka.NotificationPublishDispatcher;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationRequestService;
@@ -130,7 +130,7 @@ class NotificationRequestFlowTest {
     @MethodSource("invalidRequests")
     void 잘못된_요청은_errorCode로_거부하고_이벤트를_등록하지_않는다(NotificationCreateRequested request) {
         assertThatThrownBy(() -> transaction.executeWithoutResult(status -> service.requestNotification(request)))
-            .isInstanceOfSatisfying(NotificationBusinessException.class,
+            .isInstanceOfSatisfying(NotificationInvalidCreateRequestException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
         assertThat(publishedRequests).isEmpty();
