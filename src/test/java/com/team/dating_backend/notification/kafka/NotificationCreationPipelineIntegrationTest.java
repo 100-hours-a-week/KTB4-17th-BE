@@ -4,8 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.notification.alert.DiscordWebhookClient;
+import com.team.dating_backend.notification.alert.NotificationFailureContext;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
@@ -14,7 +19,9 @@ import com.team.dating_backend.notification.config.NotificationRetryProperties;
 import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.repository.NotificationRepository;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationCreationProcessor;
@@ -24,6 +31,7 @@ import com.team.dating_backend.notification.service.NotificationPersistenceServi
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -32,10 +40,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -58,6 +68,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
@@ -150,8 +161,17 @@ class NotificationCreationPipelineIntegrationTest {
     @Autowired
     private JsonMapper jsonMapper;
 
+    @Autowired
+    private DiscordWebhookClient webhookClient;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
+
     @MockitoSpyBean
     private NotificationDeliveryProducer deliveryProducer;
+
+    @MockitoSpyBean
+    private NotificationPersistenceService persistenceService;
 
     private Admin admin;
     private KafkaConsumer<String, String> deliveryConsumer;
@@ -283,6 +303,157 @@ class NotificationCreationPipelineIntegrationTest {
     }
 
     @Test
+    void DB_commit_전_실패는_rollback한_뒤_Retry에서_한번_저장하고_통보하지_않는다() throws Exception {
+        var firstAttempt = new AtomicBoolean(true);
+        var reached = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            boolean first = firstAttempt.getAndSet(false);
+            if (!first) {
+                assertThat(rowCount()).isZero();
+            }
+            Object result = invocation.callRealMethod();
+            if (first) {
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+                assertThat(rowCount()).isEqualTo(1L);
+                reached.countDown();
+                if (!release.await(20, TimeUnit.SECONDS)) {
+                    throw new TimeoutException();
+                }
+                throw new TransientDataAccessResourceException(null);
+            }
+            return result;
+        }).when(persistenceService).create(any());
+        startConsumers();
+        send(request("원본 제목", REQUESTED_AT));
+        try {
+            assertThat(reached.await(15, TimeUnit.SECONDS)).isTrue();
+            assertThat(rowCount()).isZero();
+            assertThat(committedOffset()).isNull();
+            assertThat(deliveryEndOffset()).isZero();
+        } finally {
+            release.countDown();
+        }
+
+        var delivered = readDelivery(1).getFirst();
+        awaitRetryCommitted();
+        awaitCommitted(1L);
+
+        assertThat(rowCount()).isEqualTo(1L);
+        assertThat(storedRow()).containsEntry("title", "원본 제목").containsEntry("body", "원본 본문");
+        assertThat(delivered.notification().notificationId()).isEqualTo(((Number) storedRow().get("id")).longValue());
+        assertThat(delivered.notification().createdAt()).isEqualTo(CREATED_AT);
+        assertThat(endOffset(topics.getCreateRequestedTopic() + "-retry-0")).isEqualTo(1L);
+        assertThat(endOffset(topics.getCreateRequestedTopic() + "-dlt")).isZero();
+        verifyNoInteractions(webhookClient);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void DB가_있는_요청의_Retry_소진은_통보_결과와_무관하게_DLT와_commit을_보존한다(boolean webhookFails) throws Exception {
+        var attempts = new CopyOnWriteArrayList<NotificationDeliveryEvent>();
+        var firstDelivery = new CountDownLatch(1);
+        var releaseDelivery = new CountDownLatch(1);
+        var reporting = new CountDownLatch(1);
+        var releaseReporting = new CountDownLatch(1);
+        var reported = new AtomicReference<NotificationFailureContext>();
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            attempts.add(invocation.getArgument(0));
+            if (attempts.size() == 1) {
+                firstDelivery.countDown();
+                if (!releaseDelivery.await(20, TimeUnit.SECONDS)) {
+                    throw new TimeoutException();
+                }
+            }
+            throw new TimeoutException();
+        }).when(deliveryProducer).publishAndAwait(any());
+        doAnswer(invocation -> {
+            reported.set(invocation.getArgument(0));
+            reporting.countDown();
+            if (!releaseReporting.await(20, TimeUnit.SECONDS)) {
+                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            }
+            if (webhookFails) {
+                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            }
+            return null;
+        }).when(webhookClient).send(any());
+        var original = request("원본 제목", REQUESTED_AT);
+        Map<String, Object> committedRow;
+        Long notificationId;
+        try {
+            startConsumers();
+            send(original);
+            assertThat(firstDelivery.await(15, TimeUnit.SECONDS)).isTrue();
+            assertThat(rowCount()).isEqualTo(1L);
+            notificationId = ((Number) storedRow().get("id")).longValue();
+            transaction.executeWithoutResult(status -> notifications.findById(notificationId).orElseThrow()
+                .markAsRead(CREATED_AT.plusMinutes(1)));
+            committedRow = storedRow();
+            assertThat(committedOffset()).isNull();
+            verifyNoInteractions(webhookClient);
+            releaseDelivery.countDown();
+
+            assertThat(reporting.await(20, TimeUnit.SECONDS)).isTrue();
+            assertThat(rowCount()).isEqualTo(1L);
+            assertThat(storedRow()).isEqualTo(committedRow);
+            assertThat(retryCommittedOffset()).isNull();
+            assertThat(endOffset(topics.getCreateRequestedTopic() + "-dlt")).isEqualTo(1L);
+            assertThat(deliveryEndOffset()).isZero();
+            var failure = reported.get();
+            assertThat(failure.errorCode()).isEqualTo(NotificationFailureCode.DLT_RECORDED);
+            assertThat(failure.sourceEventId()).isEqualTo(sourceEventId);
+            assertThat(failure.recipientUserId()).isEqualTo(userId);
+            assertThat(failure.type()).isEqualTo(original.type());
+            assertThat(failure.requestedAt()).isEqualTo(REQUESTED_AT);
+            var details = failure.kafkaDetails();
+            assertThat(details.consumerGroup()).isEqualTo(properties.getGroupId() + "-retry-0");
+            assertThat(details.originalLocation())
+                .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic(), 0, 0L));
+            assertThat(details.inputLocation())
+                .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic() + "-retry-0", 0, 0L));
+            assertThat(details.destinationLocation())
+                .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic() + "-dlt", 0, 0L));
+            assertThat(details.attempt()).isEqualTo(2);
+            assertThat(details.retryable()).isTrue();
+            assertThat(details.processingExceptionType()).isEqualTo("TimeoutException");
+            assertThat(details.processingCauseType()).isNull();
+            var deadLetter = readDeadLetter();
+            assertThat(deadLetter.key()).isEqualTo(userId.toString());
+            assertThat(deadLetter.offset()).isEqualTo(details.destinationLocation().offset());
+            assertThat(jsonMapper.readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(original);
+        } finally {
+            releaseDelivery.countDown();
+            releaseReporting.countDown();
+        }
+        awaitRetryCommitted();
+        awaitCommitted(1L);
+
+        assertThat(rowCount()).isEqualTo(1L);
+        assertThat(storedRow()).isEqualTo(committedRow);
+        assertThat(attempts).hasSize(2).allSatisfy(event -> {
+            assertThat(event.sourceEventId()).isEqualTo(sourceEventId);
+            assertThat(event.notification().notificationId()).isEqualTo(notificationId);
+            assertThat(event.notification().title()).isEqualTo("원본 제목");
+            assertThat(event.notification().body()).isEqualTo("원본 본문");
+            assertThat(event.notification().createdAt()).isEqualTo(CREATED_AT);
+        });
+        assertThat(attempts.getLast().notification().readAt()).isEqualTo(CREATED_AT.plusMinutes(1));
+        assertThat(endOffset(topics.getCreateRequestedTopic() + "-dlt")).isEqualTo(1L);
+        verify(webhookClient).send(reported.get());
+        assertThat(meterRegistry.get("notification.failures").tag("error_code", "DLT_RECORDED").counter().count())
+            .isEqualTo(1);
+        assertThat(meterRegistry.get("notification.alert.sent").counter().count()).isEqualTo(webhookFails ? 0 : 1);
+        if (webhookFails) {
+            assertThat(meterRegistry.get("notification.alert.failures")
+                .tag("error_code", "ALERT_WEBHOOK_FAILED").counter().count()).isEqualTo(1);
+        } else {
+            assertThat(meterRegistry.find("notification.alert.failures").counter()).isNull();
+        }
+    }
+
+    @Test
     void 삭제된_알림의_재요청은_DB_상태를_보존하고_delivery_없이_commit한다() throws Exception {
         Long notificationId = creationService.createOrLoad(request("원본 제목", REQUESTED_AT))
             .notification().notificationId();
@@ -330,6 +501,42 @@ class NotificationCreationPipelineIntegrationTest {
         var offset = admin.listConsumerGroupOffsets(properties.getGroupId()).partitionsToOffsetAndMetadata()
             .get(10, TimeUnit.SECONDS).get(new TopicPartition(topics.getCreateRequestedTopic(), 0));
         return offset == null ? null : offset.offset();
+    }
+
+    private void awaitRetryCommitted() {
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(retryCommittedOffset()).isEqualTo(1L));
+    }
+
+    private Long retryCommittedOffset() throws Exception {
+        var offset = admin.listConsumerGroupOffsets(properties.getGroupId() + "-retry-0")
+            .partitionsToOffsetAndMetadata()
+            .get(10, TimeUnit.SECONDS).get(new TopicPartition(topics.getCreateRequestedTopic() + "-retry-0", 0));
+        return offset == null ? null : offset.offset();
+    }
+
+    private long endOffset(String topic) throws Exception {
+        var partition = new TopicPartition(topic, 0);
+        return admin.listOffsets(Map.of(partition, OffsetSpec.latest()))
+            .partitionResult(partition).get(10, TimeUnit.SECONDS).offset();
+    }
+
+    private ConsumerRecord<String, String> readDeadLetter() {
+        try (var consumer = new KafkaConsumer<String, String>(Map.of(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
+            var partition = new TopicPartition(topics.getCreateRequestedTopic() + "-dlt", 0);
+            consumer.assign(List.of(partition));
+            consumer.seekToBeginning(List.of(partition));
+            var records = new ArrayList<ConsumerRecord<String, String>>();
+            await().atMost(Duration.ofSeconds(15)).until(() -> {
+                consumer.poll(Duration.ofMillis(200)).forEach(records::add);
+                return !records.isEmpty();
+            });
+            assertThat(records).hasSize(1);
+            return records.getFirst();
+        }
     }
 
     private long deliveryEndOffset() throws Exception {
