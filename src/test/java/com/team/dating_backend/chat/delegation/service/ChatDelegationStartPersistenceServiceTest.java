@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Limit;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class ChatDelegationStartPersistenceServiceTest {
@@ -63,8 +63,8 @@ class ChatDelegationStartPersistenceServiceTest {
     void AI가_확정한_초안으로_위임을_시작한다() {
         ChatMessage latest = message(target, NOW.minusHours(1));
         LocalDateTime nextActionAt = NOW.plusHours(2);
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            10L, ChatMessageStatus.SENT, PageRequest.of(0, 1))).thenReturn(List.of(latest));
+        when(messageRepository.findRecentByChatRoomIdAndStatus(
+            10L, ChatMessageStatus.SENT, Limit.of(1))).thenReturn(List.of(latest));
         when(schedulePolicy.nextActionAt(latest, requester.getId(), NOW))
             .thenReturn(nextActionAt);
 
@@ -80,8 +80,8 @@ class ChatDelegationStartPersistenceServiceTest {
     void 진행_중인_위임을_다시_시작해도_예약_시각을_유지한다() {
         ChatMessage latest = message(requester, NOW.minusHours(1));
         LocalDateTime originalNextActionAt = NOW.plusHours(23);
-        when(messageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            10L, ChatMessageStatus.SENT, PageRequest.of(0, 1))).thenReturn(List.of(latest));
+        when(messageRepository.findRecentByChatRoomIdAndStatus(
+            10L, ChatMessageStatus.SENT, Limit.of(1))).thenReturn(List.of(latest));
         when(schedulePolicy.nextActionAt(latest, requester.getId(), NOW))
             .thenReturn(originalNextActionAt);
         service.start(10L, 1L, service.prepare(10L, 20L, 1L, DRAFT_ID), NOW);
@@ -114,8 +114,8 @@ class ChatDelegationStartPersistenceServiceTest {
 
         assertError(() -> service.prepare(10L, 20L, 1L, DRAFT_ID),
             ChatErrorCode.CHAT_ACCESS_DENIED);
-        verify(messageRepository, never()).findByChatRoomIdAndStatusOrderByIdDesc(
-            10L, ChatMessageStatus.SENT, PageRequest.of(0, 1));
+        verify(messageRepository, never()).findRecentByChatRoomIdAndStatus(
+            10L, ChatMessageStatus.SENT, Limit.of(1));
     }
 
     private void assertError(Runnable action, ChatErrorCode code) {

@@ -136,6 +136,27 @@ public class ChatDelegation {
         this.nextActionAt = Objects.requireNonNull(nextActionAt);
     }
 
+    public void beginGeneration() {
+        requireInProgress();
+        nextActionAt = null;
+    }
+
+    public void requireRetry() {
+        requireInProgress();
+        status = ChatDelegationStatus.RETRY_REQUIRED;
+    }
+
+    public void fail() {
+        requireInProgress();
+        status = ChatDelegationStatus.FAILED;
+    }
+
+    private void requireInProgress() {
+        if (status != ChatDelegationStatus.IN_PROGRESS) {
+            throw new IllegalStateException();
+        }
+    }
+
     private void requireGeneratingRequest(UUID expectedRequestId) {
         if (status != ChatDelegationStatus.DRAFT_GENERATING
             || !requestId.equals(expectedRequestId)) {

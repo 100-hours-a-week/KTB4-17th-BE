@@ -7,6 +7,7 @@ import com.team.dating_backend.file.entity.File;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -83,6 +84,32 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
         @Param("chatRoomId") Long chatRoomId,
         @Param("status") ChatMessageStatus status,
         Pageable pageable);
+
+    @Query("""
+        select message
+        from ChatMessage message
+        where message.chatRoom.id = :chatRoomId
+          and message.status = :status
+        order by message.id desc
+        """)
+    List<ChatMessage> findRecentByChatRoomIdAndStatus(
+        @Param("chatRoomId") Long chatRoomId,
+        @Param("status") ChatMessageStatus status,
+        Limit limit);
+
+    @Query("""
+        select message
+        from ChatMessage message
+        where message.chatRoom.id = :chatRoomId
+          and message.status = :status
+          and message.id <= :contextMessageId
+        order by message.id desc
+        """)
+    List<ChatMessage> findRecentByChatRoomIdAndStatusUpTo(
+        @Param("chatRoomId") Long chatRoomId,
+        @Param("status") ChatMessageStatus status,
+        @Param("contextMessageId") Long contextMessageId,
+        Limit limit);
 
     @Query("""
         select message
