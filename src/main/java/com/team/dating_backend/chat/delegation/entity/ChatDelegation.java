@@ -146,6 +146,12 @@ public class ChatDelegation {
         status = ChatDelegationStatus.RETRY_REQUIRED;
     }
 
+    public boolean isActionRestricted() {
+        return status == ChatDelegationStatus.IN_PROGRESS
+            || status == ChatDelegationStatus.RETRY_REQUIRED
+            || status == ChatDelegationStatus.FAILED;
+    }
+
     public void fail() {
         requireInProgress();
         status = ChatDelegationStatus.FAILED;

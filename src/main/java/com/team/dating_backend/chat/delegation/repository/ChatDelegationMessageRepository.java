@@ -24,6 +24,17 @@ public interface ChatDelegationMessageRepository
         """)
     Optional<ChatDelegationMessage> findWithLockById(@Param("id") Long id);
 
+    @Query("""
+        select new com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageLockTarget(
+            message.delegation.id,
+            message.delegation.chatRoom.id,
+            message.delegation.chatRoom.match.id,
+            message.turn)
+        from ChatDelegationMessage message
+        where message.id = :id
+        """)
+    Optional<ChatDelegationMessageLockTarget> findLockTargetById(@Param("id") Long id);
+
     long countByDelegationId(Long delegationId);
 
     List<ChatDelegationMessage> findByDelegationIdOrderByTurn(Long delegationId);

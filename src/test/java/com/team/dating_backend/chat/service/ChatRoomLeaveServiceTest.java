@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
 import com.team.dating_backend.chat.dto.response.ChatRoomLeaveResponse;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -31,6 +32,7 @@ class ChatRoomLeaveServiceTest {
 
     private ChatRoomRepository chatRoomRepository;
     private MatchRepository matchRepository;
+    private ChatDelegationParticipantService delegationParticipantService;
     private ChatRoomLeaveService service;
     private ChatRoom room;
     private Match userMatch;
@@ -41,7 +43,9 @@ class ChatRoomLeaveServiceTest {
     void setUp() {
         chatRoomRepository = mock(ChatRoomRepository.class);
         matchRepository = mock(MatchRepository.class);
-        service = new ChatRoomLeaveService(chatRoomRepository, matchRepository);
+        delegationParticipantService = mock(ChatDelegationParticipantService.class);
+        service = new ChatRoomLeaveService(
+            chatRoomRepository, matchRepository, delegationParticipantService);
 
         LocalDateTime now = LocalDateTime.of(2026, 9, 27, 10, 0);
         userMatch = new Match(USER_ID, 2L, now.minusDays(1));
