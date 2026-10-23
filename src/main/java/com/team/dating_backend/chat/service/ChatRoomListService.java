@@ -5,6 +5,8 @@ import com.team.dating_backend.chat.dto.read.ChatRoomPage;
 import com.team.dating_backend.chat.dto.read.ChatRoomPageInfo;
 import com.team.dating_backend.chat.dto.read.ChatRoomPreview;
 import com.team.dating_backend.chat.dto.read.ChatRoomSummary;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationSummary;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatRoomPreviewType;
@@ -26,6 +28,8 @@ public class ChatRoomListService {
     private static final String DELETED_PREVIEW = "삭제된 메시지입니다.";
     private static final String EMPTY_ACTIVE_PREVIEW = "대화를 시작해보세요";
     private static final String EMPTY_ENDED_PREVIEW = "대화가 종료되었습니다.";
+    private static final String DELEGATION_PREVIEW = "AI가 자연스럽게 대화를 마무리하고 있어요.";
+    private static final String DELEGATION_COMPLETED_PREVIEW = "채팅 위임 완료되었습니다.";
 
     private final ChatRoomRepository chatRoomRepository;
 
@@ -64,11 +68,28 @@ public class ChatRoomListService {
             row.otherUserId(),
             row.chatNotification(),
             toPreview(row),
+            toDelegationSummary(row),
             row.unreadCount() == null ? 0 : row.unreadCount(),
             row.activityAt());
     }
 
+    private ChatDelegationSummary toDelegationSummary(ChatRoomListRow row) {
+        return row.delegationId() == null
+            ? null
+            : new ChatDelegationSummary(
+                row.delegationId(), row.delegationStatus(), row.delegationEndType());
+    }
+
     private ChatRoomPreview toPreview(ChatRoomListRow row) {
+        ChatDelegationStatus delegationStatus = row.delegationStatus();
+        if (delegationStatus == ChatDelegationStatus.IN_PROGRESS) {
+            return new ChatRoomPreview(ChatRoomPreviewType.TEXT, DELEGATION_PREVIEW, null);
+        }
+        if (delegationStatus == ChatDelegationStatus.COMPLETED
+            || delegationStatus == ChatDelegationStatus.INTERRUPTED) {
+            return new ChatRoomPreview(
+                ChatRoomPreviewType.TEXT, DELEGATION_COMPLETED_PREVIEW, null);
+        }
         if (row.lastMessageId() == null) {
             String text = row.roomStatus() == ChatRoomStatus.ACTIVE
                 ? EMPTY_ACTIVE_PREVIEW

@@ -1,5 +1,5 @@
 package com.team.dating_backend.matching.enums;
 
 public enum MatchEndReason {
-    BLOCKED, USER_WITHDRAWN, USER_LEFT_CHAT
+    BLOCKED, USER_WITHDRAWN, USER_LEFT_CHAT, AI_DELEGATION_COMPLETED
 }

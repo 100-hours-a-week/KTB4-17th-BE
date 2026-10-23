@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.service;
 
 import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
 import com.team.dating_backend.chat.dto.request.ChatMessageCreateRequest;
 import com.team.dating_backend.chat.dto.response.ChatMessageCreateResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
@@ -51,6 +52,7 @@ public class ChatMessageSendService {
     private final ChatRoomPresenceRegistry presenceRegistry;
     private final NotificationCreateService notificationCreateService;
     private final ProfileRepository profileRepository;
+    private final ChatDelegationParticipantService delegationParticipantService;
     private final ChatDelegationRescheduleService delegationRescheduleService;
 
     @Transactional
@@ -88,6 +90,8 @@ public class ChatMessageSendService {
             throw new ChatBusinessException(ChatErrorCode.CLIENT_MESSAGE_ID_CONFLICT);
         }
 
+        delegationParticipantService.validateMessageSend(
+            chatRoomId, sender.getId());
         validateRequestShape(request);
         ChatParticipant receiver = requireSendableRoom(room, participants, sender);
 

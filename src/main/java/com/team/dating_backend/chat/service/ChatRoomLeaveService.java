@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.service;
 
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
 import com.team.dating_backend.chat.dto.response.ChatRoomLeaveResponse;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -26,6 +27,7 @@ public class ChatRoomLeaveService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final MatchRepository matchRepository;
+    private final ChatDelegationParticipantService delegationParticipantService;
 
     @Transactional
     public ChatRoomLeaveResponse leave(Long chatRoomId, Long userId) {
@@ -52,6 +54,7 @@ public class ChatRoomLeaveService {
             }
 
             LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+            delegationParticipantService.handleLeave(chatRoomId, participant.getId());
             participant.leave(now);
             userMatch.end(MatchEndReason.USER_LEFT_CHAT, now);
             room.end(ChatRoomEndReason.USER_LEFT_CHAT, now);

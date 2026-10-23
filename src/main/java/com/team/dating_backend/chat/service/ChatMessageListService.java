@@ -2,6 +2,7 @@ package com.team.dating_backend.chat.service;
 
 import com.team.dating_backend.chat.dto.read.ChatParticipantDisplay;
 import com.team.dating_backend.chat.dto.response.ChatMessageListResponse;
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationSummary;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -57,12 +58,12 @@ public class ChatMessageListService {
         }
 
         List<ChatMessage> fetched = cursor == null
-            ? chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-                chatRoomId, ChatMessageStatus.SENT,
+            ? chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+                chatRoomId, ChatMessageStatus.SENT, viewer.getId(),
                 PageRequest.of(0, size + 1))
             : chatMessageRepository
-                .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
-                    chatRoomId, ChatMessageStatus.SENT, cursor,
+                .findVisibleByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+                    chatRoomId, ChatMessageStatus.SENT, cursor, viewer.getId(),
                     PageRequest.of(0, size + 1));
 
         boolean hasNext = fetched.size() > size;
@@ -82,6 +83,9 @@ public class ChatMessageListService {
             .getOrDefault(
                 otherUserId,
                 new ChatParticipantDisplay(otherUserId, null, null));
+        ChatDelegationSummary delegation = chatRoomRepository
+            .findDelegationSummary(chatRoomId, viewer.getId())
+            .orElse(null);
 
         return new ChatMessageListResponse(
             new ChatMessageListResponse.ChatRoomInfo(
@@ -91,7 +95,8 @@ public class ChatMessageListService {
                 new ChatMessageListResponse.OtherParticipant(
                     participantDisplay.userId(),
                     participantDisplay.nickname(),
-                    participantDisplay.profileImageUrl())),
+                    participantDisplay.profileImageUrl()),
+                delegation),
             messages,
             new ChatMessageListResponse.PageInfo(nextCursor, hasNext));
     }

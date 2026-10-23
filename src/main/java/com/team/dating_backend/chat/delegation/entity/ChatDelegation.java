@@ -136,6 +136,63 @@ public class ChatDelegation {
         this.nextActionAt = Objects.requireNonNull(nextActionAt);
     }
 
+    public void beginGeneration() {
+        requireInProgress();
+        nextActionAt = null;
+    }
+
+    public void requireRetry() {
+        requireInProgress();
+        nextActionAt = null;
+        status = ChatDelegationStatus.RETRY_REQUIRED;
+    }
+
+    public void retry() {
+        if (status != ChatDelegationStatus.RETRY_REQUIRED
+            && status != ChatDelegationStatus.FAILED) {
+            throw new IllegalStateException();
+        }
+        nextActionAt = null;
+        status = ChatDelegationStatus.IN_PROGRESS;
+    }
+
+    public void interrupt() {
+        if (!isActionRestricted()) {
+            throw new IllegalStateException();
+        }
+        nextActionAt = null;
+        status = ChatDelegationStatus.INTERRUPTED;
+    }
+
+    public boolean isActionRestricted() {
+        return status == ChatDelegationStatus.IN_PROGRESS
+            || status == ChatDelegationStatus.RETRY_REQUIRED
+            || status == ChatDelegationStatus.FAILED;
+    }
+
+    public boolean isFinished() {
+        return status == ChatDelegationStatus.COMPLETED
+            || status == ChatDelegationStatus.INTERRUPTED;
+    }
+
+    public void fail() {
+        requireInProgress();
+        nextActionAt = null;
+        status = ChatDelegationStatus.FAILED;
+    }
+
+    public void complete() {
+        requireInProgress();
+        nextActionAt = null;
+        status = ChatDelegationStatus.COMPLETED;
+    }
+
+    private void requireInProgress() {
+        if (status != ChatDelegationStatus.IN_PROGRESS) {
+            throw new IllegalStateException();
+        }
+    }
+
     private void requireGeneratingRequest(UUID expectedRequestId) {
         if (status != ChatDelegationStatus.DRAFT_GENERATING
             || !requestId.equals(expectedRequestId)) {

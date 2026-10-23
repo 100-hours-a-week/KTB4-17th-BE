@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.repository;
 
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationSummary;
 import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
@@ -82,6 +83,17 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     @Query("select room from ChatRoom room where room.match.id = :matchId")
     Optional<ChatRoom> findByMatchId(@Param("matchId") Long matchId);
 
+    @Query("""
+        select new com.team.dating_backend.chat.delegation.dto.response.ChatDelegationSummary(
+            delegation.id, delegation.status, delegation.endType)
+        from ChatDelegation delegation
+        where delegation.chatRoom.id = :chatRoomId
+          and delegation.requesterParticipant.id = :requesterParticipantId
+        """)
+    Optional<ChatDelegationSummary> findDelegationSummary(
+        @Param("chatRoomId") Long chatRoomId,
+        @Param("requesterParticipantId") Long requesterParticipantId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select room from ChatRoom room where room.id = :chatRoomId")
     Optional<ChatRoom> findWithLockById(@Param("chatRoomId") Long chatRoomId);
@@ -93,6 +105,9 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
             lastMessage.textContent, lastMessage.imageFile.id,
             lastMessage.senderDeletedAt,
             lastMessage.receiverDeletedAt,
+            delegation.id,
+            delegation.status,
+            delegation.endType,
             (select count(unreadMessage.id)
                 from ChatMessage unreadMessage
                 where unreadMessage.chatRoom.id = room.id
@@ -113,11 +128,20 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
         join ChatParticipant other
           on other.chatRoom.id = room.id
          and other.userId <> :viewerUserId
+        left join ChatDelegation delegation
+          on delegation.chatRoom.id = room.id
+         and delegation.requesterParticipant.id = viewer.id
         left join ChatMessage lastMessage
           on lastMessage.id = (
                 select max(message.id) from ChatMessage message
                 where message.chatRoom.id = room.id
                   and message.status = :sentMessageStatus
+                  and not exists (
+                      select delegationMessage.id
+                      from ChatDelegationMessage delegationMessage
+                      where delegationMessage.chatMessage.id = message.id
+                        and delegationMessage.delegation.requesterParticipant.id = viewer.id
+                  )
           )
         where room.status in :visibleRoomStatuses
           and (

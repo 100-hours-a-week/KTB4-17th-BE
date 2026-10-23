@@ -64,8 +64,9 @@ class ChatMessageListServiceTest {
 
     @Test
     void 첫_페이지는_요청_크기보다_하나_더_조회하고_화면에는_시간순으로_반환한다() {
-        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3)))
+        given(chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 3)))
             .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "최신"),
                 message(20L, VIEWER_PARTICIPANT_ID, "중간"),
                 message(10L, OTHER_PARTICIPANT_ID, "추가 조회")));
@@ -81,15 +82,17 @@ class ChatMessageListServiceTest {
             .containsExactly(1, 0);
         assertThat(result.pageInfo().hasNext()).isTrue();
         assertThat(result.pageInfo().nextCursor()).isEqualTo(20L);
-        verify(chatMessageRepository).findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3));
+        verify(chatMessageRepository).findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 3));
     }
 
     @Test
     void 상대방의_읽음_커서보다_이전인_내_메시지에는_미읽음_표시를_하지_않는다() {
         ReflectionTestUtils.setField(other, "lastReadMessageId", 30L);
-        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 3)))
+        given(chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 3)))
             .willReturn(List.of(message(30L, OTHER_PARTICIPANT_ID, "받은 메시지"),
                 message(20L, VIEWER_PARTICIPANT_ID, "내 메시지")));
 
@@ -103,9 +106,9 @@ class ChatMessageListServiceTest {
     @Test
     void 과거_페이지는_커서보다_작은_ID만_요청한다() {
         given(chatMessageRepository
-            .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+            .findVisibleByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
                 CHAT_ROOM_ID, ChatMessageStatus.SENT,
-                20L, PageRequest.of(0, 3)))
+                20L, VIEWER_PARTICIPANT_ID, PageRequest.of(0, 3)))
             .willReturn(List.of(message(19L, OTHER_PARTICIPANT_ID, "이전 메시지")));
 
         ChatMessageListResponse result = service.listMessages(CHAT_ROOM_ID,
@@ -116,17 +119,18 @@ class ChatMessageListServiceTest {
         assertThat(result.pageInfo().hasNext()).isFalse();
         assertThat(result.pageInfo().nextCursor()).isNull();
         verify(chatMessageRepository)
-            .findByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
+            .findVisibleByChatRoomIdAndStatusAndIdLessThanOrderByIdDesc(
                 CHAT_ROOM_ID, ChatMessageStatus.SENT,
-                20L, PageRequest.of(0, 3));
+                20L, VIEWER_PARTICIPANT_ID, PageRequest.of(0, 3));
     }
 
     @Test
     void 현재_사용자가_삭제한_메시지는_삭제_문구로_반환한다() {
         ChatMessage deletedMessage = message(10L, VIEWER_PARTICIPANT_ID, "원문");
         ReflectionTestUtils.setField(deletedMessage, "senderDeletedAt", BASE_TIME);
-        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 2)))
+        given(chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 2)))
             .willReturn(List.of(deletedMessage));
 
         ChatMessageListResponse result = service.listMessages(CHAT_ROOM_ID,
@@ -138,8 +142,9 @@ class ChatMessageListServiceTest {
     @Test
     void 상대방_표시_정보를_조회해_응답에_포함한다() {
         String profileImageUrl = "https://example.com/profile.jpg";
-        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
+        given(chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 21)))
             .willReturn(List.of());
         given(participantDisplayService.findDisplays(
             VIEWER_USER_ID, List.of(OTHER_USER_ID)))
@@ -159,8 +164,9 @@ class ChatMessageListServiceTest {
 
     @Test
     void 마스킹된_상대는_사용자_ID와_프로필_정보를_노출하지_않는다() {
-        given(chatMessageRepository.findByChatRoomIdAndStatusOrderByIdDesc(
-            CHAT_ROOM_ID, ChatMessageStatus.SENT, PageRequest.of(0, 21)))
+        given(chatMessageRepository.findVisibleByChatRoomIdAndStatusOrderByIdDesc(
+            CHAT_ROOM_ID, ChatMessageStatus.SENT, VIEWER_PARTICIPANT_ID,
+            PageRequest.of(0, 21)))
             .willReturn(List.of());
         given(participantDisplayService.findDisplays(
             VIEWER_USER_ID, List.of(OTHER_USER_ID)))

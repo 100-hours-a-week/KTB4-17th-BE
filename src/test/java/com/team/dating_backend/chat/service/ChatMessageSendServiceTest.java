@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
 import com.team.dating_backend.chat.dto.request.ChatMessageCreateRequest;
 import com.team.dating_backend.chat.dto.response.ChatMessageCreateResponse;
@@ -63,6 +64,7 @@ class ChatMessageSendServiceTest {
     private ChatRoomPresenceRegistry presenceRegistry;
     private NotificationCreateService notificationCreateService;
     private ProfileRepository profileRepository;
+    private ChatDelegationParticipantService delegationParticipantService;
     private ChatDelegationRescheduleService delegationRescheduleService;
     private ChatMessageSendService service;
     private ChatMessageCreateRequest request;
@@ -81,6 +83,7 @@ class ChatMessageSendServiceTest {
         presenceRegistry = mock(ChatRoomPresenceRegistry.class);
         notificationCreateService = mock(NotificationCreateService.class);
         profileRepository = mock(ProfileRepository.class);
+        delegationParticipantService = mock(ChatDelegationParticipantService.class);
         delegationRescheduleService = mock(ChatDelegationRescheduleService.class);
         service = new ChatMessageSendService(
             chatRoomRepository,
@@ -93,6 +96,7 @@ class ChatMessageSendServiceTest {
             presenceRegistry,
             notificationCreateService,
             profileRepository,
+            delegationParticipantService,
             delegationRescheduleService);
 
         Profile profile = mock(Profile.class);

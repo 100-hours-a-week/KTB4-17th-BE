@@ -21,6 +21,9 @@ import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
 import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
 import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.enums.ChatRoomPresenceAction;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
@@ -149,6 +152,15 @@ class ChatMessageFlowIntegrationTest {
 
     @MockitoBean
     private ChatMessageRateLimiter rateLimiter;
+
+    @MockitoBean
+    private ChatDelegationParticipantService delegationParticipantService;
+
+    @MockitoBean
+    private ChatDelegationRescheduleService delegationRescheduleService;
+
+    @MockitoBean
+    private ChatDelegationMessageRepository delegationMessageRepository;
 
     @MockitoBean
     private ProfileImageGetService profileImageGetService;

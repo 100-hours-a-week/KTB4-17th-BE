@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.delegation.entity;
 
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationMessageStatus;
+import com.team.dating_backend.chat.entity.ChatMessage;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -53,6 +55,13 @@ public class ChatDelegationMessage {
 
     @Column(name = "content", length = 1000)
     private String content;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "chat_message_id", unique = true,
+        foreignKey = @ForeignKey(name = "fk_chat_delegation_message_chat_message")
+    )
+    private ChatMessage chatMessage;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -107,6 +116,14 @@ public class ChatDelegationMessage {
         status = ChatDelegationMessageStatus.READY;
     }
 
+    public void markSent(ChatMessage chatMessage) {
+        if (status != ChatDelegationMessageStatus.READY) {
+            throw new IllegalStateException();
+        }
+        this.chatMessage = Objects.requireNonNull(chatMessage);
+        status = ChatDelegationMessageStatus.SENT;
+    }
+
     public boolean retryGeneration(LocalDateTime nextAttemptAt) {
         requireGenerating();
         generationFailureCount++;
@@ -115,7 +132,6 @@ public class ChatDelegationMessage {
             return false;
         }
         requestId = UUID.randomUUID();
-        contextMessageId = null;
         status = ChatDelegationMessageStatus.RETRY_WAIT;
         this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt);
         return true;
@@ -136,6 +152,31 @@ public class ChatDelegationMessage {
     public void fail() {
         requireGenerating();
         status = ChatDelegationMessageStatus.FAILED;
+    }
+
+    public void retryManually(UUID newRequestId, Long newContextMessageId,
+        LocalDateTime nextAttemptAt) {
+        if (status != ChatDelegationMessageStatus.FAILED) {
+            throw new IllegalStateException();
+        }
+        requestId = Objects.requireNonNull(newRequestId);
+        contextMessageId = Objects.requireNonNull(newContextMessageId);
+        aiMessageId = null;
+        content = null;
+        chatMessage = null;
+        generationFailureCount = 0;
+        transportRetryCount = 0;
+        status = ChatDelegationMessageStatus.RETRY_WAIT;
+        this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt);
+    }
+
+    public void cancel() {
+        if (status == ChatDelegationMessageStatus.GENERATING
+            || status == ChatDelegationMessageStatus.RETRY_WAIT
+            || status == ChatDelegationMessageStatus.READY) {
+            status = ChatDelegationMessageStatus.CANCELLED;
+            nextAttemptAt = null;
+        }
     }
 
     private void requireGenerating() {
