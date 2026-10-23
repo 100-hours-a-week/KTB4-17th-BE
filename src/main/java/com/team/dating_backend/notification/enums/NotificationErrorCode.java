@@ -10,7 +10,8 @@ public enum NotificationErrorCode implements ErrorCode {
     INVALID_NOTIFICATION_CURSOR(HttpStatus.BAD_REQUEST),
     REQUESTER_NOT_ACTIVE(HttpStatus.FORBIDDEN),
     NOTIFICATION_ACCESS_DENIED(HttpStatus.FORBIDDEN),
-    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND);
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND),
+    NOTIFICATION_STREAM_NOT_READY(HttpStatus.SERVICE_UNAVAILABLE);
 
     private final HttpStatus status;
 
