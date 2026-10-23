@@ -25,12 +25,16 @@ public class ChatDelegationGenerationWorker {
     private static final int RECOVERY_MINUTES = 2;
 
     private final ChatDelegationGenerationPersistenceService persistenceService;
+    private final ChatDelegationTerminationService terminationService;
     private final ChatDelegationDeliveryService deliveryService;
     private final ChatDelegationAiClient aiClient;
 
     @Async("chatDelegationExecutor")
     public void generate(Long delegationId) {
         LocalDateTime now = LocalDateTime.now();
+        if (terminationService.completeIfNoResponse(delegationId, now)) {
+            return;
+        }
         execute(persistenceService.prepareNew(delegationId, now));
     }
 

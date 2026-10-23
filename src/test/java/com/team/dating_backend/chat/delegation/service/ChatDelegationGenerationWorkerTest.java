@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 class ChatDelegationGenerationWorkerTest {
 
     private ChatDelegationGenerationPersistenceService persistenceService;
+    private ChatDelegationTerminationService terminationService;
     private ChatDelegationDeliveryService deliveryService;
     private ChatDelegationAiClient aiClient;
     private ChatDelegationGenerationWorker worker;
@@ -29,10 +30,11 @@ class ChatDelegationGenerationWorkerTest {
     @BeforeEach
     void setUp() {
         persistenceService = mock(ChatDelegationGenerationPersistenceService.class);
+        terminationService = mock(ChatDelegationTerminationService.class);
         deliveryService = mock(ChatDelegationDeliveryService.class);
         aiClient = mock(ChatDelegationAiClient.class);
         worker = new ChatDelegationGenerationWorker(
-            persistenceService, deliveryService, aiClient);
+            persistenceService, terminationService, deliveryService, aiClient);
         UUID requestId = UUID.randomUUID();
         input = new GenerationInput(
             30L, requestId, 1, mock(MessageRequest.class));

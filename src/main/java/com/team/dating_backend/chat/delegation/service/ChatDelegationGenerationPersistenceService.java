@@ -56,16 +56,16 @@ public class ChatDelegationGenerationPersistenceService {
 
     @Transactional
     public Optional<GenerationInput> prepareRetry(Long messageId, LocalDateTime now) {
+        ChatDelegation delegation = lockActiveDelegation(messageId).orElse(null);
+        if (delegation == null) {
+            return Optional.empty();
+        }
         ChatDelegationMessage message = messageRepository.findWithLockById(messageId)
             .orElse(null);
         if (message == null
             || message.getStatus() != ChatDelegationMessageStatus.RETRY_WAIT
             || message.getNextAttemptAt() == null
             || message.getNextAttemptAt().isAfter(now)) {
-            return Optional.empty();
-        }
-        ChatDelegation delegation = requireActiveDelegation(message);
-        if (delegation == null) {
             return Optional.empty();
         }
         MessageContext context = conversationService.upTo(
@@ -79,15 +79,15 @@ public class ChatDelegationGenerationPersistenceService {
     @Transactional
     public Optional<GenerationInput> prepareRecovery(
         Long messageId, LocalDateTime deadline, LocalDateTime now) {
+        ChatDelegation delegation = lockActiveDelegation(messageId).orElse(null);
+        if (delegation == null) {
+            return Optional.empty();
+        }
         ChatDelegationMessage message = messageRepository.findWithLockById(messageId)
             .orElse(null);
         if (message == null
             || message.getStatus() != ChatDelegationMessageStatus.GENERATING
             || message.getUpdatedAt().isAfter(deadline)) {
-            return Optional.empty();
-        }
-        ChatDelegation delegation = requireActiveDelegation(message);
-        if (delegation == null) {
             return Optional.empty();
         }
         MessageContext context = conversationService.upTo(
@@ -100,55 +100,60 @@ public class ChatDelegationGenerationPersistenceService {
 
     @Transactional
     public void complete(GenerationInput input, MessageResponse response) {
-        generatingMessage(input).ifPresent(message -> message.ready(response.messageId(), response.aiResponse()));
+        generating(input).ifPresent(generating -> generating.message()
+            .ready(response.messageId(), response.aiResponse()));
     }
 
     @Transactional
     public void retryGeneration(GenerationInput input, LocalDateTime now) {
-        generatingMessage(input).ifPresent(message -> {
+        generating(input).ifPresent(generating -> {
+            ChatDelegationMessage message = generating.message();
             LocalDateTime nextAttemptAt = now.plusMinutes(
                 message.getGenerationFailureCount() + 1L);
             if (!message.retryGeneration(nextAttemptAt)) {
-                requireDelegation(message).fail();
+                generating.delegation().requireRetry();
             }
         });
     }
 
     @Transactional
     public void retryTransport(GenerationInput input, LocalDateTime now) {
-        generatingMessage(input).ifPresent(message -> {
+        generating(input).ifPresent(generating -> {
+            ChatDelegationMessage message = generating.message();
             LocalDateTime nextAttemptAt = now.plusMinutes(
                 message.getTransportRetryCount() + 1L);
             if (!message.retryTransport(nextAttemptAt)) {
-                requireDelegation(message).requireRetry();
+                generating.delegation().requireRetry();
             }
         });
     }
 
     @Transactional
     public void requireRetry(GenerationInput input) {
-        generatingMessage(input).ifPresent(message -> {
-            message.fail();
-            requireDelegation(message).requireRetry();
+        generating(input).ifPresent(generating -> {
+            generating.message().fail();
+            generating.delegation().requireRetry();
         });
     }
 
-    private Optional<ChatDelegationMessage> generatingMessage(GenerationInput input) {
-        return messageRepository.findWithLockById(input.messageId())
-            .filter(message -> message.getStatus() == ChatDelegationMessageStatus.GENERATING)
-            .filter(message -> message.getRequestId().equals(input.requestId()));
+    private Optional<Generating> generating(GenerationInput input) {
+        return messageRepository.findLockTargetById(input.messageId())
+            .flatMap(lockTarget -> delegationRepository
+                .findWithLockById(lockTarget.delegationId()))
+            .filter(delegation -> delegation.getStatus() == ChatDelegationStatus.IN_PROGRESS)
+            .flatMap(delegation -> messageRepository.findWithLockById(input.messageId())
+                .filter(message -> message.getStatus() == ChatDelegationMessageStatus.GENERATING)
+                .filter(message -> message.getRequestId().equals(input.requestId()))
+                .filter(message -> message.getDelegation().getId()
+                    .equals(delegation.getId()))
+                .map(message -> new Generating(delegation, message)));
     }
 
-    private ChatDelegation requireDelegation(ChatDelegationMessage message) {
-        return delegationRepository.findWithLockById(message.getDelegation().getId())
-            .orElseThrow(IllegalStateException::new);
-    }
-
-    private ChatDelegation requireActiveDelegation(ChatDelegationMessage message) {
-        ChatDelegation delegation = requireDelegation(message);
-        return delegation.getStatus() == ChatDelegationStatus.IN_PROGRESS
-            ? delegation
-            : null;
+    private Optional<ChatDelegation> lockActiveDelegation(Long messageId) {
+        return messageRepository.findLockTargetById(messageId)
+            .flatMap(lockTarget -> delegationRepository
+                .findWithLockById(lockTarget.delegationId()))
+            .filter(delegation -> delegation.getStatus() == ChatDelegationStatus.IN_PROGRESS);
     }
 
     private GenerationInput input(
@@ -175,4 +180,8 @@ public class ChatDelegationGenerationPersistenceService {
             Objects.requireNonNull(request);
         }
     }
+
+    private record Generating(
+        ChatDelegation delegation,
+        ChatDelegationMessage message) {}
 }

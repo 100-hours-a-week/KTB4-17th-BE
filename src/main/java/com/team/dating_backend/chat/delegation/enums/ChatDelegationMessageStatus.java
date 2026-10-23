@@ -5,5 +5,6 @@ public enum ChatDelegationMessageStatus {
     RETRY_WAIT,
     READY,
     SENT,
+    CANCELLED,
     FAILED
 }

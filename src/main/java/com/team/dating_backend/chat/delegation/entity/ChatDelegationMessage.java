@@ -154,6 +154,31 @@ public class ChatDelegationMessage {
         status = ChatDelegationMessageStatus.FAILED;
     }
 
+    public void retryManually(UUID newRequestId, Long newContextMessageId,
+        LocalDateTime nextAttemptAt) {
+        if (status != ChatDelegationMessageStatus.FAILED) {
+            throw new IllegalStateException();
+        }
+        requestId = Objects.requireNonNull(newRequestId);
+        contextMessageId = Objects.requireNonNull(newContextMessageId);
+        aiMessageId = null;
+        content = null;
+        chatMessage = null;
+        generationFailureCount = 0;
+        transportRetryCount = 0;
+        status = ChatDelegationMessageStatus.RETRY_WAIT;
+        this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt);
+    }
+
+    public void cancel() {
+        if (status == ChatDelegationMessageStatus.GENERATING
+            || status == ChatDelegationMessageStatus.RETRY_WAIT
+            || status == ChatDelegationMessageStatus.READY) {
+            status = ChatDelegationMessageStatus.CANCELLED;
+            nextAttemptAt = null;
+        }
+    }
+
     private void requireGenerating() {
         if (status != ChatDelegationMessageStatus.GENERATING) {
             throw new IllegalStateException();

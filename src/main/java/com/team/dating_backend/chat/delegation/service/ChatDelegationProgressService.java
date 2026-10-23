@@ -6,7 +6,9 @@ import com.team.dating_backend.chat.delegation.entity.ChatDelegationMessage;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationMessageStatus;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
+import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
+import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -39,9 +41,18 @@ public class ChatDelegationProgressService {
         Map<Integer, ChatDelegationMessage> messages = messageRepository
             .findByDelegationIdOrderByTurn(delegationId).stream()
             .collect(Collectors.toMap(ChatDelegationMessage::getTurn, Function.identity()));
+        ChatParticipant requester = delegation.getRequesterParticipant();
+        Long targetUserId = delegation.getChatRoom().getParticipants().stream()
+            .filter(participant -> !requester.getId().equals(participant.getId()))
+            .map(ChatParticipant::getUserId)
+            .findFirst()
+            .orElseThrow(() -> failure(ChatErrorCode.INTERNAL_SERVER_ERROR));
         return new ChatDelegationProgressResponse(
             delegation.getId(),
             delegation.getStatus(),
+            delegation.isFinished()
+                && requester.getStatus() == ChatParticipantStatus.ACTIVE,
+            targetUserId,
             IntStream.rangeClosed(1, FINAL_TURN)
                 .mapToObj(turn -> toTurnProgress(turn, messages.get(turn)))
                 .toList());

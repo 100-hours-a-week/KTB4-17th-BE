@@ -16,6 +16,14 @@ public interface ChatDelegationRepository extends JpaRepository<ChatDelegation, 
 
     Optional<ChatDelegation> findByChatRoomId(Long chatRoomId);
 
+    @Query("""
+        select new com.team.dating_backend.chat.delegation.repository.ChatDelegationLockTarget(
+            delegation.chatRoom.id, delegation.chatRoom.match.id)
+        from ChatDelegation delegation
+        where delegation.id = :id
+        """)
+    Optional<ChatDelegationLockTarget> findLockTargetById(@Param("id") Long id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select delegation

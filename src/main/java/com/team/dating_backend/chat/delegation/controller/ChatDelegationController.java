@@ -7,6 +7,7 @@ import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationProgre
 import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationStartResponse;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationProgressService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRetryService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -32,6 +33,7 @@ public class ChatDelegationController {
     private final ChatDelegationDraftService draftService;
     private final ChatDelegationStartService startService;
     private final ChatDelegationProgressService progressService;
+    private final ChatDelegationRetryService retryService;
 
     @GetMapping("/{delegationId}")
     public SuccessResponse<ChatDelegationProgressResponse> getProgress(
@@ -76,5 +78,16 @@ public class ChatDelegationController {
             chatRoomId, delegationId, principal.userId(), request.draftId());
         return ResponseEntity.ok(
             SuccessResponse.of("chat_delegation_started", response));
+    }
+
+    @PostMapping("/{delegationId}/retry")
+    public ResponseEntity<SuccessResponse<ChatDelegationStartResponse>> retry(
+        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
+        @PathVariable Long chatRoomId,
+        @PathVariable Long delegationId) {
+        ChatDelegationStartResponse response = retryService.retry(
+            chatRoomId, delegationId, principal.userId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(SuccessResponse.of("chat_delegation_retry_scheduled", response));
     }
 }

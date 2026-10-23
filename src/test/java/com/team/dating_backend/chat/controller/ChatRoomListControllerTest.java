@@ -83,6 +83,7 @@ class ChatRoomListControllerTest {
             55L,
             true,
             new ChatRoomPreview(ChatRoomPreviewType.TEXT, "안녕하세요!", null),
+            null,
             2L,
             ACTIVITY_AT);
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))
@@ -123,6 +124,7 @@ class ChatRoomListControllerTest {
             55L,
             false,
             new ChatRoomPreview(ChatRoomPreviewType.EMPTY, null, null),
+            null,
             0L,
             ACTIVITY_AT);
         given(chatRoomListService.listRooms(AUTHENTICATED_USER_ID, null, 20))

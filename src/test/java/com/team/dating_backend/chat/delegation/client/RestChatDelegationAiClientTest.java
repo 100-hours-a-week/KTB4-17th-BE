@@ -166,7 +166,7 @@ class RestChatDelegationAiClientTest {
         server.reset();
         server.expect(requestTo("http://ai.internal/ai/api/v1/chat_end/drafts"))
             .andRespond(httpRequest -> {
-                throw new IOException("connection timed out");
+                throw new IOException();
             });
         assertError(() -> client.createDraft(request),
             ChatErrorCode.CHAT_DELEGATION_AI_UNAVAILABLE);
