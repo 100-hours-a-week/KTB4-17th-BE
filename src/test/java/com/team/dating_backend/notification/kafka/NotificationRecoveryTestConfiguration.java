@@ -9,6 +9,7 @@ import com.team.dating_backend.notification.config.NotificationAlertProperties;
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -20,7 +21,8 @@ import org.springframework.context.annotation.Import;
 @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationDeliveryProperties.class})
 @Import(
     {NotificationRecoveryReporter.class, NotificationFailureReporter.class,
-        NotificationDeliveryFailureRecoverer.class}
+        NotificationDeliveryFailureRecoverer.class, NotificationDeliveryReadinessTracker.class,
+        NotificationDeliveryReadinessListener.class}
 )
 public class NotificationRecoveryTestConfiguration {
 

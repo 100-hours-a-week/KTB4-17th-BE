@@ -15,6 +15,10 @@ import static org.mockito.Mockito.verify;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.notification.config.NotificationSseProperties;
+import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
+import com.team.dating_backend.notification.sse.NotificationSseLifecycle;
 import com.team.dating_backend.notification.controller.NotificationStreamController;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.entity.Notification;
@@ -84,6 +88,8 @@ import tools.jackson.databind.ObjectMapper;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.config.name=notification-delivery-test",
+        "app.notification.kafka.create-requested-topic=test-create",
+        "app.notification.kafka.delivery-topic=test-delivery",
         "server.address=127.0.0.1",
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=validate",
@@ -326,7 +332,10 @@ class NotificationDeliveryIntegrationTest {
     @EnableAutoConfiguration
     @EntityScan("com.team.dating_backend")
     @EnableJpaRepositories(basePackageClasses = {NotificationRepository.class, UserRepository.class})
-    @EnableConfigurationProperties({NotificationSseProperties.class, SecurityProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationSseProperties.class, SecurityProperties.class, NotificationKafkaProperties.class,
+            NotificationDeliveryProperties.class}
+    )
     @Import(
         {
             SecurityConfig.class,
@@ -337,7 +346,8 @@ class NotificationDeliveryIntegrationTest {
             NotificationStreamExceptionHandler.class,
             NotificationAccessService.class,
             NotificationCreateService.class,
-            NotificationSubscriptionService.class,
+            NotificationSubscriptionService.class, NotificationSseLifecycle.class,
+            NotificationDeliveryReadinessTracker.class,
             NotificationCreatedEventListener.class,
             NotificationEmitterRegistry.class,
             NotificationSseSender.class

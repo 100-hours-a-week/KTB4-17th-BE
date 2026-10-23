@@ -6,12 +6,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.config.NotificationSseProperties;
+import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
+import com.team.dating_backend.notification.sse.NotificationSseLifecycle;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
@@ -39,6 +45,7 @@ class NotificationSubscriptionServiceTest {
     private NotificationSseSender sender;
     private NotificationSseProperties properties;
     private NotificationSubscriptionService service;
+    private NotificationSseLifecycle lifecycle;
 
     @BeforeEach
     void setUp() {
@@ -46,7 +53,8 @@ class NotificationSubscriptionServiceTest {
         registry = new NotificationEmitterRegistry();
         sender = mock(NotificationSseSender.class);
         properties = new NotificationSseProperties();
-        service = new NotificationSubscriptionService(accessService, registry, sender, properties);
+        lifecycle = lifecycle(registry);
+        service = new NotificationSubscriptionService(accessService, registry, sender, properties, lifecycle);
     }
 
     @Test
@@ -61,6 +69,45 @@ class NotificationSubscriptionServiceTest {
 
         assertThat(registry.snapshotAll()).isEmpty();
         verifyNoInteractions(sender);
+    }
+
+    @Test
+    void 수용_불가_요청은_emitter_생성_전에_거절한다() {
+        lifecycle.beginDrain();
+        try (MockedConstruction<SseEmitter> emitters = mockConstruction(SseEmitter.class)) {
+            assertThatThrownBy(() -> service.subscribe(1L))
+                .isInstanceOfSatisfying(NotificationBusinessException.class,
+                    exception -> assertThat(exception.getErrorCode())
+                        .isEqualTo(NotificationErrorCode.NOTIFICATION_STREAM_NOT_READY));
+            assertThat(emitters.constructed()).isEmpty();
+            assertThat(registry.snapshotAll()).isEmpty();
+            verify(accessService).assertActiveUser(1L);
+            verifyNoInteractions(sender);
+        }
+    }
+
+    @Test
+    void 최초_검사_이후_수용이_중단되면_새_연결만_정리하고_기존_연결을_보존한다() throws Exception {
+        var existing = service.subscribe(1L);
+        lifecycle = spy(lifecycle);
+        service = new NotificationSubscriptionService(accessService, registry, sender, properties, lifecycle);
+        try (MockedConstruction<SseEmitter> emitters = mockConstruction(SseEmitter.class, (emitter, context) -> {
+            doAnswer(invocation -> {
+                lifecycle.beginDrain();
+                return null;
+            }).when(emitter).onCompletion(any());
+        })) {
+            assertThatThrownBy(() -> service.subscribe(1L))
+                .isInstanceOfSatisfying(NotificationBusinessException.class,
+                    exception -> assertThat(exception.getErrorCode())
+                        .isEqualTo(NotificationErrorCode.NOTIFICATION_STREAM_NOT_READY));
+            var connection = ArgumentCaptor.forClass(NotificationSseConnection.class);
+            verify(lifecycle).registerIfAccepting(connection.capture());
+            assertThat(connection.getValue().isClosed()).isTrue();
+            assertThat(registry.snapshotAll()).containsExactly(existing);
+            assertThat(existing.isClosed()).isFalse();
+            verify(sender, never()).sendConnected(connection.getValue());
+        }
     }
 
     @Test
@@ -160,7 +207,7 @@ class NotificationSubscriptionServiceTest {
             return null;
         }).when(checkingSender).sendConnected(any());
         NotificationSubscriptionService orderedService = new NotificationSubscriptionService(
-            accessService, orderedRegistry, checkingSender, properties);
+            accessService, orderedRegistry, checkingSender, properties, lifecycle(orderedRegistry));
 
         try {
             NotificationSseConnection connection = orderedService.subscribe(1L);
@@ -171,4 +218,17 @@ class NotificationSubscriptionServiceTest {
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         }
     }
+    private NotificationSseLifecycle lifecycle(NotificationEmitterRegistry registry) {
+        return new NotificationSseLifecycle(new NotificationDeliveryProperties(),
+            new NotificationDeliveryReadinessTracker(kafkaProperties()), registry,
+            new DefaultListableBeanFactory()
+                .getBeanProvider(org.springframework.kafka.config.KafkaListenerEndpointRegistry.class));
+    }
+
+    private NotificationKafkaProperties kafkaProperties() {
+        var properties = new NotificationKafkaProperties();
+        properties.setDeliveryTopic("delivery");
+        return properties;
+    }
+
 }
