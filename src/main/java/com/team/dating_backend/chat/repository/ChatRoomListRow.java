@@ -1,5 +1,7 @@
 package com.team.dating_backend.chat.repository;
 
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import java.time.LocalDateTime;
@@ -17,6 +19,8 @@ public record ChatRoomListRow(
     Long lastMessageImageFileId,
     LocalDateTime lastMessageSenderDeletedAt,
     LocalDateTime lastMessageReceiverDeletedAt,
-    boolean delegationInProgress,
+    Long delegationId,
+    ChatDelegationStatus delegationStatus,
+    ChatDelegationEndType delegationEndType,
     Long unreadCount,
     LocalDateTime activityAt) {}

@@ -74,7 +74,7 @@ class ChatDelegationControllerTest {
         LocalDateTime sentAt = LocalDateTime.of(2026, 10, 22, 12, 0);
         when(progressService.getProgress(10L, 20L, 1L)).thenReturn(
             new ChatDelegationProgressResponse(
-                20L, ChatDelegationStatus.IN_PROGRESS, List.of(
+                20L, ChatDelegationStatus.IN_PROGRESS, false, 2L, List.of(
                     new ChatDelegationProgressResponse.TurnProgress(1, true, sentAt),
                     new ChatDelegationProgressResponse.TurnProgress(2, false, null),
                     new ChatDelegationProgressResponse.TurnProgress(3, false, null))));

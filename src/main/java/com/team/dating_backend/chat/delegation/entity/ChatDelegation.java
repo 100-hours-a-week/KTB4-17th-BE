@@ -170,6 +170,11 @@ public class ChatDelegation {
             || status == ChatDelegationStatus.FAILED;
     }
 
+    public boolean isFinished() {
+        return status == ChatDelegationStatus.COMPLETED
+            || status == ChatDelegationStatus.INTERRUPTED;
+    }
+
     public void fail() {
         requireInProgress();
         nextActionAt = null;

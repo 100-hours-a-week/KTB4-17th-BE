@@ -45,6 +45,7 @@ class ChatDelegationProgressServiceTest {
 
     @Test
     void 요청자에게_턴별_답장_전송_상태를_반환한다() {
+        delegation.complete();
         ChatDelegationMessage sent = message(1);
         ChatMessage chatMessage = new ChatMessage(
             delegation.getChatRoom(), delegation.getRequesterParticipant(),
@@ -56,6 +57,8 @@ class ChatDelegationProgressServiceTest {
 
         ChatDelegationProgressResponse response = service.getProgress(10L, 20L, 1L);
 
+        assertThat(response.isBlockPromptRequired()).isTrue();
+        assertThat(response.targetUserId()).isEqualTo(2L);
         assertThat(response.turns()).containsExactly(
             new ChatDelegationProgressResponse.TurnProgress(1, true, NOW),
             new ChatDelegationProgressResponse.TurnProgress(2, false, null),

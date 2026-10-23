@@ -7,6 +7,8 @@ import java.util.List;
 public record ChatDelegationProgressResponse(
     Long delegationId,
     ChatDelegationStatus status,
+    boolean isBlockPromptRequired,
+    Long targetUserId,
     List<TurnProgress> turns) {
 
     public record TurnProgress(int turn, boolean completed, LocalDateTime sentAt) {}

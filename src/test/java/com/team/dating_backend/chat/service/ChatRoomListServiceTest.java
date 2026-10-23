@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.chat.dto.read.ChatRoomCursor;
 import com.team.dating_backend.chat.dto.read.ChatRoomPage;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatRoomPreviewType;
@@ -19,6 +21,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.domain.PageRequest;
 
@@ -143,7 +146,9 @@ class ChatRoomListServiceTest {
             900L,
             null,
             null,
-            false,
+            null,
+            null,
+            null,
             3L,
             BASE_TIME);
 
@@ -199,7 +204,8 @@ class ChatRoomListServiceTest {
         ChatRoomListRow row = new ChatRoomListRow(
             10L, VIEWER_PARTICIPANT_ID, true, 2L, ChatRoomStatus.ACTIVE,
             100L, VIEWER_PARTICIPANT_ID, ChatMessageType.TEXT, "숨길 메시지", null,
-            null, null, true, 0L, BASE_TIME);
+            null, null, 20L, ChatDelegationStatus.IN_PROGRESS,
+            ChatDelegationEndType.GENTLE, 0L, BASE_TIME);
 
         ChatRoomPage result = listSingle(row);
 
@@ -207,6 +213,21 @@ class ChatRoomListServiceTest {
             .isEqualTo(new com.team.dating_backend.chat.dto.read.ChatRoomPreview(
                 ChatRoomPreviewType.TEXT,
                 "AI가 자연스럽게 대화를 마무리하고 있어요.", null));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ChatDelegationStatus.class, names = {"COMPLETED", "INTERRUPTED"})
+    void 종료된_위임은_채팅방_목록에_완료_문구를_표시한다(
+        ChatDelegationStatus status) {
+        ChatRoomListRow row = new ChatRoomListRow(
+            10L, VIEWER_PARTICIPANT_ID, true, 2L, ChatRoomStatus.ENDED,
+            100L, OTHER_PARTICIPANT_ID, ChatMessageType.TEXT, "마지막 메시지", null,
+            null, null, 20L, status, ChatDelegationEndType.GENTLE, 0L, BASE_TIME);
+
+        ChatRoomPage result = listSingle(row);
+
+        assertThat(result.items().getFirst().preview().text())
+            .isEqualTo("채팅 위임 완료되었습니다.");
     }
 
     private ChatRoomPage listSingle(ChatRoomListRow row) {
@@ -230,7 +251,9 @@ class ChatRoomListServiceTest {
             null,
             null,
             null,
-            false,
+            null,
+            null,
+            null,
             0L,
             BASE_TIME);
     }
@@ -249,7 +272,9 @@ class ChatRoomListServiceTest {
             null,
             null,
             null,
-            false,
+            null,
+            null,
+            null,
             0L,
             activityAt);
     }
@@ -272,7 +297,9 @@ class ChatRoomListServiceTest {
             null,
             senderDeletedAt,
             receiverDeletedAt,
-            false,
+            null,
+            null,
+            null,
             0L,
             activityAt);
     }
