@@ -47,6 +47,7 @@ import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.ConsumerAwareRebalanceListener;
 import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.kafka.support.KafkaUtils;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
@@ -247,6 +248,12 @@ class NotificationKafkaConfigurationTest {
                 var factory = context.getBean("notificationDeliveryKafkaListenerContainerFactory",
                     ConcurrentKafkaListenerContainerFactory.class);
                 var container = (ConcurrentMessageListenerContainer<?, ?>) factory.createContainer("test-topic");
+                assertThat(factory.getContainerProperties().getConsumerRebalanceListener())
+                    .isInstanceOf(ConsumerAwareRebalanceListener.class);
+                var creation = context.getBean("notificationCreateRequestedKafkaListenerContainerFactory",
+                    ConcurrentKafkaListenerContainerFactory.class);
+                assertThat(creation.getContainerProperties().getConsumerRebalanceListener()).isNull();
+                assertThat(context.getBeansOfType(ConsumerAwareRebalanceListener.class)).isEmpty();
                 assertThat(container.isAutoStartup()).isTrue();
                 assertThat(container.getConcurrency()).isEqualTo(3);
                 assertThat(container.getContainerProperties().getGroupId()).startsWith("prod-notification-sse-v1-");

@@ -5,6 +5,7 @@ import com.team.dating_backend.notification.config.NotificationSseProperties;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
+import com.team.dating_backend.notification.sse.NotificationSseLifecycle;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -24,9 +25,11 @@ public class NotificationSubscriptionService {
     private final NotificationEmitterRegistry registry;
     private final NotificationSseSender sender;
     private final NotificationSseProperties properties;
+    private final NotificationSseLifecycle lifecycle;
 
     public NotificationSseConnection subscribe(Long userId) throws IOException {
         notificationAccessService.assertActiveUser(userId);
+        lifecycle.assertAcceptingSubscriptions();
 
         NotificationSseConnection connection = new NotificationSseConnection(
             userId,
@@ -39,7 +42,7 @@ public class NotificationSubscriptionService {
 
             connection.lockForSend();
             try {
-                if (!registry.register(connection)) {
+                if (!lifecycle.registerIfAccepting(connection)) {
                     throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
                 }
 

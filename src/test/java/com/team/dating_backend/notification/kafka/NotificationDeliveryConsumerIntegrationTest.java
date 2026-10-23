@@ -25,25 +25,22 @@ import com.team.dating_backend.notification.service.NotificationDeliveryEventVal
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
@@ -66,7 +63,6 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
-import org.springframework.kafka.listener.ConsumerAwareRebalanceListener;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -256,20 +252,10 @@ class NotificationDeliveryConsumerIntegrationTest {
 
     private void start(AssertableApplicationContext context, int partitions) {
         var container = listener(context);
-        Set<TopicPartition> positioned = ConcurrentHashMap.newKeySet();
-        container.getContainerProperties().setConsumerRebalanceListener(new ConsumerAwareRebalanceListener() {
-            @Override
-            public void onPartitionsAssigned(Consumer<?, ?> consumer, Collection<TopicPartition> assigned) {
-                assigned.forEach(partition -> {
-                    consumer.position(partition, Duration.ofSeconds(15));
-                    positioned.add(partition);
-                });
-            }
-        });
         container.start();
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
             assertThat(container.getAssignedPartitions()).hasSize(partitions);
-            assertThat(positioned).hasSize(partitions);
+            assertThat(context.getBean(NotificationDeliveryReadinessTracker.class).isReady()).isTrue();
         });
     }
 

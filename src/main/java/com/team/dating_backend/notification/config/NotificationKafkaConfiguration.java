@@ -3,6 +3,8 @@ package com.team.dating_backend.notification.config;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryFailureRecoverer;
+import com.team.dating_backend.notification.kafka.NotificationDeliveryReadinessListener;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
 import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import java.util.HashMap;
 import java.util.List;
@@ -75,7 +77,9 @@ public class NotificationKafkaConfiguration {
         JsonMapper jsonMapper,
         NotificationDeliveryProperties properties,
         NotificationSseProcessIdentity processIdentity,
-        NotificationDeliveryFailureRecoverer recoverer) {
+        NotificationDeliveryFailureRecoverer recoverer,
+        NotificationDeliveryReadinessListener readinessListener,
+        NotificationDeliveryReadinessTracker readinessTracker) {
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory = listenerContainerFactory(
             configurer, kafkaConsumerFactory, jsonMapper, NotificationDeliveryEvent.class, "latest",
             Map.of(
@@ -84,7 +88,8 @@ public class NotificationKafkaConfiguration {
                 ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, properties.getMaxPollIntervalMs()));
         factory.setAutoStartup(properties.isEnabled());
         factory.setConcurrency(properties.getConcurrency());
-        factory.setCommonErrorHandler(notificationDeliveryErrorHandler(recoverer));
+        factory.setCommonErrorHandler(notificationDeliveryErrorHandler(recoverer, readinessTracker));
+        factory.getContainerProperties().setConsumerRebalanceListener(readinessListener.createRebalanceListener());
         factory.getContainerProperties().setGroupId(processIdentity.getGroupId());
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.getContainerProperties().setSyncCommits(true);
@@ -92,7 +97,9 @@ public class NotificationKafkaConfiguration {
         return factory;
     }
 
-    private CommonErrorHandler notificationDeliveryErrorHandler(NotificationDeliveryFailureRecoverer recoverer) {
+    private CommonErrorHandler notificationDeliveryErrorHandler(
+        NotificationDeliveryFailureRecoverer recoverer,
+        NotificationDeliveryReadinessTracker readinessTracker) {
         var stoppingErrorHandler = new CommonContainerStoppingErrorHandler();
         return new CommonErrorHandler() {
             @Override
@@ -105,8 +112,12 @@ public class NotificationKafkaConfiguration {
                     recoverer.accept(record, thrownException);
                     return true;
                 } catch (RuntimeException failure) {
+                    readinessTracker.invalidateAll();
                     stoppingErrorHandler.handleRemaining(failure, List.of(record), consumer, container);
                     return false;
+                } catch (Error error) {
+                    readinessTracker.invalidateAll();
+                    throw error;
                 }
             }
 
@@ -116,6 +127,7 @@ public class NotificationKafkaConfiguration {
                 List<ConsumerRecord<?, ?>> records,
                 Consumer<?, ?> consumer,
                 MessageListenerContainer container) {
+                readinessTracker.invalidateAll();
                 stoppingErrorHandler.handleRemaining(thrownException, records, consumer, container);
             }
 
@@ -125,6 +137,7 @@ public class NotificationKafkaConfiguration {
                 Consumer<?, ?> consumer,
                 MessageListenerContainer container,
                 boolean batchListener) {
+                readinessTracker.invalidateAll();
                 stoppingErrorHandler.handleOtherException(thrownException, consumer, container, batchListener);
             }
         };

@@ -85,6 +85,18 @@ class NotificationStreamControllerTest {
     }
 
     @Test
+    void 미준비_구독은_SSE만_요청해도_503_errorCode_JSON으로_반환한다() throws Exception {
+        willThrow(new NotificationBusinessException(NotificationErrorCode.NOTIFICATION_STREAM_NOT_READY))
+            .given(service).subscribe(1L);
+        mockMvc.perform(get("/api/v1/notifications/stream").accept(MediaType.TEXT_EVENT_STREAM))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(request().asyncNotStarted())
+            .andExpect(header().string("Cache-Control", "no-cache, no-store"))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(content().string("{\"errorCode\":\"NOTIFICATION_STREAM_NOT_READY\"}"));
+    }
+
+    @Test
     void ACTIVE_검증_실패는_SSE가_아닌_403_JSON_오류_코드로_반환한다() throws Exception {
         willThrow(new NotificationBusinessException(NotificationErrorCode.REQUESTER_NOT_ACTIVE))
             .given(service).subscribe(1L);
