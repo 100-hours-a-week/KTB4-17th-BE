@@ -10,8 +10,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Configuration(proxyBeanMethods = false)
 @EnableAsync
 @ConditionalOnProperty(
-    prefix = "app.chat", name = "runtime-enabled", havingValue = "false",
-    matchIfMissing = true
+    prefix = "app.chat", name = "runtime-enabled", havingValue = "true"
 )
 public class ChatDelegationAsyncConfig {
 

@@ -17,8 +17,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 @ConditionalOnProperty(
-    prefix = "app.chat", name = "runtime-enabled", havingValue = "false",
-    matchIfMissing = true
+    prefix = "app.chat", name = "runtime-enabled", havingValue = "true"
 )
 public class ChatDelegationGenerationWorker {
 
