@@ -53,7 +53,8 @@ class NotificationDeliveryProducerIntegrationTest {
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
             .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationDeliveryProducer.class,
-                PropertiesConfiguration.class)
+                PropertiesConfiguration.class, NotificationRecoveryTestConfiguration.class)
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("app.notification.kafka.delivery-topic=" + topic)
             .withInitializer(context -> {
