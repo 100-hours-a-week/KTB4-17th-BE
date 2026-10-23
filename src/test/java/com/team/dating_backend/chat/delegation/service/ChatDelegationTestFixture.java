@@ -13,8 +13,7 @@ final class ChatDelegationTestFixture {
 
     static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 23, 12, 0);
 
-    private ChatDelegationTestFixture() {
-    }
+    private ChatDelegationTestFixture() {}
 
     static Fixture inProgress() {
         Match userMatch = new Match(1L, 2L, NOW.minusDays(1));

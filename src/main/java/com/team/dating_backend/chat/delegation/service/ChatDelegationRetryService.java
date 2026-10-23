@@ -81,8 +81,7 @@ public class ChatDelegationRetryService {
         ChatParticipant requester) {
         List<ChatParticipant> participants = room.getParticipants();
         boolean allParticipantsActive = participants.size() == 2
-            && participants.stream().allMatch(participant -> participant.getStatus()
-                == ChatParticipantStatus.ACTIVE);
+            && participants.stream().allMatch(participant -> participant.getStatus() == ChatParticipantStatus.ACTIVE);
         if (room.getStatus() != ChatRoomStatus.ACTIVE || !allParticipantsActive) {
             throw failure(ChatErrorCode.CHAT_ROOM_NOT_ACTIVE);
         }

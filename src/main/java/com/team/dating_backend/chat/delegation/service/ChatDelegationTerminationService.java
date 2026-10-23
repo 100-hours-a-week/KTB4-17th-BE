@@ -63,7 +63,7 @@ public class ChatDelegationTerminationService {
         }
 
         ChatMessage latestMessage = chatMessageRepository.findRecentByChatRoomIdAndStatus(
-                room.getId(), ChatMessageStatus.SENT, Limit.of(1))
+            room.getId(), ChatMessageStatus.SENT, Limit.of(1))
             .stream()
             .findFirst()
             .orElseThrow(IllegalStateException::new);
@@ -102,8 +102,7 @@ public class ChatDelegationTerminationService {
         return room.getStatus() == ChatRoomStatus.ACTIVE
             && room.getParticipants().size() == 2
             && room.getParticipants().stream()
-                .allMatch(participant -> participant.getStatus()
-                    == ChatParticipantStatus.ACTIVE);
+                .allMatch(participant -> participant.getStatus() == ChatParticipantStatus.ACTIVE);
     }
 
     private void interrupt(ChatDelegation delegation) {

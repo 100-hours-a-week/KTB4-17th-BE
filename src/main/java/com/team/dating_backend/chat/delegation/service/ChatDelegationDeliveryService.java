@@ -102,8 +102,7 @@ public class ChatDelegationDeliveryService {
             && room.getStatus() == ChatRoomStatus.ACTIVE
             && room.getParticipants().size() == 2
             && room.getParticipants().stream()
-                .allMatch(participant -> participant.getStatus()
-                    == ChatParticipantStatus.ACTIVE);
+                .allMatch(participant -> participant.getStatus() == ChatParticipantStatus.ACTIVE);
     }
 
     private void cancelUnavailable(

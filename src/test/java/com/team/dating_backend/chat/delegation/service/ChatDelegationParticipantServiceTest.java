@@ -35,9 +35,11 @@ class ChatDelegationParticipantServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ChatDelegationStatus.class, names = {
-        "IN_PROGRESS", "RETRY_REQUIRED", "FAILED"
-    })
+    @EnumSource(
+        value = ChatDelegationStatus.class, names = {
+            "IN_PROGRESS", "RETRY_REQUIRED", "FAILED"
+        }
+    )
     void 위임_진행_중에는_요청자가_메시지를_보내거나_나갈_수_없다(
         ChatDelegationStatus status) {
         ChatDelegationTestFixture.Fixture fixture = ChatDelegationTestFixture.inProgress();

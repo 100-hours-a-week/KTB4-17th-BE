@@ -142,8 +142,7 @@ public class ChatDelegationGenerationPersistenceService {
                 .findWithLockById(lockTarget.delegationId()))
             .filter(delegation -> delegation.getStatus() == ChatDelegationStatus.IN_PROGRESS)
             .flatMap(delegation -> messageRepository.findWithLockById(input.messageId())
-                .filter(message -> message.getStatus()
-                    == ChatDelegationMessageStatus.GENERATING)
+                .filter(message -> message.getStatus() == ChatDelegationMessageStatus.GENERATING)
                 .filter(message -> message.getRequestId().equals(input.requestId()))
                 .filter(message -> message.getDelegation().getId()
                     .equals(delegation.getId()))
@@ -154,8 +153,7 @@ public class ChatDelegationGenerationPersistenceService {
         return messageRepository.findLockTargetById(messageId)
             .flatMap(lockTarget -> delegationRepository
                 .findWithLockById(lockTarget.delegationId()))
-            .filter(delegation -> delegation.getStatus()
-                == ChatDelegationStatus.IN_PROGRESS);
+            .filter(delegation -> delegation.getStatus() == ChatDelegationStatus.IN_PROGRESS);
     }
 
     private GenerationInput input(
