@@ -1,6 +1,7 @@
 package com.team.dating_backend.notification.alert;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.DeliveryFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
@@ -84,6 +85,13 @@ public class DiscordWebhookClient {
             fields.put("retryable", field(details.retryable()));
             fields.put("processingExceptionType", field(details.processingExceptionType()));
             fields.put("processingCauseType", field(details.processingCauseType()));
+        }
+
+        DeliveryFailureDetails delivery = context.deliveryDetails();
+        if (delivery != null) {
+            fields.put("deliverySchemaVersion", field(delivery.schemaVersion()));
+            fields.put("notificationId", field(delivery.notificationId()));
+            fields.put("notificationCreatedAt", field(delivery.createdAt()));
         }
 
         int available = MAX_CONTENT_LENGTH - CONTENT_HEADER.length() - CONTENT_FOOTER.length()

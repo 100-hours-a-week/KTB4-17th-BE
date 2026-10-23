@@ -2,10 +2,12 @@ package com.team.dating_backend.notification.alert;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 public record NotificationFailureContext(
     NotificationFailureCode errorCode,
@@ -16,12 +18,27 @@ public record NotificationFailureContext(
     Instant occurredAt,
     String exceptionType,
     String causeType,
-    KafkaFailureDetails kafkaDetails) {
+    KafkaFailureDetails kafkaDetails,
+    DeliveryFailureDetails deliveryDetails) {
 
     public NotificationFailureContext {
         if (errorCode == null || occurredAt == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    public NotificationFailureContext(
+        NotificationFailureCode errorCode,
+        String sourceEventId,
+        Long recipientUserId,
+        NotificationType type,
+        Instant requestedAt,
+        Instant occurredAt,
+        String exceptionType,
+        String causeType,
+        KafkaFailureDetails kafkaDetails) {
+        this(errorCode, sourceEventId, recipientUserId, type, requestedAt, occurredAt, exceptionType, causeType,
+            kafkaDetails, null);
     }
 
     public NotificationFailureContext(
@@ -62,6 +79,32 @@ public record NotificationFailureContext(
             kafkaDetails);
     }
 
+    public static NotificationFailureContext fromDelivery(
+        NotificationFailureCode errorCode,
+        NotificationDeliveryEvent event,
+        Throwable exception,
+        Instant occurredAt,
+        KafkaFailureDetails kafkaDetails) {
+        var notification = event == null ? null : event.notification();
+        DeliveryFailureDetails details = event == null
+            ? null
+            : new DeliveryFailureDetails(
+                event.schemaVersion(),
+                notification == null ? null : notification.notificationId(),
+                notification == null ? null : notification.createdAt());
+        return new NotificationFailureContext(
+            errorCode,
+            event == null ? null : event.sourceEventId(),
+            event == null ? null : event.recipientUserId(),
+            notificationType(notification == null ? null : notification.type()),
+            null,
+            occurredAt,
+            exceptionType(exception),
+            causeType(exception),
+            kafkaDetails,
+            details);
+    }
+
     public FailureStage failureStage() {
         return switch (errorCode) {
             case PUBLISH_SUBMISSION_REJECTED -> FailureStage.PUBLISH_SUBMISSION;
@@ -70,9 +113,22 @@ public record NotificationFailureContext(
             case RETRY_PUBLISH_FAILED -> FailureStage.RETRY_PUBLISH;
             case DLT_PUBLISH_FAILED -> FailureStage.DLT_PUBLISH;
             case DLT_RECORDED -> FailureStage.CREATION_PROCESSING;
+            case DELIVERY_DESERIALIZATION_FAILED, DELIVERY_INVALID_EVENT,
+                DELIVERY_PROCESSING_FAILED -> FailureStage.DELIVERY_CONSUMPTION;
             case ALERT_SUBMISSION_REJECTED -> FailureStage.ALERT_SUBMISSION;
             case ALERT_WEBHOOK_FAILED -> FailureStage.ALERT_WEBHOOK;
         };
+    }
+
+    private static NotificationType notificationType(String type) {
+        if (type == null) {
+            return null;
+        }
+        try {
+            return NotificationType.valueOf(type);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private static String exceptionType(Throwable exception) {
@@ -90,9 +146,12 @@ public record NotificationFailureContext(
         CREATION_PROCESSING,
         RETRY_PUBLISH,
         DLT_PUBLISH,
+        DELIVERY_CONSUMPTION,
         ALERT_SUBMISSION,
         ALERT_WEBHOOK
     }
+
+    public record DeliveryFailureDetails(Integer schemaVersion, Long notificationId, LocalDateTime createdAt) {}
 
     public record KafkaLocation(String topic, Integer partition, Long offset) {
 
