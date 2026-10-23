@@ -59,6 +59,7 @@ public class ChatDelegationDeliveryService {
             .findWithLockById(delegationMessageId)
             .orElse(null);
         if (!isDeliverable(lockTarget, userMatch, room, delegation, delegationMessage)) {
+            cancelUnavailable(delegation, delegationMessage, room);
             return false;
         }
 
@@ -103,6 +104,20 @@ public class ChatDelegationDeliveryService {
             && room.getParticipants().stream()
                 .allMatch(participant -> participant.getStatus()
                     == ChatParticipantStatus.ACTIVE);
+    }
+
+    private void cancelUnavailable(
+        ChatDelegation delegation,
+        ChatDelegationMessage message,
+        ChatRoom room) {
+        if (message != null) {
+            message.cancel();
+        }
+        if (delegation != null
+            && delegation.isActionRestricted()
+            && (room == null || room.getStatus() != ChatRoomStatus.ACTIVE)) {
+            delegation.interrupt();
+        }
     }
 
 }

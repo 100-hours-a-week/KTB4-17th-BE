@@ -28,6 +28,7 @@ import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationProgressService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRetryService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.chat.service.ChatMessageImageAccessService;
 import com.team.dating_backend.chat.service.ChatMessageListService;
@@ -54,6 +55,7 @@ class ChatRuntimeConditionTest {
         .withBean(ChatDelegationStartService.class, () -> mock(ChatDelegationStartService.class))
         .withBean(ChatDelegationProgressService.class,
             () -> mock(ChatDelegationProgressService.class))
+        .withBean(ChatDelegationRetryService.class, () -> mock(ChatDelegationRetryService.class))
         .withBean(ChatMessageImageAccessService.class,
             () -> mock(ChatMessageImageAccessService.class))
         .withBean(ChatMessageListService.class, () -> mock(ChatMessageListService.class))

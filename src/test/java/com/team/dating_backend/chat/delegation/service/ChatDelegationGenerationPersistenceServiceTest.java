@@ -15,6 +15,7 @@ import com.team.dating_backend.chat.delegation.entity.ChatDelegationMessage;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationEndType;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationMessageStatus;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageLockTarget;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationConversationService.MessageContext;
@@ -73,6 +74,7 @@ class ChatDelegationGenerationPersistenceServiceTest {
         verify(messageRepository, times(1)).save(any());
 
         ChatDelegationMessage saved = capturedMessage();
+        givenLockTarget(30L, 20L);
         when(messageRepository.findWithLockById(30L)).thenReturn(Optional.of(saved));
         MessageResponse response = new MessageResponse(
             10L, 50L, "답장", "SUCCESS", 1, false, 1);
@@ -88,6 +90,7 @@ class ChatDelegationGenerationPersistenceServiceTest {
         ChatDelegationMessage generation = message(fixture.delegation(), 30L, 101L);
         UUID generationRequestId = generation.getRequestId();
         generation.retryGeneration(NOW.minusMinutes(1));
+        givenLockTarget(30L, 20L);
         when(messageRepository.findWithLockById(30L)).thenReturn(Optional.of(generation));
         when(delegationRepository.findWithLockById(20L))
             .thenReturn(Optional.of(fixture.delegation()));
@@ -102,6 +105,7 @@ class ChatDelegationGenerationPersistenceServiceTest {
         ChatDelegationMessage transport = message(fixture.delegation(), 31L, 105L);
         UUID transportRequestId = transport.getRequestId();
         transport.retryTransport(NOW.minusMinutes(1));
+        givenLockTarget(31L, 20L);
         when(messageRepository.findWithLockById(31L)).thenReturn(Optional.of(transport));
         when(conversationService.upTo(10L, fixture.requester().getId(), 105L))
             .thenReturn(context(105L));
@@ -113,23 +117,25 @@ class ChatDelegationGenerationPersistenceServiceTest {
     }
 
     @Test
-    void 재시도_한도에_도달하면_실패_종류에_맞게_위임을_종료한다() {
+    void 자동_재시도가_모두_실패하면_수동_재시도를_기다린다() {
         Fixture generationFixture = fixture(20L);
         ChatDelegationMessage generation = message(
             generationFixture.delegation(), 30L, 101L);
         prepareThirdGenerationAttempt(generation);
+        givenLockTarget(30L, 20L);
         when(messageRepository.findWithLockById(30L)).thenReturn(Optional.of(generation));
         when(delegationRepository.findWithLockById(20L))
             .thenReturn(Optional.of(generationFixture.delegation()));
         service.retryGeneration(input(generation), NOW);
 
         assertThat(generationFixture.delegation().getStatus())
-            .isEqualTo(ChatDelegationStatus.FAILED);
+            .isEqualTo(ChatDelegationStatus.RETRY_REQUIRED);
 
         Fixture transportFixture = fixture(21L);
         ChatDelegationMessage transport = message(
             transportFixture.delegation(), 31L, 101L);
         prepareThirdTransportAttempt(transport);
+        givenLockTarget(31L, 21L);
         when(messageRepository.findWithLockById(31L)).thenReturn(Optional.of(transport));
         when(delegationRepository.findWithLockById(21L))
             .thenReturn(Optional.of(transportFixture.delegation()));
@@ -145,6 +151,7 @@ class ChatDelegationGenerationPersistenceServiceTest {
         ChatDelegationMessage message = message(fixture.delegation(), 30L, 101L);
         UUID requestId = message.getRequestId();
         ReflectionTestUtils.setField(message, "updatedAt", NOW.minusMinutes(3));
+        givenLockTarget(30L, 20L);
         when(messageRepository.findWithLockById(30L)).thenReturn(Optional.of(message));
         when(delegationRepository.findWithLockById(20L))
             .thenReturn(Optional.of(fixture.delegation()));
@@ -158,6 +165,24 @@ class ChatDelegationGenerationPersistenceServiceTest {
         assertThat(message.getUpdatedAt()).isEqualTo(NOW);
         assertThat(message.getTransportRetryCount()).isZero();
         assertThat(message.getGenerationFailureCount()).isZero();
+    }
+
+    @Test
+    void 종료된_위임에_늦게_도착한_AI_응답은_저장하지_않는다() {
+        Fixture fixture = fixture(20L);
+        ChatDelegationMessage message = message(fixture.delegation(), 30L, 101L);
+        GenerationInput input = input(message);
+        message.cancel();
+        fixture.delegation().interrupt();
+        givenLockTarget(30L, 20L);
+        when(delegationRepository.findWithLockById(20L))
+            .thenReturn(Optional.of(fixture.delegation()));
+
+        service.complete(input, new MessageResponse(
+            10L, 50L, "늦은 답장", "SUCCESS", 1, false, 1));
+
+        assertThat(message.getStatus()).isEqualTo(ChatDelegationMessageStatus.CANCELLED);
+        assertThat(message.getContent()).isNull();
     }
 
     private ChatDelegationMessage capturedMessage() {
@@ -187,6 +212,11 @@ class ChatDelegationGenerationPersistenceServiceTest {
         return new GenerationInput(
             message.getId(), message.getRequestId(), message.getTurn(),
             mock(com.team.dating_backend.chat.delegation.dto.ai.ChatDelegationAiPayloads.MessageRequest.class));
+    }
+
+    private void givenLockTarget(Long messageId, Long delegationId) {
+        when(messageRepository.findLockTargetById(messageId)).thenReturn(Optional.of(
+            new ChatDelegationMessageLockTarget(delegationId, 10L, 5L, 1)));
     }
 
     private ChatDelegationMessage message(

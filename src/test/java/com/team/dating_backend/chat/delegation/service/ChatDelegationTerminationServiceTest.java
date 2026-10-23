@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.team.dating_backend.chat.delegation.entity.ChatDelegation;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationLockTarget;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatParticipant;
@@ -33,6 +34,7 @@ class ChatDelegationTerminationServiceTest {
     private static final LocalDateTime NOW = ChatDelegationTestFixture.NOW;
 
     private ChatDelegationRepository delegationRepository;
+    private ChatDelegationMessageRepository delegationMessageRepository;
     private ChatRoomRepository chatRoomRepository;
     private ChatMessageRepository chatMessageRepository;
     private MatchRepository matchRepository;
@@ -41,12 +43,13 @@ class ChatDelegationTerminationServiceTest {
     @BeforeEach
     void setUp() {
         delegationRepository = mock(ChatDelegationRepository.class);
+        delegationMessageRepository = mock(ChatDelegationMessageRepository.class);
         chatRoomRepository = mock(ChatRoomRepository.class);
         chatMessageRepository = mock(ChatMessageRepository.class);
         matchRepository = mock(MatchRepository.class);
         service = new ChatDelegationTerminationService(
-            delegationRepository, chatRoomRepository,
-            chatMessageRepository, matchRepository);
+            delegationRepository, delegationMessageRepository,
+            chatRoomRepository, chatMessageRepository, matchRepository);
     }
 
     @Test

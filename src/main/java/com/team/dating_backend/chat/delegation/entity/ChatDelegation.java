@@ -143,7 +143,25 @@ public class ChatDelegation {
 
     public void requireRetry() {
         requireInProgress();
+        nextActionAt = null;
         status = ChatDelegationStatus.RETRY_REQUIRED;
+    }
+
+    public void retry() {
+        if (status != ChatDelegationStatus.RETRY_REQUIRED
+            && status != ChatDelegationStatus.FAILED) {
+            throw new IllegalStateException();
+        }
+        nextActionAt = null;
+        status = ChatDelegationStatus.IN_PROGRESS;
+    }
+
+    public void interrupt() {
+        if (!isActionRestricted()) {
+            throw new IllegalStateException();
+        }
+        nextActionAt = null;
+        status = ChatDelegationStatus.INTERRUPTED;
     }
 
     public boolean isActionRestricted() {
@@ -154,6 +172,7 @@ public class ChatDelegation {
 
     public void fail() {
         requireInProgress();
+        nextActionAt = null;
         status = ChatDelegationStatus.FAILED;
     }
 

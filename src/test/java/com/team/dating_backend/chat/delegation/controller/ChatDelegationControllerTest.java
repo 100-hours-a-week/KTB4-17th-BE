@@ -17,6 +17,7 @@ import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationDraftService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationProgressService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRetryService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -39,6 +40,7 @@ class ChatDelegationControllerTest {
     private ChatDelegationDraftService service;
     private ChatDelegationStartService startService;
     private ChatDelegationProgressService progressService;
+    private ChatDelegationRetryService retryService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -46,8 +48,10 @@ class ChatDelegationControllerTest {
         service = Mockito.mock(ChatDelegationDraftService.class);
         startService = Mockito.mock(ChatDelegationStartService.class);
         progressService = Mockito.mock(ChatDelegationProgressService.class);
+        retryService = Mockito.mock(ChatDelegationRetryService.class);
         mvc = MockMvcBuilders.standaloneSetup(
-            new ChatDelegationController(service, startService, progressService))
+            new ChatDelegationController(
+                service, startService, progressService, retryService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalResolver()).build();
     }

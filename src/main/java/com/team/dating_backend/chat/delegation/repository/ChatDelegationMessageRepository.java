@@ -39,6 +39,16 @@ public interface ChatDelegationMessageRepository
 
     List<ChatDelegationMessage> findByDelegationIdOrderByTurn(Long delegationId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select message
+        from ChatDelegationMessage message
+        where message.delegation.id = :delegationId
+        order by message.turn desc
+        """)
+    List<ChatDelegationMessage> findAllWithLockByDelegationIdOrderByTurnDesc(
+        @Param("delegationId") Long delegationId);
+
     @Query("""
         select message.id
         from ChatDelegationMessage message

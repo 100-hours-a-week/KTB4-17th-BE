@@ -1,8 +1,10 @@
 package com.team.dating_backend.chat.delegation.service;
 
 import com.team.dating_backend.chat.delegation.entity.ChatDelegation;
+import com.team.dating_backend.chat.delegation.entity.ChatDelegationMessage;
 import com.team.dating_backend.chat.delegation.enums.ChatDelegationStatus;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationLockTarget;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
 import com.team.dating_backend.chat.entity.ChatMessage;
 import com.team.dating_backend.chat.entity.ChatRoom;
@@ -16,6 +18,7 @@ import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.matching.enums.MatchEndReason;
 import com.team.dating_backend.matching.repository.MatchRepository;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
@@ -28,6 +31,7 @@ public class ChatDelegationTerminationService {
     private static final int RESPONSE_TIMEOUT_HOURS = 24;
 
     private final ChatDelegationRepository delegationRepository;
+    private final ChatDelegationMessageRepository delegationMessageRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final MatchRepository matchRepository;
@@ -54,6 +58,7 @@ public class ChatDelegationTerminationService {
             return true;
         }
         if (!isActive(room)) {
+            interrupt(delegation);
             return true;
         }
 
@@ -99,5 +104,12 @@ public class ChatDelegationTerminationService {
             && room.getParticipants().stream()
                 .allMatch(participant -> participant.getStatus()
                     == ChatParticipantStatus.ACTIVE);
+    }
+
+    private void interrupt(ChatDelegation delegation) {
+        delegation.interrupt();
+        List<ChatDelegationMessage> messages = delegationMessageRepository
+            .findAllWithLockByDelegationIdOrderByTurnDesc(delegation.getId());
+        messages.forEach(message -> message.cancel());
     }
 }

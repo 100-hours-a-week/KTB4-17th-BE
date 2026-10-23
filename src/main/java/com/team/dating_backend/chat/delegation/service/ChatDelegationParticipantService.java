@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.delegation.service;
 
 import com.team.dating_backend.chat.delegation.entity.ChatDelegation;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationRepository;
 import com.team.dating_backend.chat.enums.ChatErrorCode;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatDelegationParticipantService {
 
     private final ChatDelegationRepository delegationRepository;
+    private final ChatDelegationMessageRepository messageRepository;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void validateMessageSend(Long chatRoomId, Long senderParticipantId) {
@@ -30,9 +32,16 @@ public class ChatDelegationParticipantService {
         ChatDelegation delegation = delegationRepository
             .findWithLockByChatRoomId(chatRoomId)
             .orElse(null);
-        if (isRestrictedRequester(delegation, leavingParticipantId)) {
+        if (delegation == null || !delegation.isActionRestricted()) {
+            return;
+        }
+        if (delegation.getRequesterParticipant().getId().equals(leavingParticipantId)) {
             throw actionNotAllowed();
         }
+
+        delegation.interrupt();
+        messageRepository.findAllWithLockByDelegationIdOrderByTurnDesc(delegation.getId())
+            .forEach(message -> message.cancel());
     }
 
     private boolean isRestrictedRequester(ChatDelegation delegation, Long participantId) {
