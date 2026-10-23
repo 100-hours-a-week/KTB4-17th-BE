@@ -2,9 +2,14 @@ package com.team.dating_backend.notification.config;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.kafka.NotificationDeliveryFailureRecoverer;
+import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
@@ -15,7 +20,9 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
@@ -65,9 +72,62 @@ public class NotificationKafkaConfiguration {
     public ConcurrentKafkaListenerContainerFactory<Object, Object> notificationDeliveryListenerFactory(
         ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
         ConsumerFactory<Object, Object> kafkaConsumerFactory,
-        JsonMapper jsonMapper) {
-        return listenerContainerFactory(
-            configurer, kafkaConsumerFactory, jsonMapper, NotificationDeliveryEvent.class, "latest", Map.of());
+        JsonMapper jsonMapper,
+        NotificationDeliveryProperties properties,
+        NotificationSseProcessIdentity processIdentity,
+        NotificationDeliveryFailureRecoverer recoverer) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = listenerContainerFactory(
+            configurer, kafkaConsumerFactory, jsonMapper, NotificationDeliveryEvent.class, "latest",
+            Map.of(
+                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
+                ConsumerConfig.MAX_POLL_RECORDS_CONFIG, properties.getMaxPollRecords(),
+                ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, properties.getMaxPollIntervalMs()));
+        factory.setAutoStartup(properties.isEnabled());
+        factory.setConcurrency(properties.getConcurrency());
+        factory.setCommonErrorHandler(notificationDeliveryErrorHandler(recoverer));
+        factory.getContainerProperties().setGroupId(processIdentity.getGroupId());
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.getContainerProperties().setSyncCommits(true);
+        factory.getContainerProperties().setCheckDeserExWhenValueNull(true);
+        return factory;
+    }
+
+    private CommonErrorHandler notificationDeliveryErrorHandler(NotificationDeliveryFailureRecoverer recoverer) {
+        var stoppingErrorHandler = new CommonContainerStoppingErrorHandler();
+        return new CommonErrorHandler() {
+            @Override
+            public boolean handleOne(
+                Exception thrownException,
+                ConsumerRecord<?, ?> record,
+                Consumer<?, ?> consumer,
+                MessageListenerContainer container) {
+                try {
+                    recoverer.accept(record, thrownException);
+                    return true;
+                } catch (RuntimeException failure) {
+                    stoppingErrorHandler.handleRemaining(failure, List.of(record), consumer, container);
+                    return false;
+                }
+            }
+
+            @Override
+            public void handleRemaining(
+                Exception thrownException,
+                List<ConsumerRecord<?, ?>> records,
+                Consumer<?, ?> consumer,
+                MessageListenerContainer container) {
+                stoppingErrorHandler.handleRemaining(thrownException, records, consumer, container);
+            }
+
+            @Override
+            public void handleOtherException(
+                Exception thrownException,
+                Consumer<?, ?> consumer,
+                MessageListenerContainer container,
+                boolean batchListener) {
+                stoppingErrorHandler.handleOtherException(thrownException, consumer, container, batchListener);
+            }
+        };
     }
 
     private ConcurrentKafkaListenerContainerFactory<Object, Object> listenerContainerFactory(

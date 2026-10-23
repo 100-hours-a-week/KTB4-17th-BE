@@ -223,12 +223,43 @@ class NotificationKafkaConfigurationTest {
                     .containsEntry(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 90_000);
                 var delivery = context.getBean("notificationDeliveryKafkaListenerContainerFactory",
                     ConcurrentKafkaListenerContainerFactory.class);
-                assertThat(delivery.getContainerProperties().getGroupId()).isNull();
-                assertThat(delivery.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.BATCH);
+                assertThat(delivery.getContainerProperties().getGroupId()).startsWith("local-notification-sse-v1-");
+                assertThat(delivery.getContainerProperties().getAckMode())
+                    .isEqualTo(ContainerProperties.AckMode.RECORD);
                 assertThat(delivery.getConsumerFactory().getConfigurationProperties())
-                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true)
-                    .doesNotContainKey(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
+                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
+                    .containsEntry(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1)
+                    .containsEntry(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 300_000);
                 assertThat(context.getBean("kafkaConsumerFactory", ConsumerFactory.class).getConfigurationProperties())
+                    .doesNotContainKeys(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+                        ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG);
+            });
+    }
+
+    @Test
+    void delivery_전용_설정과_profile_기반_Group은_공통_Consumer_설정과_분리한다() {
+        contextRunner.withPropertyValues("spring.profiles.active=prod", "APP_NOTIFICATION_DELIVERY_ENABLED=true",
+            "APP_NOTIFICATION_DELIVERY_CONCURRENCY=3", "APP_NOTIFICATION_DELIVERY_MAX_POLL_RECORDS=4",
+            "APP_NOTIFICATION_DELIVERY_MAX_POLL_INTERVAL_MS=120000",
+            "spring.kafka.consumer.enable-auto-commit=true", "spring.kafka.listener.ack-mode=batch")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                var factory = context.getBean("notificationDeliveryKafkaListenerContainerFactory",
+                    ConcurrentKafkaListenerContainerFactory.class);
+                var container = (ConcurrentMessageListenerContainer<?, ?>) factory.createContainer("test-topic");
+                assertThat(container.isAutoStartup()).isTrue();
+                assertThat(container.getConcurrency()).isEqualTo(3);
+                assertThat(container.getContainerProperties().getGroupId()).startsWith("prod-notification-sse-v1-");
+                assertThat(container.getContainerProperties().getAckMode())
+                    .isEqualTo(ContainerProperties.AckMode.RECORD);
+                assertThat(container.getContainerProperties().isSyncCommits()).isTrue();
+                assertThat(factory.getConsumerFactory().getConfigurationProperties())
+                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
+                    .containsEntry(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest")
+                    .containsEntry(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 4)
+                    .containsEntry(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 120_000);
+                assertThat(context.getBean("kafkaConsumerFactory", ConsumerFactory.class).getConfigurationProperties())
+                    .containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true)
                     .doesNotContainKeys(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
                         ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG);
             });

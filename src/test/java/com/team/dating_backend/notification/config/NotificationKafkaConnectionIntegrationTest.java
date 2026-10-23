@@ -3,6 +3,8 @@ package com.team.dating_backend.notification.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
+import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
@@ -60,8 +62,9 @@ class NotificationKafkaConnectionIntegrationTest {
     private void assertRoundTrip(String factoryName, Object message, boolean readsHistory) {
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
-            .withUserConfiguration(NotificationKafkaConfiguration.class)
+            .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationRecoveryTestConfiguration.class)
             .withBean(NotificationCreationProperties.class, NotificationCreationProperties::new)
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withInitializer(context -> {
                 var sources = context.getEnvironment().getPropertySources();

@@ -1,6 +1,7 @@
 package com.team.dating_backend.notification.alert;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.DeliveryFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
@@ -46,8 +47,9 @@ public class NotificationFailureReporter {
 
     private void logFailure(NotificationFailureContext context) {
         KafkaFailureDetails details = context.kafkaDetails();
+        DeliveryFailureDetails delivery = context.deliveryDetails();
         log.error(
-            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}",
+            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}, deliverySchemaVersion={}, notificationId={}, notificationCreatedAt={}",
             context.errorCode(),
             context.failureStage(),
             valueForLog(context.sourceEventId(), 128),
@@ -64,7 +66,10 @@ public class NotificationFailureReporter {
             details == null ? null : details.attempt(),
             details == null ? null : details.retryable(),
             details == null ? null : valueForLog(details.processingExceptionType(), 128),
-            details == null ? null : valueForLog(details.processingCauseType(), 128));
+            details == null ? null : valueForLog(details.processingCauseType(), 128),
+            delivery == null ? null : delivery.schemaVersion(),
+            delivery == null ? null : delivery.notificationId(),
+            delivery == null ? null : delivery.createdAt());
     }
 
     private boolean shouldAlert(NotificationFailureCode errorCode) {

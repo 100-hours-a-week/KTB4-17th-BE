@@ -14,6 +14,10 @@ import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
+import com.team.dating_backend.notification.alert.NotificationFailureContext.DeliveryFailureDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -122,7 +126,9 @@ class DiscordWebhookClientTest {
                 assertThat(content).endsWith("```\n").contains("…", "originalTopic: ", "inputTopic: ",
                     "destinationTopic: ",
                     "destinationOffset: 9223372036854775807", "attempt: 32767", "retryable: false",
-                    "processingCauseType: ", "errorCode: DLT_RECORDED");
+                    "processingCauseType: ", "errorCode: DELIVERY_INVALID_EVENT",
+                    "deliverySchemaVersion: 2147483647", "notificationId: 9223372036854775807",
+                    "notificationCreatedAt: ");
                 assertThat(content.chars().filter(character -> character == '`').count()).isEqualTo(6);
                 assertThat(content).doesNotContain("\u2028", "\u202e");
                 for (int i = 0; i < content.length(); i++) {
@@ -139,8 +145,31 @@ class DiscordWebhookClientTest {
         var location = new KafkaLocation(longValue, Integer.MAX_VALUE, Long.MAX_VALUE);
         var details = new KafkaFailureDetails(longValue, location, location, location, 32767, false, longValue,
             longValue);
-        client.send(new NotificationFailureContext(NotificationFailureCode.DLT_RECORDED, longValue, Long.MAX_VALUE,
-            NotificationType.LIKE, Instant.now(), Instant.now(), longValue, longValue, details));
+        client.send(
+            new NotificationFailureContext(NotificationFailureCode.DELIVERY_INVALID_EVENT, longValue, Long.MAX_VALUE,
+                NotificationType.LIKE, null, Instant.now(), longValue, longValue, details,
+                new DeliveryFailureDetails(Integer.MAX_VALUE, Long.MAX_VALUE, LocalDateTime.MAX)));
+        server.verify();
+    }
+
+    @Test
+    void delivery_식별자와_저장_시각을_표시하고_요청_시각을_추정하거나_내용을_노출하지_않는다() {
+        server.expect(requestTo(WEBHOOK + "?wait=true"))
+            .andExpect(request -> {
+                String content = JsonMapper.builder().build()
+                    .readTree(((MockClientHttpRequest) request).getBodyAsString())
+                    .path("content").stringValue();
+                assertThat(content).contains("errorCode: DELIVERY_INVALID_EVENT", "failureStage: DELIVERY_CONSUMPTION",
+                    "deliverySchemaVersion: 99", "notificationId: 31", "notificationCreatedAt: 2026-10-23T12:00",
+                    "requestedAt: -", "type: -", "inputTopic: delivery", "inputOffset: 18")
+                    .doesNotContain("private-title", "private-body");
+            }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
+        var snapshot = new NotificationEventResponse(31L, "UNKNOWN", "private-title", "private-body", null, null, null,
+            LocalDateTime.of(2026, 10, 23, 12, 0));
+        var details = new KafkaFailureDetails("process-group", null, new KafkaLocation("delivery", 2, 18L), null,
+            null, false, "NotificationInvalidDeliveryEventException", null);
+        client.send(NotificationFailureContext.fromDelivery(NotificationFailureCode.DELIVERY_INVALID_EVENT,
+            new NotificationDeliveryEvent(99, "source", 7L, snapshot), null, Instant.now(), details));
         server.verify();
     }
 

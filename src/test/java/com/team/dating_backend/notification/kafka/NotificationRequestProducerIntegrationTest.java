@@ -56,7 +56,8 @@ class NotificationRequestProducerIntegrationTest {
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
             .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationRequestProducer.class,
-                PropertiesConfiguration.class)
+                PropertiesConfiguration.class, NotificationRecoveryTestConfiguration.class)
+            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("app.notification.kafka.create-requested-topic=" + topic)
             .withInitializer(context -> {

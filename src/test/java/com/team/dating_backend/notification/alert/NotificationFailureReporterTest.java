@@ -21,6 +21,9 @@ import io.micrometer.core.instrument.MockClock;
 import io.micrometer.core.instrument.simple.SimpleConfig;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
@@ -68,6 +71,25 @@ class NotificationFailureReporterTest {
             requestedAt, Instant.ofEpochMilli(clock.wallTime()), "ExecutionException", "TimeoutException"));
         assertThat(registry.get("notification.failures").counter().getId().getTags())
             .hasSize(1).allSatisfy(tag -> assertThat(tag.getKey()).isEqualTo("error_code"));
+    }
+
+    @Test
+    void delivery_문맥은_로그와_통보에_유지하고_지표에는_errorCode만_사용한다(CapturedOutput output) {
+        var event = new NotificationDeliveryEvent(99, "source", 7L,
+            new NotificationEventResponse(31L, "UNKNOWN", "private-title", "private-body", null, null, null,
+                LocalDateTime.of(2026, 10, 23, 12, 0)));
+        var context = NotificationFailureContext.fromDelivery(NotificationFailureCode.DELIVERY_INVALID_EVENT,
+            event, null, Instant.now(), null);
+
+        reporter.report(context);
+
+        verify(dispatcher).dispatch(context);
+        assertThat(output.getAll()).contains("failureStage=DELIVERY_CONSUMPTION", "deliverySchemaVersion=99",
+            "notificationId=31", "notificationCreatedAt=2026-10-23T12:00", "requestedAt=null", "type=null")
+            .doesNotContain("private-title", "private-body");
+        var counter = registry.get("notification.failures").tag("error_code", "DELIVERY_INVALID_EVENT").counter();
+        assertThat(counter.count()).isEqualTo(1);
+        assertThat(counter.getId().getTags()).hasSize(1);
     }
 
     @Test
