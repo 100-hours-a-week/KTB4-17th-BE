@@ -27,6 +27,7 @@ import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -308,13 +309,18 @@ class NotificationDeliveryConsumerIntegrationTest {
     static class TestApplication {
 
         @Bean
-        NotificationEmitterRegistry registry() {
-            return new NotificationEmitterRegistry();
+        NotificationSseObservation observation() {
+            return mock(NotificationSseObservation.class);
         }
 
         @Bean
-        NotificationSseSender sender(NotificationEmitterRegistry registry) {
-            return spy(new NotificationSseSender(registry));
+        NotificationEmitterRegistry registry(NotificationSseObservation observation) {
+            return new NotificationEmitterRegistry(observation);
+        }
+
+        @Bean
+        NotificationSseSender sender(NotificationEmitterRegistry registry, NotificationSseObservation observation) {
+            return spy(new NotificationSseSender(registry, observation));
         }
     }
 }

@@ -32,6 +32,8 @@ import com.team.dating_backend.notification.service.NotificationSubscriptionServ
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
+import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.UserAuthenticationService;
@@ -349,7 +351,7 @@ class NotificationDeliveryIntegrationTest {
             NotificationSubscriptionService.class, NotificationSseLifecycle.class,
             NotificationDeliveryReadinessTracker.class,
             NotificationCreatedEventListener.class,
-            NotificationEmitterRegistry.class,
+            NotificationEmitterRegistry.class, NotificationSseObservation.class, NotificationSseProcessIdentity.class,
             NotificationSseSender.class
         }
     )

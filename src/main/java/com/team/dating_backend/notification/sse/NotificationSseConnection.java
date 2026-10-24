@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.sse;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import lombok.AccessLevel;
@@ -50,6 +51,13 @@ public class NotificationSseConnection {
 
     public void lockForSend() {
         sendLock.lock();
+    }
+
+    public boolean tryLockForSend(long timeoutNanos) throws InterruptedException {
+        if (timeoutNanos < 0) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+        return sendLock.tryLock(timeoutNanos, TimeUnit.NANOSECONDS);
     }
 
     public void unlockForSend() {

@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
 
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
@@ -35,7 +39,7 @@ class NotificationSseLifecycleTest {
 
     @Test
     void 활성_delivery는_준비와_실행_상태를_함께_검사하고_drain_후에는_다시_열리지_않는다() {
-        var registry = new NotificationEmitterRegistry();
+        var registry = new NotificationEmitterRegistry(mock(NotificationSseObservation.class));
         var lifecycle = lifecycle(true, registry);
         assertNotReady(lifecycle);
         var endpoints = mock(KafkaListenerEndpointRegistry.class);
@@ -60,7 +64,7 @@ class NotificationSseLifecycleTest {
     void 최종_등록은_drain이나_준비_무효화와_직렬화하고_기존_연결은_유지한다(boolean drain) throws Exception {
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        var registry = new NotificationEmitterRegistry() {
+        var registry = new NotificationEmitterRegistry(mock(NotificationSseObservation.class)) {
             @Override
             public boolean register(NotificationSseConnection connection) {
                 entered.countDown();
@@ -112,7 +116,7 @@ class NotificationSseLifecycleTest {
 
     @Test
     void 지표는_disabled_호환과_준비_수용_연결_상태를_구분해_현재_값을_반영한다() {
-        var registry = new NotificationEmitterRegistry();
+        var registry = new NotificationEmitterRegistry(mock(NotificationSseObservation.class));
         var lifecycle = lifecycle(false, registry);
         var meters = new SimpleMeterRegistry();
         try {
@@ -131,6 +135,50 @@ class NotificationSseLifecycleTest {
             assertThat(meters.get("notification.sse.connections").gauge().value()).isZero();
         } finally {
             meters.close();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 등록_관측이_지연되어도_drain과_준비_무효화는_즉시_진행한다(boolean drain) throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var observation = mock(NotificationSseObservation.class);
+        doAnswer(invocation -> {
+            entered.countDown();
+            assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(observation).connectionRegistered(any());
+        var registry = new NotificationEmitterRegistry(observation);
+        var endpoints = mock(KafkaListenerEndpointRegistry.class);
+        var container = mock(MessageListenerContainer.class);
+        beans.registerSingleton("endpoints", endpoints);
+        when(endpoints.getListenerContainer("notificationDeliveryConsumer")).thenReturn(container);
+        when(container.isRunning()).thenReturn(true);
+        ready();
+        var lifecycle = lifecycle(true, registry);
+        var first = connection("observed");
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            try {
+                var registration = executor.submit(() -> lifecycle.registerIfAccepting(first));
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                executor.submit(() -> {
+                    if (drain) {
+                        lifecycle.beginDrain();
+                    } else {
+                        tracker.invalidateAll();
+                    }
+                }).get(2, TimeUnit.SECONDS);
+                assertNotReady(lifecycle);
+                assertThatThrownBy(() -> lifecycle.registerIfAccepting(connection("rejected")))
+                    .isInstanceOf(NotificationBusinessException.class);
+                release.countDown();
+                assertThat(registration.get(5, TimeUnit.SECONDS)).isTrue();
+                verify(observation, times(1)).connectionRegistered(first);
+                assertThat(registry.snapshotAll()).containsExactly(first);
+            } finally {
+                release.countDown();
+            }
         }
     }
 

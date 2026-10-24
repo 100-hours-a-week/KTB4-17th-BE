@@ -25,6 +25,8 @@ import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationHeartbeatScheduler;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
+import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.UserAuthenticationService;
@@ -93,6 +95,9 @@ class NotificationStreamIntegrationTest {
 
     @MockitoBean
     private UserAuthenticationService userAuthenticationService;
+
+    @MockitoBean
+    private NotificationSseProcessIdentity processIdentity;
 
     private HttpClient client;
     private ExecutorService readerExecutor;
@@ -219,7 +224,7 @@ class NotificationStreamIntegrationTest {
             NotificationStreamController.class,
             NotificationSubscriptionService.class, NotificationSseLifecycle.class,
             NotificationDeliveryReadinessTracker.class,
-            NotificationEmitterRegistry.class,
+            NotificationEmitterRegistry.class, NotificationSseObservation.class,
             NotificationSseSender.class,
             NotificationStreamExceptionHandler.class,
             NotificationHeartbeatScheduler.class,

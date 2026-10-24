@@ -2,9 +2,15 @@ package com.team.dating_backend.notification.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -14,16 +20,19 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 class NotificationEmitterRegistryTest {
 
     private NotificationEmitterRegistry registry;
     private ExecutorService executor;
+    private NotificationSseObservation observation;
 
     @BeforeEach
     void setUp() {
-        registry = new NotificationEmitterRegistry();
+        observation = mock(NotificationSseObservation.class);
+        registry = new NotificationEmitterRegistry(observation);
         executor = Executors.newFixedThreadPool(2);
     }
 
@@ -145,6 +154,24 @@ class NotificationEmitterRegistryTest {
             assertThat(registry.findByUserId(1L)).isEmpty();
             assertThat(registry.snapshotAll()).isEmpty();
         }
+    }
+
+    @Test
+    void 등록_관측보다_제거가_먼저여도_등록과_종료_원인을_각각_한번만_기록한다() throws Exception {
+        var connection = connection(1L, "observed");
+        registry.register(connection);
+        registry.register(connection);
+        runConcurrently(
+            () -> registry.remove(connection, NotificationSseCloseReason.SHUTDOWN),
+            () -> registry.remove(connection, NotificationSseCloseReason.TIMEOUT));
+        registry.observeRegistration(connection);
+        registry.remove(connection, NotificationSseCloseReason.COMPLETION);
+
+        verify(observation).connectionRegistered(connection);
+        var reason = ArgumentCaptor.forClass(NotificationSseCloseReason.class);
+        verify(observation, times(1)).connectionClosed(eq(connection), reason.capture(), anyLong());
+        assertThat(reason.getValue()).isIn(NotificationSseCloseReason.SHUTDOWN, NotificationSseCloseReason.TIMEOUT);
+        assertThat(registry.snapshotAll()).isEmpty();
     }
 
     private void runConcurrently(Runnable first, Runnable second) throws Exception {
