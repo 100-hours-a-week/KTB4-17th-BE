@@ -134,6 +134,9 @@ app:
     sse:
       timeout-ms: ${APP_NOTIFICATION_SSE_TIMEOUT_MS:1800000}
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
+      drain-timeout-ms: ${APP_NOTIFICATION_SSE_DRAIN_TIMEOUT_MS:10000}
+      close-timeout-ms: ${APP_NOTIFICATION_SSE_CLOSE_TIMEOUT_MS:5000}
+      consumer-stop-timeout-ms: ${APP_NOTIFICATION_SSE_CONSUMER_STOP_TIMEOUT_MS:10000}
 
   chat:
     outbox:
