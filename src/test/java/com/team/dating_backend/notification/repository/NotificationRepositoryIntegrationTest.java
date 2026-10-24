@@ -3,7 +3,9 @@ package com.team.dating_backend.notification.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.team.dating_backend.notification.cursor.NotificationCursorCodec;
 import com.team.dating_backend.notification.dto.event.NotificationCreatedEvent;
+import com.team.dating_backend.notification.dto.read.NotificationCursor;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
 import com.team.dating_backend.notification.entity.Notification;
@@ -73,7 +75,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Import(
     {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
         NotificationUnreadCountService.class, NotificationReadService.class,
-        ChatNotificationReadService.class}
+        ChatNotificationReadService.class, NotificationCursorCodec.class}
 )
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
@@ -107,6 +109,9 @@ class NotificationRepositoryIntegrationTest {
 
     @Autowired
     private NotificationListService listService;
+
+    @Autowired
+    private NotificationCursorCodec cursorCodec;
 
     @Autowired
     private NotificationUnreadCountService unreadCountService;
@@ -523,7 +528,7 @@ class NotificationRepositoryIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(NotificationCategory.class)
-    void 카테고리별로_본인_미삭제_알림만_ID_내림차순으로_조회한다(NotificationCategory category) {
+    void 카테고리별로_본인_미삭제_알림만_생성_시각_내림차순으로_조회한다(NotificationCategory category) {
         otherUserId = saveOtherUser();
         Map<NotificationType, Long> visibleIds = new EnumMap<>(NotificationType.class);
         int offset = 0;
@@ -533,15 +538,15 @@ class NotificationRepositoryIntegrationTest {
             saveNotification(otherUserId, type, NOW, false);
         }
         List<NotificationType> expectedTypes = switch (category) {
-            case ALL -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
-                NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.CHAT_MESSAGE,
-                NotificationType.MATCH, NotificationType.LIKE);
-            case INTEREST -> List.of(NotificationType.MATCH, NotificationType.LIKE);
+            case ALL -> List.of(NotificationType.LIKE, NotificationType.MATCH, NotificationType.CHAT_MESSAGE,
+                NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
+                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.NOTICE);
+            case INTEREST -> List.of(NotificationType.LIKE, NotificationType.MATCH);
             case CHAT -> List.of(NotificationType.CHAT_MESSAGE);
-            case SYSTEM -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
-                NotificationType.PERSONA_TRAINING_COMPLETED);
+            case SYSTEM -> List.of(NotificationType.PERSONA_TRAINING_COMPLETED,
+                NotificationType.FACE_ANALYSIS_COMPLETED, NotificationType.AI_PRACTICE_CHAT_COMPLETED,
+                NotificationType.AI_SIMULATION_REPORT_COMPLETED, NotificationType.NOTICE);
         };
 
         NotificationListResponse response = listService.getNotifications(userId, category, null, 20);
@@ -555,38 +560,50 @@ class NotificationRepositoryIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(NotificationCategory.class)
-    void 후속_페이지는_경계_중복_없이_이어지고_삭제된_ID도_커서로_사용한다(NotificationCategory category) {
+    void 복합_경계는_동일_시각과_지연_저장을_이어_조회하고_필터와_삭제된_경계를_유지한다(
+        NotificationCategory category) {
         NotificationType type = switch (category) {
             case ALL, INTEREST -> NotificationType.LIKE;
             case CHAT -> NotificationType.CHAT_MESSAGE;
             case SYSTEM -> NotificationType.AI_PRACTICE_CHAT_COMPLETED;
         };
-        Long oldest = saveNotification(userId, type, NOW, false);
+        LocalDateTime createdAt = NOW.plusNanos(123_456_000);
+        LocalDateTime older = createdAt.minusNanos(1_000);
+        Long newerWithLowerId = saveNotification(userId, type, createdAt.plusNanos(1_000), false);
+        Long oldest = saveNotification(userId, type, older, false);
+        Long sameTimeOlder = saveNotification(userId, type, createdAt, false);
         otherUserId = saveOtherUser();
-        saveNotification(otherUserId, type, NOW, false);
+        saveNotification(otherUserId, type, createdAt, false);
+        saveNotification(otherUserId, type, older, false);
+        saveNotification(userId, type, older, true);
         if (category != NotificationCategory.ALL) {
             NotificationType otherType = category == NotificationCategory.CHAT
                 ? NotificationType.LIKE
                 : NotificationType.CHAT_MESSAGE;
-            saveNotification(userId, otherType, NOW, false);
+            saveNotification(userId, otherType, createdAt, false);
+            saveNotification(userId, otherType, older, false);
         }
-        Long deletedCursor = saveNotification(userId, type, NOW, true);
-        Long newest = saveNotification(userId, type, NOW, false);
+        Long deletedCursor = saveNotification(userId, type, createdAt, true);
+        Long newest = saveNotification(userId, type, createdAt, false);
+        Long delayed = saveNotification(userId, type, older, false);
 
-        NotificationListResponse first = listService.getNotifications(userId, category, null, 1);
+        NotificationListResponse first = listService.getNotifications(userId, category, null, 2);
         NotificationListResponse second = listService.getNotifications(
-            userId, category, first.pageInfo().nextCursor(), 1);
+            userId, category, cursorCodec.decode(first.pageInfo().nextCursor()), 20);
         NotificationListResponse fromDeleted = listService.getNotifications(
-            userId, category, deletedCursor, 20);
+            userId, category, new NotificationCursor(createdAt, deletedCursor), 20);
 
+        assertThat(delayed).isGreaterThan(newest);
         assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(newest);
-        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(newest, true));
+            .containsExactly(newerWithLowerId, newest);
+        assertThat(first.pageInfo().hasNext()).isTrue();
+        assertThat(cursorCodec.decode(first.pageInfo().nextCursor()))
+            .isEqualTo(new NotificationCursor(createdAt, newest));
         assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(oldest);
+            .containsExactly(sameTimeOlder, delayed, oldest);
         assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
         assertThat(fromDeleted.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(oldest);
+            .containsExactly(sameTimeOlder, delayed, oldest);
     }
 
     @Test
@@ -597,13 +614,15 @@ class NotificationRepositoryIntegrationTest {
         }
 
         NotificationListResponse first = listService.getNotifications(
-            userId, NotificationCategory.ALL, Long.MAX_VALUE, 20);
+            userId, NotificationCategory.ALL, null, 20);
         NotificationListResponse second = listService.getNotifications(
-            userId, NotificationCategory.ALL, first.pageInfo().nextCursor(), 20);
+            userId, NotificationCategory.ALL, cursorCodec.decode(first.pageInfo().nextCursor()), 20);
 
         assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
             .containsExactlyElementsOf(ids.subList(1, 21).reversed());
-        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(ids.get(1), true));
+        assertThat(first.pageInfo().hasNext()).isTrue();
+        assertThat(cursorCodec.decode(first.pageInfo().nextCursor()))
+            .isEqualTo(new NotificationCursor(NOW, ids.get(1)));
         assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
             .containsExactly(ids.getFirst());
         assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
@@ -639,7 +658,8 @@ class NotificationRepositoryIntegrationTest {
         NotificationListResponse empty = listService.getNotifications(userId, category, null, 20);
         saveNotification(userId, NotificationType.AI_PRACTICE_CHAT_COMPLETED, NOW, false);
 
-        NotificationListResponse beyond = listService.getNotifications(userId, category, 1L, 20);
+        NotificationListResponse beyond = listService.getNotifications(
+            userId, category, new NotificationCursor(NOW.minusNanos(1_000), Long.MAX_VALUE), 20);
 
         assertThat(empty).isEqualTo(new NotificationListResponse(
             List.of(), new NotificationListResponse.PageInfo(null, false)));
