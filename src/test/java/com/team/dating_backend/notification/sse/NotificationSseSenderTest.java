@@ -3,16 +3,20 @@ package com.team.dating_backend.notification.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.response.NotificationConnectedResponse;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -28,11 +32,13 @@ class NotificationSseSenderTest {
 
     private NotificationEmitterRegistry registry;
     private NotificationSseSender sender;
+    private NotificationSseObservation observation;
 
     @BeforeEach
     void setUp() {
         registry = mock(NotificationEmitterRegistry.class);
-        sender = new NotificationSseSender(registry);
+        observation = mock(NotificationSseObservation.class);
+        sender = new NotificationSseSender(registry, observation);
     }
 
     @Test
@@ -63,9 +69,11 @@ class NotificationSseSenderTest {
 
         sender.sendNotification(1L, response);
 
-        verify(registry).remove(failed);
-        verify(registry, never()).remove(healthy);
+        verify(registry).remove(failed, NotificationSseCloseReason.TRANSPORT_ERROR);
+        verify(registry, never()).remove(eq(healthy), any());
         verify(failedEmitter, never()).completeWithError(any());
+        verify(observation).sendFailed(eq(failed), eq(NotificationSseObservation.EventKind.NOTIFICATION),
+            eq(NotificationSseCloseReason.TRANSPORT_ERROR), any(IOException.class));
         ArgumentCaptor<SseEmitter.SseEventBuilder> event = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
         verify(healthyEmitter).send(event.capture());
         assertThat(text(event.getValue())).contains("event:notification\n");
@@ -85,7 +93,7 @@ class NotificationSseSenderTest {
 
         sender.sendNotification(1L, notification());
 
-        verify(registry).remove(failed);
+        verify(registry).remove(failed, NotificationSseCloseReason.SERVER_ERROR);
         ArgumentCaptor<Throwable> error = ArgumentCaptor.forClass(Throwable.class);
         verify(failedEmitter).completeWithError(error.capture());
         assertThat(error.getValue()).isInstanceOfSatisfying(NotificationBusinessException.class, exception -> {
@@ -94,6 +102,8 @@ class NotificationSseSenderTest {
             assertThat(exception.getMessage()).isNull();
         });
         verify(healthyEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        verify(observation).sendFailed(failed, NotificationSseObservation.EventKind.NOTIFICATION,
+            NotificationSseCloseReason.SERVER_ERROR, failure);
     }
 
     @Test
@@ -105,6 +115,32 @@ class NotificationSseSenderTest {
         sender.sendHeartbeat(connection);
 
         verify(emitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+        verifyNoInteractions(observation);
+    }
+
+    @Test
+    void 완료_경합은_실패로_집계하지_않고_이미_닫힌_연결의_실제_IO_실패는_기록한다() throws Exception {
+        var completedEmitter = mock(SseEmitter.class);
+        var disconnectedEmitter = mock(SseEmitter.class);
+        var completed = connection("completion", completedEmitter);
+        var disconnected = connection("transport", disconnectedEmitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(completed, disconnected));
+        doAnswer(invocation -> {
+            completed.markClosed();
+            throw new IllegalStateException();
+        }).when(completedEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        var failure = new IOException();
+        doAnswer(invocation -> {
+            disconnected.markClosed();
+            throw failure;
+        }).when(disconnectedEmitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        sender.sendNotification(1L, notification());
+
+        verify(registry).remove(completed, NotificationSseCloseReason.COMPLETION);
+        verify(observation, never()).sendFailed(eq(completed), any(), any(), any());
+        verify(observation).sendFailed(disconnected, NotificationSseObservation.EventKind.NOTIFICATION,
+            NotificationSseCloseReason.TRANSPORT_ERROR, failure);
     }
 
     private NotificationSseConnection connection(String id, SseEmitter emitter) {
