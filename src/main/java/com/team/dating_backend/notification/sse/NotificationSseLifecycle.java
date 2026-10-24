@@ -51,10 +51,15 @@ public class NotificationSseLifecycle {
         if (connection == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
+        boolean registered;
         synchronized (readinessTracker) {
             requireAcceptingSubscriptions();
-            return emitterRegistry.register(connection);
+            registered = emitterRegistry.register(connection);
         }
+        if (registered) {
+            emitterRegistry.observeRegistration(connection);
+        }
+        return registered;
     }
 
     public void beginDrain() {
