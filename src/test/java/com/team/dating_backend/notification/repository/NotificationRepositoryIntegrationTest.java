@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.team.dating_backend.notification.cursor.NotificationCursorCodec;
-import com.team.dating_backend.notification.dto.event.NotificationCreatedEvent;
+import com.team.dating_backend.notification.dto.result.NotificationCreationResult;
 import com.team.dating_backend.notification.dto.read.NotificationCursor;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
@@ -441,10 +441,10 @@ class NotificationRepositoryIntegrationTest {
     }
 
     @Test
-    void 분리된_Entity에서도_회원_지연_로딩_없이_이벤트를_구성한다() {
+    void 분리된_Entity에서도_회원_지연_로딩_없이_저장_결과를_구성한다() {
         transaction.executeWithoutResult(status -> {
-            Notification notification = repository.saveAndFlush(new Notification(
-                userRepository.getReferenceById(userId), NotificationType.CHAT_MESSAGE,
+            Notification notification = repository.saveAndFlush(Notification.fromSourceEvent(
+                "CHAT_MESSAGE_SENT:7", userRepository.getReferenceById(userId), NotificationType.CHAT_MESSAGE,
                 "채팅", "메시지 도착", "CHAT_ROOM", 7L, NOW));
             Long notificationId = notification.getId();
             entityManager.clear();
@@ -452,15 +452,15 @@ class NotificationRepositoryIntegrationTest {
             assertThat(Hibernate.isInitialized(detached.getUser())).isFalse();
             entityManager.clear();
 
-            NotificationCreatedEvent event = NotificationCreatedEvent.from(detached);
+            NotificationCreationResult result = NotificationCreationResult.from(detached);
 
             assertThat(Hibernate.isInitialized(detached.getUser())).isFalse();
-            assertThat(event.recipientUserId()).isEqualTo(userId);
-            assertThat(event.notification()).isEqualTo(new NotificationEventResponse(
+            assertThat(result.recipientUserId()).isEqualTo(userId);
+            assertThat(result.notification()).isEqualTo(new NotificationEventResponse(
                 notificationId, "CHAT_MESSAGE", "채팅", "메시지 도착", "CHAT_ROOM", 7L,
                 null, NOW));
             detached.markAsRead(NOW.plusMinutes(1));
-            assertThat(event.notification().readAt()).isNull();
+            assertThat(result.notification().readAt()).isNull();
         });
     }
 

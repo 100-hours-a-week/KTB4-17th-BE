@@ -37,7 +37,8 @@ import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.repository.NotificationRepository;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -88,7 +89,7 @@ import tools.jackson.databind.ObjectMapper;
     {AiSimulationAsyncConfig.class, AiSimulationService.class, AiSimulationAdmissionService.class,
         AiSimulationWorker.class, AiSimulationPersistenceService.class, AiSimulationQueryService.class,
         AiSimulationTargetValidator.class, AiSimulationResponseMapper.class, AiSimulationResponseValidator.class,
-        AiSimulationRecoveryJob.class, UserPairLockRepository.class, NotificationCreateService.class,
+        AiSimulationRecoveryJob.class, UserPairLockRepository.class, NotificationRequestTestConfiguration.class,
         AiSimulationFlowIntegrationTest.Config.class}
 )
 class AiSimulationFlowIntegrationTest {
@@ -115,8 +116,12 @@ class AiSimulationFlowIntegrationTest {
     private MockMvc mvc;
     private Long viewer = 7L;
 
+    @Autowired
+    private PublishedRequests publishedRequests;
+
     @BeforeEach
     void setUp() {
+        publishedRequests.clear();
         reset(client);
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ai_simulation_messages");
@@ -251,6 +256,11 @@ class AiSimulationFlowIntegrationTest {
             release.countDown();
         }
         waitFor(id, "COMPLETED");
+        await().atMost(Duration.ofSeconds(5))
+            .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement()
+                .satisfies(request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
+        assertThat(notificationRepository.count()).isZero();
+        publishedRequests.persistPending();
         assertThat(notificationRepository.findAll()).singleElement().satisfies(notification -> {
             assertThat(notification.getUserId()).isEqualTo(7L);
             assertThat(notification.getType()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
@@ -280,6 +290,7 @@ class AiSimulationFlowIntegrationTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
         assertThat(notificationRepository.count()).isEqualTo(1L);
+        assertThat(publishedRequests.snapshot()).hasSize(1);
         assertThat(count("ai_simulation_messages")).isEqualTo(20);
         verify(client, times(1)).run(any());
         jdbc.update("UPDATE ai_simulation_reports SET deleted_at=NOW(6) WHERE session_id=?", id);
@@ -332,6 +343,7 @@ class AiSimulationFlowIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
             handle.simulationId())).isEqualTo("FAILED");
         assertThat(notificationRepository.count()).isZero();
+        assertThat(publishedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -343,6 +355,7 @@ class AiSimulationFlowIntegrationTest {
         waitFor(id, "FAILED");
         assertThat(count("ai_simulation_messages")).isZero();
         assertThat(notificationRepository.count()).isZero();
+        assertThat(publishedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -366,7 +379,7 @@ class AiSimulationFlowIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void 알림_DB_오류는_완료_저장을_롤백하고_Worker_실행에서는_실패를_별도_커밋한다(boolean viaWorker) {
+    void 알림_DB_오류에도_완료된_세션과_메시지와_리포트를_유지한다(boolean viaWorker) {
         jdbc.execute("""
             ALTER TABLE notifications ADD CONSTRAINT test_reject_simulation_notification
             CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED')
@@ -376,25 +389,29 @@ class AiSimulationFlowIntegrationTest {
             if (viaWorker) {
                 given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
                 id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-                waitFor(id, "FAILED");
+                waitFor(id, "COMPLETED");
             } else {
                 id = persistence.begin(7L, 8L).getId();
-                assertThatThrownBy(() -> persistence.complete(id, aiResponse()))
-                    .isInstanceOf(DataIntegrityViolationException.class);
-                assertThat(query.getState(7L, id).status().name()).isEqualTo("IN_PROGRESS");
-                assertThat(query.getState(7L, id).finishedAt()).isNull();
+                persistence.complete(id, aiResponse());
             }
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement().satisfies(
+                    request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
+            assertThatThrownBy(publishedRequests::persistPending)
+                .isInstanceOf(DataIntegrityViolationException.class);
 
-            assertThat(count("ai_simulation_messages")).isZero();
+            assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");
+            assertThat(query.getState(7L, id).finishedAt()).isNotNull();
+            assertThat(count("ai_simulation_messages")).isEqualTo(20);
             assertThat(notificationRepository.count()).isZero();
             assertThat(jdbc.queryForMap("""
-                SELECT status, detail_result, completed_at, summary
+                SELECT status, completed_at IS NOT NULL AS completed, summary
                 FROM ai_simulation_reports WHERE session_id = ?
                 """, id))
-                .containsEntry("status", viaWorker ? "FAILED" : "GENERATING")
-                .containsEntry("detail_result", null)
-                .containsEntry("completed_at", null)
-                .containsEntry("summary", null);
+                .containsEntry("status", "COMPLETED")
+                .containsEntry("completed", 1L)
+                .containsEntry("summary", "대화가 잘 이어져요.");
+            assertThat(query.get(7L, id)).isEqualTo(query.get(8L, id));
         } finally {
             jdbc.execute("ALTER TABLE notifications DROP CHECK test_reject_simulation_notification");
         }
