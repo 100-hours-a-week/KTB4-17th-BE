@@ -16,9 +16,10 @@ import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.common.exception.RequestValidationException;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.ChatNotificationTemplate;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.service.NotificationRequestService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.enums.UserStatus;
@@ -26,6 +27,7 @@ import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.file.repository.FileRepository;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.List;
@@ -48,7 +50,7 @@ public class ChatMessageSendService {
     private final UserBlockRepository userBlockRepository;
     private final FileRepository fileRepository;
     private final ChatRoomPresenceRegistry presenceRegistry;
-    private final NotificationCreateService notificationCreateService;
+    private final NotificationRequestService notificationRequestService;
     private final ProfileRepository profileRepository;
 
     @Transactional
@@ -106,10 +108,12 @@ public class ChatMessageSendService {
                 .map(Profile::getNickname)
                 .orElse(null);
             ChatNotificationTemplate template = ChatNotificationTemplate.CHAT_MESSAGE;
-            notificationCreateService.createNotification(
+            Instant requestedAt = Instant.now();
+            notificationRequestService.requestNotification(new NotificationCreateRequested(
+                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "CHAT_MESSAGE_SENT:" + message.getId(),
                 receiver.getUserId(), NotificationType.CHAT_MESSAGE,
                 template.getTitle(), template.formatBody(senderNickname),
-                template.getTargetType(), chatRoomId);
+                template.getTargetType(), chatRoomId, requestedAt));
         }
 
         return new ChatMessageCreateResponse(

@@ -1,6 +1,7 @@
 package com.team.dating_backend.chat.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,7 +27,9 @@ import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
 import com.team.dating_backend.chat.service.ChatRoomPresenceService;
 import com.team.dating_backend.notification.service.ChatNotificationReadService;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import org.springframework.dao.DataIntegrityViolationException;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
@@ -158,8 +161,12 @@ class ChatMessageFlowIntegrationTest {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final BlockingQueue<ChatRoomPresenceRequest> completedPresenceRequests = new LinkedBlockingQueue<>();
 
+    @Autowired
+    private PublishedRequests publishedRequests;
+
     @BeforeEach
     void setUpDatabase() {
+        publishedRequests.clear();
         given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
@@ -241,6 +248,7 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
+            publishedRequests.persistPending();
             assertEquals(1, countChatNotifications());
             assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
                 "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
@@ -252,7 +260,9 @@ class ChatMessageFlowIntegrationTest {
             assertThat(retry.body()).contains("\"messageId\":" + messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
+            publishedRequests.persistPending();
             assertEquals(1, countChatNotifications());
+            assertThat(publishedRequests.snapshot()).hasSize(1);
 
             HttpResponse<String> conflict = postMessage(
                 senderToken, clientMessageId, "같은 ID의 다른 내용");
@@ -285,6 +295,7 @@ class ChatMessageFlowIntegrationTest {
             HttpResponse<String> secondMessage = postMessage(
                 senderToken, UUID.randomUUID(), "두 번째 메시지");
             assertEquals(201, secondMessage.statusCode(), secondMessage.body());
+            publishedRequests.persistPending();
             assertEquals(2, countChatNotifications());
 
             HttpResponse<String> read = postRead(receiverToken, messageId);
@@ -351,6 +362,7 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals("IMAGE", jdbcTemplate.queryForObject(
                 "select message_type from chat_messages where id = ?", String.class, messageId));
+            publishedRequests.persistPending();
             assertEquals(1, countChatNotifications());
             assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
                 "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
@@ -388,6 +400,7 @@ class ChatMessageFlowIntegrationTest {
             sendPresenceAndAwait(pc, ChatRoomPresenceAction.ENTER);
             sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
             assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "첫 번째").statusCode());
+            publishedRequests.persistPending();
             assertEquals(0, countChatNotifications());
 
             disconnect(pc);
@@ -397,10 +410,12 @@ class ChatMessageFlowIntegrationTest {
             }));
             assertThat(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).isTrue();
             assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "두 번째").statusCode());
+            publishedRequests.persistPending();
             assertEquals(0, countChatNotifications());
 
             sendPresenceAndAwait(mobile, ChatRoomPresenceAction.LEAVE);
             assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "세 번째").statusCode());
+            publishedRequests.persistPending();
             assertEquals(1, countChatNotifications());
 
             sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
@@ -408,6 +423,7 @@ class ChatMessageFlowIntegrationTest {
             assertTrue(awaitCondition(() -> !presenceRegistry.isViewingChatRoom(
                 RECEIVER_USER_ID, CHAT_ROOM_ID)));
             assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "네 번째").statusCode());
+            publishedRequests.persistPending();
             assertEquals(2, countChatNotifications());
         } finally {
             disconnect(pc);
@@ -459,16 +475,24 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void 알림_생성이_실패하면_메시지와_Outbox도_함께_롤백한다() throws Exception {
+    void 알림_저장이_나중에_실패해도_이미_커밋된_메시지와_Outbox를_유지한다() throws Exception {
         jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_notification "
             + "CHECK (type <> 'CHAT_MESSAGE')");
         try {
             HttpResponse<String> response = postMessage(
                 jwtService.createServiceAuthToken(SENDER_USER_ID), UUID.randomUUID(), MESSAGE_TEXT);
 
-            assertEquals(500, response.statusCode(), response.body());
-            assertEquals(0, countMessages());
-            assertEquals(0, countOutboxes());
+            assertEquals(201, response.statusCode(), response.body());
+            assertEquals(1, countMessages());
+            assertEquals(1, countOutboxes());
+            assertThat(publishedRequests.snapshot()).singleElement().satisfies(request -> {
+                Long messageId = jdbcTemplate.queryForObject("SELECT id FROM chat_messages", Long.class);
+                assertThat(request.sourceEventId()).isEqualTo("CHAT_MESSAGE_SENT:" + messageId);
+            });
+            assertThatThrownBy(publishedRequests::persistPending)
+                .isInstanceOf(DataIntegrityViolationException.class);
+            assertEquals(1, countMessages());
+            assertEquals(1, countOutboxes());
             assertEquals(0, countChatNotifications());
         } finally {
             jdbcTemplate.execute("ALTER TABLE notifications DROP CHECK test_reject_chat_notification");
@@ -481,6 +505,7 @@ class ChatMessageFlowIntegrationTest {
             UUID.randomUUID(), MESSAGE_TEXT).statusCode());
         Long messageId = jdbcTemplate.queryForObject(
             "select id from chat_messages where chat_room_id = ?", Long.class, CHAT_ROOM_ID);
+        publishedRequests.persistPending();
         jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_read "
             + "CHECK (type <> 'CHAT_MESSAGE' OR read_at IS NULL)");
         try {
@@ -705,7 +730,7 @@ class ChatMessageFlowIntegrationTest {
             ChatRoomPresenceService.class,
             ChatRoomPresenceRegistry.class,
             ChatRoomPresenceDisconnectListener.class,
-            NotificationCreateService.class,
+            NotificationRequestTestConfiguration.class,
             ChatNotificationReadService.class,
             ChatMessageSendController.class,
             ChatMessageListController.class,

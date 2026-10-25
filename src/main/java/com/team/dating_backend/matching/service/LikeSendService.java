@@ -10,9 +10,10 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.exception.LikeBusinessException;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.repository.MatchRepository;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.MatchingNotificationTemplate;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.service.NotificationRequestService;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
@@ -20,6 +21,7 @@ import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +38,7 @@ public class LikeSendService {
     private final MatchRepository matchRepository;
     private final UserPairLockRepository userPairLockRepository;
     private final ChatRoomCreateService chatRoomCreateService;
-    private final NotificationCreateService notificationCreateService;
+    private final NotificationRequestService notificationRequestService;
     private final ProfileRepository profileRepository;
 
     @Transactional
@@ -83,21 +85,27 @@ public class LikeSendService {
                 new Match(earlierLike.getSenderId(), earlierLike.getReceiverId(), matchedAt));
             Long chatRoomId = chatRoomCreateService.createChatRoom(match, matchedAt);
             MatchingNotificationTemplate template = MatchingNotificationTemplate.MATCH;
-            notificationCreateService.createNotification(
+            String sourceEventId = "MATCH_CREATED:" + match.getId();
+            Instant requestedAt = Instant.now();
+            notificationRequestService.requestNotification(new NotificationCreateRequested(
+                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, sourceEventId,
                 match.getSenderId(), NotificationType.MATCH,
-                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId);
-            notificationCreateService.createNotification(
+                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId, requestedAt));
+            notificationRequestService.requestNotification(new NotificationCreateRequested(
+                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, sourceEventId,
                 match.getReceiverId(), NotificationType.MATCH,
-                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId);
+                template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId, requestedAt));
         } else {
             String senderNickname = profileRepository.findByUserIdAndDeletedAtIsNull(senderId)
                 .map(Profile::getNickname)
                 .orElse(null);
             MatchingNotificationTemplate template = MatchingNotificationTemplate.LIKE;
-            notificationCreateService.createNotification(
+            Instant requestedAt = Instant.now();
+            notificationRequestService.requestNotification(new NotificationCreateRequested(
+                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "LIKE_SENT:" + like.getId(),
                 receiverId, NotificationType.LIKE,
                 template.getTitle(), template.formatBody(senderNickname),
-                template.getTargetType(), senderId);
+                template.getTargetType(), senderId, requestedAt));
         }
         return new LikeCreateResponse(like.getId(), like.getStatus());
     }
