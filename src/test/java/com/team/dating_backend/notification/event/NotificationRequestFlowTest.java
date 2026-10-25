@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -123,6 +124,25 @@ class NotificationRequestFlowTest {
             }
         }
 
+        verifyNoInteractions(dispatcher);
+    }
+
+    @Test
+    void 동기_요청_이벤트_등록이_실패하면_업무를_rollback하고_발행하지_않는다() throws SQLException {
+        var failure = new NotificationInvalidCreateRequestException();
+        context.addApplicationListener(event -> {
+            if (event instanceof PayloadApplicationEvent<?> payload
+                && payload.getPayload() instanceof NotificationCreateRequested) {
+                throw failure;
+            }
+        });
+
+        assertThatThrownBy(() -> transaction
+            .executeWithoutResult(status -> service.requestNotification(request("title", "body", null, null))))
+            .isSameAs(failure);
+
+        verify(connection).rollback();
+        verify(connection, never()).commit();
         verifyNoInteractions(dispatcher);
     }
 
