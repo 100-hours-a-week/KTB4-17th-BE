@@ -1,0 +1,122 @@
+spring:
+  application:
+    name: notification-multiprocess-@PROCESS@
+  datasource:
+    url: "@DB_URL@"
+    username: "@DB_USERNAME@"
+    password: "@DB_PASSWORD@"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    clean-disabled: true
+    validate-on-migrate: true
+  kafka:
+    bootstrap-servers: "@BOOTSTRAP_SERVERS@"
+    admin:
+      auto-create: false
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+        "[max.block.ms]": 3000
+        "[request.timeout.ms]": 3000
+        "[delivery.timeout.ms]": 10000
+    consumer:
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        "[allow.auto.create.topics]": false
+    listener:
+      ack-mode: record
+server:
+  address: 127.0.0.1
+  port: 0
+jwt:
+  secret: "@JWT_SECRET@"
+  pending-expiration-minutes: 5
+  service-expiration-minutes: 60
+  refresh-expiration-days: 1
+kakao:
+  oauth:
+    client-id: notification-test
+    client-secret: "@JWT_SECRET@"
+    redirect-uri: "@AI_URL@/unused"
+    authorization-uri: "@AI_URL@/unused"
+    token-uri: "@AI_URL@/unused"
+    user-info-uri: "@AI_URL@/unused"
+    talk-profile-uri: "@AI_URL@/unused"
+app:
+  auth:
+    login-redirect-uri: "@AI_URL@/unused"
+    service-redirect-uri: "@AI_URL@/unused"
+    registration-redirect-uri: "@AI_URL@/unused"
+    onboarding-redirect-uri: "@AI_URL@/unused"
+    same-site: Lax
+  security:
+    allowed-origins:
+      - http://127.0.0.1
+  notification:
+    kafka:
+      create-requested-topic: "@CREATION_TOPIC@"
+      delivery-topic: "@DELIVERY_TOPIC@"
+    creation:
+      enabled: true
+      group-id: "@CREATION_GROUP@"
+    delivery:
+      enabled: true
+      group-id-prefix: "@DELIVERY_PREFIX@"
+    retry:
+      max-attempts: 4
+      delay-ms: 5000
+    alert:
+      enabled: false
+    sse:
+      timeout-ms: 300000
+      heartbeat-delay-ms: 1000
+      drain-timeout-ms: 500
+      close-timeout-ms: 1000
+      consumer-stop-timeout-ms: 5000
+  ai-simulation:
+    base-url: "@AI_URL@"
+  ai-practice:
+    base-url: "@AI_URL@"
+  persona-ai:
+    base-url: "@AI_URL@"
+  persona-kakao:
+    base-url: "@AI_URL@"
+  chat-delegation:
+    base-url: "@AI_URL@"
+  file:
+    max-size-bytes: 5242880
+    allowed-mime-types:
+      - image/jpeg
+    upload-intent-ttl: PT10M
+    upload-intent-retention: PT1H
+    cleanup-delay-ms: 3600000
+    cleanup-batch-size: 10
+    s3:
+      bucket: notification-integration
+      region: ap-northeast-2
+      upload-url-expiration: PT5M
+      download-url-expiration: PT5M
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+sentry:
+  enabled: false
+  dsn: ""
+logging:
+  level:
+    org.apache.kafka: WARN
+    org.springframework.kafka: INFO
