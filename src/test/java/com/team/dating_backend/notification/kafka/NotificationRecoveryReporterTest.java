@@ -94,13 +94,13 @@ class NotificationRecoveryReporterTest {
     @Test
     void 정상_Retry_인계는_최종_실패로_보고하지_않는다() {
         when(template.send(any(ProducerRecord.class)))
-            .thenReturn(CompletableFuture.completedFuture(result(TOPIC + "-retry-0", 0, 3)));
-        recoverer(TOPIC + "-retry-0").accept(record(TOPIC, "source"), null, processingFailure());
+            .thenReturn(CompletableFuture.completedFuture(result(TOPIC + "-retry", 0, 3)));
+        recoverer(TOPIC + "-retry").accept(record(TOPIC, "source"), null, processingFailure());
         verifyNoInteractions(reporter);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"-retry-0", "-dlt"})
+    @ValueSource(strings = {"-retry", "-dlt"})
     void 인계_실패는_코드로_구분하고_동일한_예외를_재전파한다(String suffix) {
         var failure = new IllegalStateException("private-handoff");
         when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.failedFuture(failure));
@@ -156,7 +156,7 @@ class NotificationRecoveryReporterTest {
 
     @Test
     void Retry_입력의_원본_위치와_현재_시도를_구분하고_raw_값은_역파싱하지_않는다() {
-        var record = new ConsumerRecord<Object, Object>(TOPIC + "-retry-1", 0, 4, "7", new byte[]{1, 2});
+        var record = new ConsumerRecord<Object, Object>(TOPIC + "-retry", 0, 4, "7", new byte[]{1, 2});
         record.headers().add(KafkaHeaders.ORIGINAL_TOPIC, TOPIC.getBytes(StandardCharsets.UTF_8));
         record.headers().add(KafkaHeaders.ORIGINAL_PARTITION, ByteBuffer.allocate(4).putInt(1).array());
         record.headers().add(KafkaHeaders.ORIGINAL_OFFSET, ByteBuffer.allocate(8).putLong(77).array());
@@ -167,7 +167,7 @@ class NotificationRecoveryReporterTest {
         var context = captured();
         assertThat(context.sourceEventId()).isNull();
         assertThat(context.kafkaDetails().originalLocation()).isEqualTo(new KafkaLocation(TOPIC, 1, 77L));
-        assertThat(context.kafkaDetails().inputLocation()).isEqualTo(new KafkaLocation(TOPIC + "-retry-1", 0, 4L));
+        assertThat(context.kafkaDetails().inputLocation()).isEqualTo(new KafkaLocation(TOPIC + "-retry", 0, 4L));
         assertThat(context.kafkaDetails().attempt()).isEqualTo(3);
         assertThat(context.kafkaDetails().retryable()).isFalse();
     }
@@ -175,7 +175,7 @@ class NotificationRecoveryReporterTest {
     @ParameterizedTest
     @ValueSource(ints = {0, -1, 32768})
     void 비정상_시도와_위치_헤더는_추정하지_않는다(int attempt) {
-        var record = record(TOPIC + "-retry-0", "source");
+        var record = record(TOPIC + "-retry", "source");
         record.headers().add(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS, ByteBuffer.allocate(4).putInt(attempt).array());
         record.headers().add(KafkaHeaders.ORIGINAL_TOPIC, TOPIC.getBytes(StandardCharsets.UTF_8));
         record.headers().add(KafkaHeaders.ORIGINAL_PARTITION, new byte[]{1});
@@ -244,7 +244,7 @@ class NotificationRecoveryReporterTest {
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 2, 3})
     void Retry_헤더_누락과_null과_잘못된_길이와_구버전을_처리한다(int scenario) {
-        var record = record(TOPIC + "-retry-0", "source");
+        var record = record(TOPIC + "-retry", "source");
         if (scenario != 0) {
             record.headers().add(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS,
                 scenario == 1 ? null : scenario == 2 ? new byte[]{1, 2} : new byte[]{2});

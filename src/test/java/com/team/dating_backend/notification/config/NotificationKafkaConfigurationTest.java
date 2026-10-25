@@ -129,7 +129,7 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Test
-    void Retry는_생성_요청에만_연결하고_시도별_목적지를_만든다() {
+    void Retry는_생성_요청에만_연결하고_고정_5초의_단일_목적지를_재사용한다() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             var configuration = context.getBean("notificationRetryTopicConfiguration",
@@ -138,11 +138,11 @@ class NotificationKafkaConfigurationTest {
                 .isTrue();
             assertThat(configuration.hasConfigurationForTopics(new String[]{"local-notification-delivery-v1"}))
                 .isFalse();
-            assertThat(configuration.getDestinationTopicProperties()).hasSize(8);
+            assertThat(configuration.getDestinationTopicProperties()).hasSize(3);
             assertThat(configuration.getDestinationTopicProperties()).extracting(destination -> destination.suffix())
-                .containsExactly("", "-retry-0", "-retry-1", "-retry-2", "-retry-3", "-retry-4", "-retry-5", "-dlt");
+                .containsExactly("", "-retry", "-dlt");
             assertThat(configuration.getDestinationTopicProperties()).extracting(destination -> destination.delay())
-                .containsExactly(0L, 1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 0L);
+                .containsExactly(0L, 5_000L, 0L);
             assertThat(configuration.getConcurrency()).isEqualTo(1);
             var factory = context.getBean("notificationCreateRequestedKafkaListenerContainerFactory",
                 ConcurrentKafkaListenerContainerFactory.class);
@@ -152,23 +152,22 @@ class NotificationKafkaConfigurationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 7, 9})
-    void 실제_Listener는_시도_횟수에_따라_독립_Topic과_Group을_구성한다(int attempts) {
+    @ValueSource(ints = {1, 2, 4, 9})
+    void 실제_Listener는_재시도_횟수와_무관하게_단일_Topic과_Group을_사용한다(int attempts) {
         contextRunner.withUserConfiguration(NotificationCreationConsumer.class)
             .withBean(NotificationCreationProcessor.class, () -> mock(NotificationCreationProcessor.class))
             .withPropertyValues("APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=" + attempts)
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 var containers = context.getBean(KafkaListenerEndpointRegistry.class).getListenerContainers();
-                assertThat(containers).hasSize(attempts + 1);
-                for (int i = 0; i < attempts - 1; i++) {
-                    String suffix = "-retry-" + i;
+                assertThat(containers).hasSize(attempts == 1 ? 2 : 3);
+                if (attempts > 1) {
                     var retry = containers.stream()
                         .filter(container -> java.util.List.of(container.getContainerProperties().getTopics())
-                            .contains("local-notification-create-requested-v1" + suffix))
+                            .contains("local-notification-create-requested-v1-retry"))
                         .findFirst().orElseThrow();
                     assertThat(retry.getContainerProperties().getGroupId())
-                        .isEqualTo("local-notification-create-v1" + suffix);
+                        .isEqualTo("local-notification-create-v1-retry");
                     assertThat(((ConcurrentMessageListenerContainer<?, ?>) retry).getConcurrency()).isEqualTo(1);
                     assertThat(retry.isAutoStartup()).isFalse();
                 }
@@ -184,7 +183,7 @@ class NotificationKafkaConfigurationTest {
 
     @Test
     void 파생_Topic_이름이_길이_제한을_넘으면_시작을_거부한다() {
-        contextRunner.withPropertyValues("NOTIFICATION_CREATE_REQUESTED_TOPIC=" + "a".repeat(242))
+        contextRunner.withPropertyValues("NOTIFICATION_CREATE_REQUESTED_TOPIC=" + "a".repeat(244))
             .run(context -> {
                 assertThat(context).hasFailed();
                 assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(NotificationBusinessException.class);
@@ -192,7 +191,7 @@ class NotificationKafkaConfigurationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"-retry-0", "-dlt"})
+    @ValueSource(strings = {"-retry", "-dlt"})
     void 파생_Topic이_delivery와_겹치면_시작을_거부한다(String suffix) {
         contextRunner.withPropertyValues(
             "NOTIFICATION_DELIVERY_TOPIC=local-notification-create-requested-v1" + suffix)

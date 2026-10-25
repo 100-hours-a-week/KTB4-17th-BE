@@ -32,14 +32,12 @@ class NotificationRetryPropertiesTest {
         });
 
     @Test
-    void 기본_환경변수를_총_시도_횟수와_지수_backoff_설정에_바인딩한다() {
+    void 기본_환경변수를_총_4회_시도와_고정_5초_대기에_바인딩한다() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             var properties = context.getBean(NotificationRetryProperties.class);
-            assertThat(properties.getMaxAttempts()).isEqualTo(7);
-            assertThat(properties.getInitialDelayMs()).isEqualTo(1_000L);
-            assertThat(properties.getMultiplier()).isEqualTo(2.0);
-            assertThat(properties.getMaxDelayMs()).isEqualTo(30_000L);
+            assertThat(properties.getMaxAttempts()).isEqualTo(4);
+            assertThat(properties.getDelayMs()).isEqualTo(5_000L);
             assertThat(properties.getConcurrency()).isEqualTo(1);
             assertThat(properties.getPublishResultTimeoutMs()).isEqualTo(15_000L);
         });
@@ -48,19 +46,15 @@ class NotificationRetryPropertiesTest {
     @Test
     void 모든_Retry_환경변수로_초기값을_재정의한다() {
         contextRunner.withPropertyValues(
-            "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=4",
-            "APP_NOTIFICATION_RETRY_INITIAL_DELAY_MS=250",
-            "APP_NOTIFICATION_RETRY_MULTIPLIER=1.5",
-            "APP_NOTIFICATION_RETRY_MAX_DELAY_MS=2000",
+            "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=7",
+            "APP_NOTIFICATION_RETRY_DELAY_MS=250",
             "APP_NOTIFICATION_RETRY_CONCURRENCY=3",
             "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=5000")
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 var properties = context.getBean(NotificationRetryProperties.class);
-                assertThat(properties.getMaxAttempts()).isEqualTo(4);
-                assertThat(properties.getInitialDelayMs()).isEqualTo(250L);
-                assertThat(properties.getMultiplier()).isEqualTo(1.5);
-                assertThat(properties.getMaxDelayMs()).isEqualTo(2_000L);
+                assertThat(properties.getMaxAttempts()).isEqualTo(7);
+                assertThat(properties.getDelayMs()).isEqualTo(250L);
                 assertThat(properties.getConcurrency()).isEqualTo(3);
                 assertThat(properties.getPublishResultTimeoutMs()).isEqualTo(5_000L);
             });
@@ -70,14 +64,10 @@ class NotificationRetryPropertiesTest {
     @ValueSource(
         strings = {
             "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=0",
-            "APP_NOTIFICATION_RETRY_INITIAL_DELAY_MS=0",
-            "APP_NOTIFICATION_RETRY_MAX_DELAY_MS=-1",
+            "APP_NOTIFICATION_RETRY_DELAY_MS=0",
+            "APP_NOTIFICATION_RETRY_DELAY_MS=-1",
             "APP_NOTIFICATION_RETRY_CONCURRENCY=0",
-            "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=0",
-            "APP_NOTIFICATION_RETRY_MULTIPLIER=1",
-            "APP_NOTIFICATION_RETRY_MULTIPLIER=NaN",
-            "APP_NOTIFICATION_RETRY_MULTIPLIER=Infinity",
-            "APP_NOTIFICATION_RETRY_MAX_DELAY_MS=1000"
+            "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=0"
         }
     )
     void 유효하지_않은_재시도_설정은_시작을_거부한다(String property) {

@@ -102,8 +102,7 @@ import tools.jackson.databind.json.JsonMapper;
         "spring.kafka.consumer.properties.allow.auto.create.topics=false",
         "app.notification.creation.enabled=false",
         "app.notification.retry.max-attempts=2",
-        "app.notification.retry.initial-delay-ms=100",
-        "app.notification.retry.max-delay-ms=1000",
+        "app.notification.retry.delay-ms=100",
         "app.notification.retry.publish-result-timeout-ms=5000"
     }
 )
@@ -191,7 +190,7 @@ class NotificationCreationPipelineIntegrationTest {
         sourceEventId = UUID.randomUUID().toString();
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()));
         admin.createTopics(List.of(new NewTopic(topics.getCreateRequestedTopic(), 1, (short) 1),
-            new NewTopic(topics.getCreateRequestedTopic() + "-retry-0", 1, (short) 1),
+            new NewTopic(topics.getCreateRequestedTopic() + "-retry", 1, (short) 1),
             new NewTopic(topics.getCreateRequestedTopic() + "-dlt", 1, (short) 1),
             new NewTopic(topics.getDeliveryTopic(), 1, (short) 1))).all().get(20, TimeUnit.SECONDS);
         deliveryConsumer = new KafkaConsumer<>(Map.of(
@@ -343,7 +342,7 @@ class NotificationCreationPipelineIntegrationTest {
         assertThat(storedRow()).containsEntry("title", "원본 제목").containsEntry("body", "원본 본문");
         assertThat(delivered.notification().notificationId()).isEqualTo(((Number) storedRow().get("id")).longValue());
         assertThat(delivered.notification().createdAt()).isEqualTo(CREATED_AT);
-        assertThat(endOffset(topics.getCreateRequestedTopic() + "-retry-0")).isEqualTo(1L);
+        assertThat(endOffset(topics.getCreateRequestedTopic() + "-retry")).isEqualTo(1L);
         assertThat(endOffset(topics.getCreateRequestedTopic() + "-dlt")).isZero();
         verifyNoInteractions(webhookClient);
     }
@@ -408,11 +407,11 @@ class NotificationCreationPipelineIntegrationTest {
             assertThat(failure.type()).isEqualTo(original.type());
             assertThat(failure.requestedAt()).isEqualTo(REQUESTED_AT);
             var details = failure.kafkaDetails();
-            assertThat(details.consumerGroup()).isEqualTo(properties.getGroupId() + "-retry-0");
+            assertThat(details.consumerGroup()).isEqualTo(properties.getGroupId() + "-retry");
             assertThat(details.originalLocation())
                 .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic(), 0, 0L));
             assertThat(details.inputLocation())
-                .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic() + "-retry-0", 0, 0L));
+                .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic() + "-retry", 0, 0L));
             assertThat(details.destinationLocation())
                 .isEqualTo(new KafkaLocation(topics.getCreateRequestedTopic() + "-dlt", 0, 0L));
             assertThat(details.attempt()).isEqualTo(2);
@@ -508,9 +507,9 @@ class NotificationCreationPipelineIntegrationTest {
     }
 
     private Long retryCommittedOffset() throws Exception {
-        var offset = admin.listConsumerGroupOffsets(properties.getGroupId() + "-retry-0")
+        var offset = admin.listConsumerGroupOffsets(properties.getGroupId() + "-retry")
             .partitionsToOffsetAndMetadata()
-            .get(10, TimeUnit.SECONDS).get(new TopicPartition(topics.getCreateRequestedTopic() + "-retry-0", 0));
+            .get(10, TimeUnit.SECONDS).get(new TopicPartition(topics.getCreateRequestedTopic() + "-retry", 0));
         return offset == null ? null : offset.offset();
     }
 
