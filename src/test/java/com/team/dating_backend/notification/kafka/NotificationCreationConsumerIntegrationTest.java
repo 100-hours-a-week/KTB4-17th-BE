@@ -29,6 +29,7 @@ import com.team.dating_backend.notification.service.NotificationCreationProcesso
 import com.team.dating_backend.notification.service.NotificationCreationService;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -39,6 +40,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -85,6 +87,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.kafka.retrytopic.RetryTopicHeaders;
 import tools.jackson.databind.json.JsonMapper;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -213,7 +216,7 @@ class NotificationCreationConsumerIntegrationTest {
                             .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(2L));
                         assertThat(processed).contains("after-retry");
                         assertThat(container.isRunning()).isTrue();
-                        var retryRecord = readRecord(topic + "-retry-0", 0);
+                        var retryRecord = readRecord(topic + "-retry", 0);
                         assertThat(retryRecord.key()).isEqualTo("7");
                         assertThat(retryRecord.headers().lastHeader("__TypeId__")).isNull();
                         assertThat(context.getBean(JsonMapper.class)
@@ -234,29 +237,31 @@ class NotificationCreationConsumerIntegrationTest {
     }
 
     @Test
-    void 재시도_횟수를_모두_소진하면_DLT로_인계한다() throws Exception {
+    void 고정_5초_간격으로_같은_Topic에서_3회_재시도한_뒤_DLT로_인계한다() throws Exception {
         String topic = "creation-exhausted-" + UUID.randomUUID();
         String group = "creation-group-" + UUID.randomUUID();
         var processor = mock(NotificationCreationProcessor.class);
-        var attempts = new AtomicInteger();
+        var startedAt = new CopyOnWriteArrayList<Long>();
         doAnswer(invocation -> {
-            attempts.incrementAndGet();
+            startedAt.add(System.currentTimeMillis());
             throw new TimeoutException();
         }).when(processor).process(any());
         try (Admin admin = admin(topic, 1)) {
-            contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
+            contextRunner(topic, group, processor).withPropertyValues(
+                "APP_NOTIFICATION_CREATION_ENABLED=true", "APP_NOTIFICATION_RETRY_DELAY_MS=5000")
                 .run(context -> {
                     var client = context.getBean(DiscordWebhookClient.class);
                     doAnswer(invocation -> {
                         NotificationFailureContext failure = invocation.getArgument(0);
                         assertThat(failure.errorCode().name()).isEqualTo("DLT_RECORDED");
-                        assertThat(failure.kafkaDetails().attempt()).isEqualTo(3);
-                        assertThat(failure.kafkaDetails().consumerGroup()).isEqualTo(group + "-retry-1");
-                        assertThat(failure.kafkaDetails().inputLocation().topic()).isEqualTo(topic + "-retry-1");
+                        assertThat(failure.kafkaDetails().attempt()).isEqualTo(4);
+                        assertThat(failure.kafkaDetails().consumerGroup()).isEqualTo(group + "-retry");
+                        assertThat(failure.kafkaDetails().inputLocation().topic()).isEqualTo(topic + "-retry");
+                        assertThat(failure.kafkaDetails().inputLocation().offset()).isEqualTo(2L);
                         assertThat(failure.kafkaDetails().originalLocation().topic()).isEqualTo(topic);
                         assertThat(failure.kafkaDetails().destinationLocation().offset()).isZero();
                         assertThat(endOffset(admin, topic + "-dlt")).isEqualTo(1);
-                        assertThat(committed(admin, group + "-retry-1", topic + "-retry-1", 0)).isNull();
+                        assertThat(committed(admin, group + "-retry", topic + "-retry", 0)).isEqualTo(2L);
                         return null;
                     }).when(client).send(any());
                     var request = request("exhausted", 1);
@@ -264,15 +269,32 @@ class NotificationCreationConsumerIntegrationTest {
                     start(context, 1);
                     await().atMost(Duration.ofSeconds(20))
                         .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
+                    await().atMost(Duration.ofSeconds(45))
+                        .untilAsserted(() -> assertThat(endOffset(admin, topic + "-dlt")).isEqualTo(1L));
                     var deadLetter = readRecord(topic + "-dlt", 0);
                     assertThat(deadLetter.key()).isEqualTo("7");
                     assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
-                    await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                    await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                         verify(client).send(any());
-                        assertThat(committed(admin, group + "-retry-1", topic + "-retry-1", 0)).isEqualTo(1L);
+                        assertThat(committed(admin, group + "-retry", topic + "-retry", 0)).isEqualTo(3L);
                     });
-                    assertThat(attempts.get()).isEqualTo(3);
+                    assertThat(startedAt).hasSize(4);
+                    assertThat(endOffset(admin, topic + "-retry")).isEqualTo(3L);
+                    var retryRecords = readRecords(topic + "-retry", 0, 3);
+                    for (int index = 0; index < retryRecords.size(); index++) {
+                        var retry = retryRecords.get(index);
+                        assertThat(retry.offset()).isEqualTo(index);
+                        assertThat(retry.key()).isEqualTo("7");
+                        assertThat(context.getBean(JsonMapper.class)
+                            .readValue(retry.value(), NotificationCreateRequested.class)).isEqualTo(request);
+                        assertThat(ByteBuffer.wrap(retry.headers().lastHeader(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS)
+                            .value()).getInt()).isEqualTo(index + 2);
+                        long dueAt = new BigInteger(retry.headers()
+                            .lastHeader(RetryTopicHeaders.DEFAULT_HEADER_BACKOFF_TIMESTAMP).value()).longValueExact();
+                        assertThat(dueAt).isGreaterThanOrEqualTo(startedAt.get(index) + 5_000L);
+                        assertThat(startedAt.get(index + 1)).isGreaterThanOrEqualTo(dueAt);
+                    }
                 });
         }
     }
@@ -353,7 +375,7 @@ class NotificationCreationConsumerIntegrationTest {
                         assertThat(container.isInExpectedState()).isFalse();
                     });
                     assertThat(committed(admin, group, topic, 0)).isNull();
-                    assertThat(endOffset(admin, topic + "-retry-0")).isZero();
+                    assertThat(endOffset(admin, topic + "-retry")).isZero();
                     assertThat(endOffset(admin, topic + "-dlt")).isZero();
                 });
         }
@@ -384,7 +406,9 @@ class NotificationCreationConsumerIntegrationTest {
                     String destination = topic + stage.destinationSuffix;
                     doAnswer(invocation -> {
                         ProducerRecord<?, ?> record = invocation.getArgument(0);
-                        if (record.topic().equals(destination) && reject.get()) {
+                        if (record.topic().equals(destination) && reject.get()
+                            && ByteBuffer.wrap(record.headers().lastHeader(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS)
+                                .value()).getInt() == stage.attempt + 1) {
                             rejected.countDown();
                             return CompletableFuture.failedFuture(new TimeoutException());
                         }
@@ -398,8 +422,14 @@ class NotificationCreationConsumerIntegrationTest {
                     try {
                         assertThat(rejected.await(15, TimeUnit.SECONDS)).isTrue();
                         await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-                            assertThat(committed(admin, inputGroup, inputTopic, 0)).isNull();
-                            assertThat(endOffset(admin, destination)).isZero();
+                            if (stage.inputOffset == 0) {
+                                assertThat(committed(admin, inputGroup, inputTopic, 0)).isNull();
+                            } else {
+                                assertThat(committed(admin, inputGroup, inputTopic, 0)).isEqualTo(stage.inputOffset);
+                            }
+                            assertThat(endOffset(admin, destination))
+                                .isEqualTo(
+                                    stage.inputSuffix.equals(stage.destinationSuffix) ? stage.inputOffset + 1 : 0L);
                             String errorCode = destination.endsWith("-dlt")
                                 ? "DLT_PUBLISH_FAILED"
                                 : "RETRY_PUBLISH_FAILED";
@@ -411,11 +441,12 @@ class NotificationCreationConsumerIntegrationTest {
                         reject.set(false);
                     }
                     await().atMost(Duration.ofSeconds(20))
-                        .untilAsserted(() -> assertThat(committed(admin, inputGroup, inputTopic, 0)).isEqualTo(1L));
+                        .untilAsserted(() -> assertThat(committed(admin, inputGroup, inputTopic, 0))
+                            .isGreaterThanOrEqualTo(stage.inputOffset + 1));
                     var deadLetter = readRecord(topic + "-dlt", 0);
                     assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
-                    assertThat(processingAttempts.get()).isGreaterThan(stage == HandoffStage.MAIN_DLT ? 1 : 3);
+                    assertThat(processingAttempts.get()).isGreaterThan(stage == HandoffStage.MAIN_DLT ? 1 : 4);
                 });
         }
     }
@@ -442,7 +473,7 @@ class NotificationCreationConsumerIntegrationTest {
                     var entered = new CountDownLatch(1);
                     doAnswer(invocation -> {
                         ProducerRecord<?, ?> record = invocation.getArgument(0);
-                        if (record.topic().equals(topic + "-retry-0") && pending.getAndSet(false)) {
+                        if (record.topic().equals(topic + "-retry") && pending.getAndSet(false)) {
                             entered.countDown();
                             return new CompletableFuture<>();
                         }
@@ -453,7 +484,7 @@ class NotificationCreationConsumerIntegrationTest {
                     assertThat(entered.await(15, TimeUnit.SECONDS)).isTrue();
                     await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
                         assertThat(committed(admin, group, topic, 0)).isNull();
-                        assertThat(endOffset(admin, topic + "-retry-0")).isZero();
+                        assertThat(endOffset(admin, topic + "-retry")).isZero();
                     });
                     await().atMost(Duration.ofSeconds(25))
                         .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
@@ -544,9 +575,8 @@ class NotificationCreationConsumerIntegrationTest {
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("NOTIFICATION_CREATE_REQUESTED_TOPIC=" + topic,
                 "APP_NOTIFICATION_CREATION_GROUP_ID=" + group,
-                "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=3",
-                "APP_NOTIFICATION_RETRY_INITIAL_DELAY_MS=100",
-                "APP_NOTIFICATION_RETRY_MAX_DELAY_MS=1000",
+                "APP_NOTIFICATION_RETRY_MAX_ATTEMPTS=4",
+                "APP_NOTIFICATION_RETRY_DELAY_MS=100",
                 "APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS=5000")
             .withInitializer(context -> {
                 var sources = context.getEnvironment().getPropertySources();
@@ -566,8 +596,7 @@ class NotificationCreationConsumerIntegrationTest {
         try {
             List<NewTopic> topics = new ArrayList<>();
             topics.add(new NewTopic(topic, partitions, (short) 1));
-            topics.add(new NewTopic(topic + "-retry-0", partitions, (short) 1));
-            topics.add(new NewTopic(topic + "-retry-1", partitions, (short) 1));
+            topics.add(new NewTopic(topic + "-retry", partitions, (short) 1));
             topics.add(new NewTopic(topic + "-dlt", partitions, (short) 1));
             admin.createTopics(topics).all().get(15, TimeUnit.SECONDS);
             return admin;
@@ -615,6 +644,10 @@ class NotificationCreationConsumerIntegrationTest {
     }
 
     private ConsumerRecord<String, byte[]> readRecord(String topic, int partition) throws Exception {
+        return readRecords(topic, partition, 1).getFirst();
+    }
+
+    private List<ConsumerRecord<String, byte[]>> readRecords(String topic, int partition, int count) throws Exception {
         try (var consumer = new KafkaConsumer<String, byte[]>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
             ConsumerConfig.GROUP_ID_CONFIG, "read-" + UUID.randomUUID(),
@@ -624,11 +657,13 @@ class NotificationCreationConsumerIntegrationTest {
             var topicPartition = new TopicPartition(topic, partition);
             consumer.assign(List.of(topicPartition));
             consumer.seekToBeginning(List.of(topicPartition));
+            var received = new ArrayList<ConsumerRecord<String, byte[]>>();
             long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
             while (System.nanoTime() < deadline) {
                 var records = consumer.poll(Duration.ofMillis(200));
-                if (!records.isEmpty()) {
-                    return records.iterator().next();
+                records.forEach(received::add);
+                if (received.size() >= count) {
+                    return received.subList(0, count);
                 }
             }
             throw new AssertionError("Expected a record in " + topic);
@@ -655,17 +690,21 @@ class NotificationCreationConsumerIntegrationTest {
     }
 
     private enum HandoffStage {
-        MAIN_RETRY("", "-retry-0"),
-        MAIN_DLT("", "-dlt"),
-        RETRY_RETRY("-retry-0", "-retry-1"),
-        RETRY_DLT("-retry-1", "-dlt");
+        MAIN_RETRY("", "-retry", 1, 0),
+        MAIN_DLT("", "-dlt", 1, 0),
+        RETRY_RETRY("-retry", "-retry", 2, 0),
+        RETRY_DLT("-retry", "-dlt", 4, 2);
 
         private final String inputSuffix;
         private final String destinationSuffix;
+        private final int attempt;
+        private final long inputOffset;
 
-        HandoffStage(String inputSuffix, String destinationSuffix) {
+        HandoffStage(String inputSuffix, String destinationSuffix, int attempt, long inputOffset) {
             this.inputSuffix = inputSuffix;
             this.destinationSuffix = destinationSuffix;
+            this.attempt = attempt;
+            this.inputOffset = inputOffset;
         }
     }
 

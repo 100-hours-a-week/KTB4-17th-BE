@@ -160,8 +160,7 @@ public class NotificationRecoveryReporter {
     }
 
     private boolean isRetryTopic(String topic) {
-        String prefix = kafkaProperties.getCreateRequestedTopic() + "-retry-";
-        return topic.startsWith(prefix) && topic.substring(prefix.length()).matches("[0-9]+");
+        return topic.equals(kafkaProperties.getCreateRequestedTopic() + "-retry");
     }
 
     private KafkaLocation originalLocation(ConsumerRecord<?, ?> record) {
