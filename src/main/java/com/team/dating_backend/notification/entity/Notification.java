@@ -31,10 +31,16 @@ import org.hibernate.type.SqlTypes;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
     name = "notifications",
-    indexes = @Index(
-        name = "idx_notifications_user_deleted_id",
-        columnList = "user_id,deleted_at,id"
-    ),
+    indexes = {
+        @Index(
+            name = "idx_notifications_user_deleted_id",
+            columnList = "user_id,deleted_at,id"
+        ),
+        @Index(
+            name = "idx_notifications_user_deleted_created_id",
+            columnList = "user_id,deleted_at,created_at,id"
+        )
+    },
     uniqueConstraints = @UniqueConstraint(
         name = "uk_notifications_source_recipient_type",
         columnNames = {"source_event_id", "user_id", "type"}
