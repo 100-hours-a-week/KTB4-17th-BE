@@ -15,9 +15,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -48,21 +47,21 @@ class ChatMessageKafkaPublisherTest {
         given(eventFactory.create(MESSAGE_ID)).willReturn(event);
 
         Map<String, Object> producerProperties = KafkaTestUtils.producerProps(embeddedKafka);
-        DefaultKafkaProducerFactory<Long, ChatMessageCreatedKafkaEvent> producerFactory = new DefaultKafkaProducerFactory<>(
-            producerProperties, new LongSerializer(), new JacksonJsonSerializer<>());
-        KafkaTemplate<Long, ChatMessageCreatedKafkaEvent> kafkaTemplate = new KafkaTemplate<>(producerFactory);
-        try (Consumer<Long, String> consumer = consumer(embeddedKafka)) {
+        DefaultKafkaProducerFactory<String, ChatMessageCreatedKafkaEvent> producerFactory = new DefaultKafkaProducerFactory<>(
+            producerProperties, new StringSerializer(), new JacksonJsonSerializer<>());
+        KafkaTemplate<String, ChatMessageCreatedKafkaEvent> kafkaTemplate = new KafkaTemplate<>(producerFactory);
+        try (Consumer<String, String> consumer = consumer(embeddedKafka)) {
             embeddedKafka.consumeFromAnEmbeddedTopic(consumer, TOPIC);
             ChatMessageKafkaPublisher publisher = new ChatMessageKafkaPublisher(
                 eventFactory, kafkaTemplate, TOPIC);
 
             publisher.publish(MESSAGE_ID).get(10, TimeUnit.SECONDS);
 
-            ConsumerRecord<Long, String> record = KafkaTestUtils.getSingleRecord(
+            ConsumerRecord<String, String> record = KafkaTestUtils.getSingleRecord(
                 consumer, TOPIC, Duration.ofSeconds(10));
             JsonNode payload = new ObjectMapper().readTree(record.value());
             assertThat(record.topic()).isEqualTo(TOPIC);
-            assertThat(record.key()).isEqualTo(CHAT_ROOM_ID);
+            assertThat(record.key()).isEqualTo(CHAT_ROOM_ID.toString());
             assertThat(payload.get("eventId").asText())
                 .isEqualTo("chat-message-created:100");
             assertThat(payload.get("chatRoomId").asLong()).isEqualTo(CHAT_ROOM_ID);
@@ -81,11 +80,11 @@ class ChatMessageKafkaPublisherTest {
         }
     }
 
-    private Consumer<Long, String> consumer(EmbeddedKafkaBroker embeddedKafka) {
+    private Consumer<String, String> consumer(EmbeddedKafkaBroker embeddedKafka) {
         Map<String, Object> consumerProperties = KafkaTestUtils.consumerProps(
             embeddedKafka, "chat-message-publisher-test", false);
         return new KafkaConsumer<>(
-            consumerProperties, new LongDeserializer(), new StringDeserializer());
+            consumerProperties, new StringDeserializer(), new StringDeserializer());
     }
 
     private ChatMessageCreatedKafkaEvent event() {
