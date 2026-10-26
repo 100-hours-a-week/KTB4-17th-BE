@@ -6,6 +6,15 @@ spring:
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.LongSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+
   servlet:
     multipart:
       # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
@@ -76,6 +85,8 @@ app:
 
   chat:
     runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}
+    kafka:
+      message-created-topic: ${APP_CHAT_KAFKA_MESSAGE_CREATED_TOPIC:chat.message-created.v1}
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 
