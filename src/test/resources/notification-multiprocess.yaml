@@ -39,6 +39,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
         "[allow.auto.create.topics]": false
+        @CONSUMER_ASSIGNMENT_CONFIG@
     listener:
       ack-mode: record
 server:
@@ -89,7 +90,7 @@ app:
     sse:
       timeout-ms: 300000
       heartbeat-delay-ms: 1000
-      drain-timeout-ms: 500
+      drain-timeout-ms: @SSE_DRAIN_TIMEOUT_MS@
       close-timeout-ms: 1000
       consumer-stop-timeout-ms: 5000
   ai-simulation:
@@ -119,7 +120,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: "@MANAGEMENT_ENDPOINTS@"
 sentry:
   enabled: false
   dsn: ""

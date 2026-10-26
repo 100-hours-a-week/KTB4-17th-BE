@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,10 +27,13 @@ public final class NotificationSseProbe implements AutoCloseable {
     private final URI server;
     private final InputStream stream;
     private final List<NotificationEventResponse> notifications = new CopyOnWriteArrayList<>();
+    private final List<Instant> heartbeats = new CopyOnWriteArrayList<>();
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
     private final Thread reader;
     private volatile String connectionId;
     private volatile boolean closed;
+    private volatile boolean remoteEndExpected;
+    private volatile Instant remoteEndedAt;
 
     private NotificationSseProbe(long userId, URI server, InputStream stream) {
         this.userId = userId;
@@ -90,6 +94,8 @@ public final class NotificationSseProbe implements AutoCloseable {
                     }
                     event = "";
                     data.setLength(0);
+                } else if (line.equals(":heartbeat") || line.equals(": heartbeat")) {
+                    heartbeats.add(Instant.now());
                 } else if (line.startsWith("event:")) {
                     event = line.substring(6).stripLeading();
                 } else if (line.startsWith("data:")) {
@@ -100,7 +106,10 @@ public final class NotificationSseProbe implements AutoCloseable {
                 }
             }
             if (!closed) {
-                failure.compareAndSet(null, new IOException());
+                remoteEndedAt = Instant.now();
+                if (!remoteEndExpected) {
+                    failure.compareAndSet(null, new IOException());
+                }
             }
         } catch (Throwable error) {
             if (!closed) {
@@ -127,6 +136,18 @@ public final class NotificationSseProbe implements AutoCloseable {
 
     public List<NotificationEventResponse> notifications() {
         return List.copyOf(notifications);
+    }
+
+    public List<Instant> heartbeats() {
+        return List.copyOf(heartbeats);
+    }
+
+    public void expectRemoteEnd() {
+        remoteEndExpected = true;
+    }
+
+    public Instant remoteEndedAt() {
+        return remoteEndedAt;
     }
 
     @Override

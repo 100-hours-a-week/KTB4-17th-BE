@@ -37,15 +37,17 @@ public final class NotificationBackendProcess implements AutoCloseable {
     private int generation;
     private String deliveryGroupPrefix;
     private Instant startedAt;
+    private Instant shutdownRequestedAt;
     private Instant exitObservedAt;
     private Termination termination;
 
     public enum Termination {
-        RUNNING, KILLED, GRACEFUL, FORCED_AFTER_TIMEOUT, EXITED
+        RUNNING, SHUTDOWN_REQUESTED, KILLED, GRACEFUL, FORCED_AFTER_TIMEOUT, EXITED
     }
 
     public record Generation(int number, long pid, URI address, String configuration, String log,
-        String deliveryGroupPrefix, Instant startedAt, Instant exitObservedAt, Integer exitCode,
+        String deliveryGroupPrefix, Instant startedAt, Instant shutdownRequestedAt, Instant exitObservedAt,
+        Integer exitCode,
         Termination termination, boolean alive) {}
 
     public NotificationBackendProcess(String name, Path directory) {
@@ -104,6 +106,7 @@ public final class NotificationBackendProcess implements AutoCloseable {
         deliveryGroupPrefix = nextDeliveryPrefix;
         address = null;
         startedAt = Instant.now();
+        shutdownRequestedAt = null;
         exitObservedAt = null;
         termination = Termination.RUNNING;
         writeHistory();
@@ -127,9 +130,34 @@ public final class NotificationBackendProcess implements AutoCloseable {
         assertThat(isAlive()).isTrue();
         termination = Termination.KILLED;
         process.destroyForcibly();
-        boolean exited = waitForExit(5);
-        writeHistory();
+        boolean exited = awaitExit(Duration.ofSeconds(5));
         assertThat(exited).isTrue();
+    }
+
+    public void requestGracefulShutdown() throws IOException {
+        assertThat(process).isNotNull();
+        if (isAlive() && termination == Termination.RUNNING) {
+            assertThat(process.supportsNormalTermination()).isTrue();
+            shutdownRequestedAt = Instant.now();
+            termination = Termination.SHUTDOWN_REQUESTED;
+            process.destroy();
+        }
+        writeHistory();
+    }
+
+    public boolean awaitExit(Duration timeout) throws IOException, InterruptedException {
+        assertThat(process).isNotNull();
+        assertThat(timeout).isNotNull();
+        assertThat(timeout.isNegative()).isFalse();
+        boolean exited;
+        try {
+            exited = process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw exception;
+        }
+        writeHistory();
+        return exited;
     }
 
     public void restart() throws IOException {
@@ -157,11 +185,14 @@ public final class NotificationBackendProcess implements AutoCloseable {
                 exitObservedAt = Instant.now();
                 if (termination == Termination.RUNNING) {
                     termination = Termination.EXITED;
+                } else if (termination == Termination.SHUTDOWN_REQUESTED) {
+                    termination = Termination.GRACEFUL;
                 }
             }
             var current = new Generation(generation, process.pid(), address,
                 generationDirectory.resolve("application.yaml").toString(), log().toString(),
-                deliveryGroupPrefix, startedAt, exitObservedAt, alive ? null : process.exitValue(), termination, alive);
+                deliveryGroupPrefix, startedAt, shutdownRequestedAt, exitObservedAt,
+                alive ? null : process.exitValue(), termination, alive);
             if (history.size() < generation) {
                 history.add(current);
             } else {
@@ -175,15 +206,6 @@ public final class NotificationBackendProcess implements AutoCloseable {
         if (process != null) {
             Files.writeString(directory.resolve("process-history.json"),
                 JSON.writerWithDefaultPrettyPrinter().writeValueAsString(history()));
-        }
-    }
-
-    private boolean waitForExit(long seconds) throws InterruptedException {
-        try {
-            return process.waitFor(seconds, TimeUnit.SECONDS);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw exception;
         }
     }
 
@@ -202,13 +224,11 @@ public final class NotificationBackendProcess implements AutoCloseable {
     @Override
     public void close() throws IOException, InterruptedException {
         if (isAlive()) {
-            termination = Termination.GRACEFUL;
-            process.destroy();
-            if (!waitForExit(15)) {
+            requestGracefulShutdown();
+            if (!awaitExit(Duration.ofSeconds(15))) {
                 termination = Termination.FORCED_AFTER_TIMEOUT;
                 process.destroyForcibly();
-                boolean exited = waitForExit(5);
-                writeHistory();
+                boolean exited = awaitExit(Duration.ofSeconds(5));
                 assertThat(exited).isTrue();
             }
         }
