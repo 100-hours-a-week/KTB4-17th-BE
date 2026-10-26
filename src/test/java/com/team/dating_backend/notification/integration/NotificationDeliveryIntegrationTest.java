@@ -15,19 +15,32 @@ import static org.mockito.Mockito.verify;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.notification.config.NotificationSseProperties;
+import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
+import com.team.dating_backend.notification.sse.NotificationSseLifecycle;
 import com.team.dating_backend.notification.controller.NotificationStreamController;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.entity.Notification;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.event.NotificationCreatedEventListener;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.kafka.NotificationDeliveryConsumer;
+import com.team.dating_backend.notification.service.NotificationDeliveryEventValidator;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import java.time.Instant;
 import com.team.dating_backend.notification.exception.NotificationStreamExceptionHandler;
 import com.team.dating_backend.notification.repository.NotificationRepository;
 import com.team.dating_backend.notification.service.NotificationAccessService;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.service.NotificationRequestService;
 import com.team.dating_backend.notification.service.NotificationSubscriptionService;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
+import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.UserAuthenticationService;
@@ -84,6 +97,8 @@ import tools.jackson.databind.ObjectMapper;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.config.name=notification-delivery-test",
+        "app.notification.kafka.create-requested-topic=test-create",
+        "app.notification.kafka.delivery-topic=test-delivery",
         "server.address=127.0.0.1",
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=validate",
@@ -103,7 +118,16 @@ class NotificationDeliveryIntegrationTest {
     private int port;
 
     @Autowired
-    private NotificationCreateService service;
+    private NotificationRequestService service;
+
+    @Autowired
+    private PublishedRequests publishedRequests;
+
+    @Autowired
+    private NotificationDeliveryEventValidator deliveryValidator;
+
+    @Autowired
+    private NotificationSseObservation observation;
 
     @Autowired
     private NotificationRepository repository;
@@ -140,6 +164,7 @@ class NotificationDeliveryIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        publishedRequests.clear();
         transaction = new TransactionTemplate(transactionManager);
         recipientId = createUser("수신자");
         otherUserId = createUser("다른회원");
@@ -176,6 +201,7 @@ class NotificationDeliveryIntegrationTest {
             verify(sender, never()).sendNotification(anyLong(), any());
         });
 
+        deliverPending();
         NotificationEventResponse stored = storedNotification();
         assertThat(readNotification(first)).isEqualTo(stored);
         assertThat(readNotification(second)).isEqualTo(stored);
@@ -197,6 +223,7 @@ class NotificationDeliveryIntegrationTest {
         })).isSameAs(failure);
 
         verify(sender, never()).sendNotification(anyLong(), any());
+        assertThat(publishedRequests.snapshot()).isEmpty();
         assertThat(stream.frames().poll(200, TimeUnit.MILLISECONDS)).isNull();
         assertThat(repository.countVisibleUnreadByUserId(recipientId)).isZero();
         assertThat(userRepository.findById(recipientId).orElseThrow().getPersonaOnboardingStatus())
@@ -207,6 +234,7 @@ class NotificationDeliveryIntegrationTest {
     void SSE_연결이_없어도_알림을_저장하고_미읽음_상태를_유지한다() {
         transaction.executeWithoutResult(status -> createNotification());
 
+        deliverPending();
         NotificationEventResponse stored = storedNotification();
         verify(sender).sendNotification(recipientId, stored);
         assertThat(registry.snapshotAll()).isEmpty();
@@ -228,6 +256,7 @@ class NotificationDeliveryIntegrationTest {
 
         transaction.executeWithoutResult(status -> createNotification());
 
+        deliverPending();
         NotificationEventResponse stored = storedNotification();
         assertThat(readNotification(stream)).isEqualTo(stored);
         verify(failedEmitter).send(any(SseEmitter.SseEventBuilder.class));
@@ -239,14 +268,15 @@ class NotificationDeliveryIntegrationTest {
 
     @Test
     void 예상하지_못한_전송_오류에도_커밋된_업무와_알림을_유지한다() {
-        doThrow(new IllegalStateException("전송 처리 실패"))
-            .when(sender).sendNotification(anyLong(), any());
+        var failure = new IllegalStateException();
+        doThrow(failure).when(sender).sendNotification(anyLong(), any());
 
         transaction.executeWithoutResult(status -> {
             userRepository.findById(recipientId).orElseThrow().confirmPersonaOnboarding(NOW);
             createNotification();
         });
 
+        assertThatThrownBy(this::deliverPending).isSameAs(failure);
         verify(sender).sendNotification(recipientId, storedNotification());
         assertThat(repository.countVisibleUnreadByUserId(recipientId)).isEqualTo(1);
         assertThat(userRepository.findById(recipientId).orElseThrow().getPersonaOnboardingStatus())
@@ -262,8 +292,19 @@ class NotificationDeliveryIntegrationTest {
     }
 
     private void createNotification() {
-        service.createNotification(recipientId, NotificationType.MATCH,
-            "매칭 성사", "서로의 마음이 연결되었어요.", "CHAT_ROOM", 123L);
+        service.requestNotification(new NotificationCreateRequested(1, "MATCH_CREATED:123", recipientId,
+            NotificationType.MATCH, "매칭 성사", "서로의 마음이 연결되었어요.", "CHAT_ROOM", 123L,
+            Instant.parse("2026-10-18T12:00:00Z")));
+    }
+
+    private void deliverPending() {
+        assertThat(publishedRequests.snapshot()).hasSize(1);
+        assertThat(repository.countVisibleUnreadByUserId(recipientId)).isZero();
+        publishedRequests.persistPending();
+        var request = publishedRequests.snapshot().getFirst();
+        var event = new NotificationDeliveryEvent(1, request.sourceEventId(), recipientId, storedNotification());
+        new NotificationDeliveryConsumer(deliveryValidator, sender, registry, observation)
+            .consume(new ConsumerRecord<>("test-delivery", 0, 0L, recipientId.toString(), event));
     }
 
     private NotificationEventResponse storedNotification() {
@@ -326,7 +367,10 @@ class NotificationDeliveryIntegrationTest {
     @EnableAutoConfiguration
     @EntityScan("com.team.dating_backend")
     @EnableJpaRepositories(basePackageClasses = {NotificationRepository.class, UserRepository.class})
-    @EnableConfigurationProperties({NotificationSseProperties.class, SecurityProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationSseProperties.class, SecurityProperties.class, NotificationKafkaProperties.class,
+            NotificationDeliveryProperties.class}
+    )
     @Import(
         {
             SecurityConfig.class,
@@ -336,10 +380,11 @@ class NotificationDeliveryIntegrationTest {
             NotificationStreamController.class,
             NotificationStreamExceptionHandler.class,
             NotificationAccessService.class,
-            NotificationCreateService.class,
-            NotificationSubscriptionService.class,
-            NotificationCreatedEventListener.class,
-            NotificationEmitterRegistry.class,
+            NotificationRequestTestConfiguration.class,
+            NotificationSubscriptionService.class, NotificationSseLifecycle.class,
+            NotificationDeliveryReadinessTracker.class,
+            NotificationDeliveryEventValidator.class,
+            NotificationEmitterRegistry.class, NotificationSseObservation.class, NotificationSseProcessIdentity.class,
             NotificationSseSender.class
         }
     )

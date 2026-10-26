@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageResponse;
 import com.team.dating_backend.profile.dto.response.ProfileImageSaveResponse;
@@ -53,6 +54,9 @@ class ProfileImageControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private ProfileImageSaveService profileImageSaveService;

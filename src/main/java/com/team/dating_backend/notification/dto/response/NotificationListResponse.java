@@ -37,5 +37,5 @@ public record NotificationListResponse(
         }
     }
 
-    public record PageInfo(Long nextCursor, boolean hasNext) {}
+    public record PageInfo(String nextCursor, boolean hasNext) {}
 }

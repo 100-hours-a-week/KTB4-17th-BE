@@ -6,6 +6,28 @@ spring:
   config:
     import: optional:file:.env[.properties] # .env 파일 읽을 수 있도록 해주는 설정
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092,localhost:39092,localhost:49092}
+    admin:
+      auto-create: false
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+        "[max.block.ms]": ${KAFKA_PRODUCER_MAX_BLOCK_MS:3000}
+        "[request.timeout.ms]": ${KAFKA_PRODUCER_REQUEST_TIMEOUT_MS:3000}
+        "[delivery.timeout.ms]": ${KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS:10000}
+    consumer:
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        "[allow.auto.create.topics]": false
+    listener:
+      ack-mode: record
+
   servlet:
     multipart:
       # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
@@ -70,9 +92,49 @@ app:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
   notification:
+    kafka:
+      create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
+      delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
+    publish:
+      result-timeout-ms: ${APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS:15000}
+      pool-size: ${APP_NOTIFICATION_PUBLISH_POOL_SIZE:2}
+      queue-capacity: ${APP_NOTIFICATION_PUBLISH_QUEUE_CAPACITY:100}
+      shutdown-wait-seconds: ${APP_NOTIFICATION_PUBLISH_SHUTDOWN_WAIT_SECONDS:20}
+    creation:
+      enabled: ${APP_NOTIFICATION_CREATION_ENABLED:false}
+      group-id: ${APP_NOTIFICATION_CREATION_GROUP_ID:${spring.profiles.active:local}-notification-create-v1}
+      concurrency: ${APP_NOTIFICATION_CREATION_CONCURRENCY:1}
+      max-poll-records: ${APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS:1}
+      max-poll-interval-ms: ${APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS:300000}
+      delivery-result-timeout-ms: ${APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
+    delivery:
+      enabled: ${APP_NOTIFICATION_DELIVERY_ENABLED:false}
+      group-id-prefix: ${APP_NOTIFICATION_DELIVERY_GROUP_ID_PREFIX:${spring.profiles.active:local}-notification-sse-v1}
+      concurrency: ${APP_NOTIFICATION_DELIVERY_CONCURRENCY:1}
+      max-poll-records: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_RECORDS:1}
+      max-poll-interval-ms: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_INTERVAL_MS:300000}
+    retry:
+      max-attempts: ${APP_NOTIFICATION_RETRY_MAX_ATTEMPTS:4}
+      delay-ms: ${APP_NOTIFICATION_RETRY_DELAY_MS:5000}
+      concurrency: ${APP_NOTIFICATION_RETRY_CONCURRENCY:1}
+      publish-result-timeout-ms: ${APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS:15000}
+    alert:
+      enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
+      environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
+      webhook-url: ${NOTIFICATION_DISCORD_WEBHOOK_URL:}
+      pool-size: ${NOTIFICATION_ALERT_POOL_SIZE:1}
+      queue-capacity: ${NOTIFICATION_ALERT_QUEUE_CAPACITY:20}
+      shutdown-wait-seconds: ${NOTIFICATION_ALERT_SHUTDOWN_WAIT_SECONDS:10}
+      connect-timeout-ms: ${NOTIFICATION_ALERT_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${NOTIFICATION_ALERT_READ_TIMEOUT_MS:3000}
+      max-messages-per-window: ${NOTIFICATION_ALERT_MAX_MESSAGES_PER_WINDOW:5}
+      rate-limit-window-ms: ${NOTIFICATION_ALERT_RATE_LIMIT_WINDOW_MS:60000}
     sse:
       timeout-ms: ${APP_NOTIFICATION_SSE_TIMEOUT_MS:1800000}
       heartbeat-delay-ms: ${APP_NOTIFICATION_SSE_HEARTBEAT_DELAY_MS:30000}
+      drain-timeout-ms: ${APP_NOTIFICATION_SSE_DRAIN_TIMEOUT_MS:10000}
+      close-timeout-ms: ${APP_NOTIFICATION_SSE_CLOSE_TIMEOUT_MS:5000}
+      consumer-stop-timeout-ms: ${APP_NOTIFICATION_SSE_CONSUMER_STOP_TIMEOUT_MS:10000}
 
   chat:
     runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}

@@ -6,6 +6,7 @@ import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.USER
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.aiResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
@@ -26,8 +27,9 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.repository.AiSimulationMessageRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.service.NotificationRequestService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -36,7 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
-import org.springframework.dao.DataAccessResourceFailureException;
+import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -45,7 +47,7 @@ class AiSimulationPersistenceServiceTest {
     private AiSimulationSessionRepository sessionRepository;
     private AiSimulationMessageRepository messageRepository;
     private AiSimulationReportRepository reportRepository;
-    private NotificationCreateService notificationCreateService;
+    private NotificationRequestService notificationRequestService;
     private AiSimulationPersistenceService service;
 
     @BeforeEach
@@ -53,9 +55,9 @@ class AiSimulationPersistenceServiceTest {
         sessionRepository = mock(AiSimulationSessionRepository.class);
         messageRepository = mock(AiSimulationMessageRepository.class);
         reportRepository = mock(AiSimulationReportRepository.class);
-        notificationCreateService = mock(NotificationCreateService.class);
+        notificationRequestService = mock(NotificationRequestService.class);
         service = new AiSimulationPersistenceService(
-            sessionRepository, messageRepository, reportRepository, new ObjectMapper(), notificationCreateService);
+            sessionRepository, messageRepository, reportRepository, new ObjectMapper(), notificationRequestService);
     }
 
     @Test
@@ -72,7 +74,7 @@ class AiSimulationPersistenceServiceTest {
         verify(reportRepository).save(reportCaptor.capture());
         assertThat(reportCaptor.getValue().getStatus())
             .isEqualTo(AiSimulationReportStatus.GENERATING);
-        verifyNoInteractions(notificationCreateService);
+        verifyNoInteractions(notificationRequestService);
     }
 
     @Test
@@ -103,23 +105,19 @@ class AiSimulationPersistenceServiceTest {
         order.verify(sessionRepository).findByIdForUpdate(SESSION_ID);
         order.verify(reportRepository).findBySessionId(SESSION_ID);
         order.verify(messageRepository).saveAll(org.mockito.ArgumentMatchers.any());
-        verify(notificationCreateService).createNotification(
-            USER_ID, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-            "시뮬레이션 완료", "두 사람의 대화 시뮬레이션과 분석 보고서가 준비됐어요.", "AI_SIMULATION", SESSION_ID);
-        verifyNoMoreInteractions(notificationCreateService);
+        assertNotificationRequest();
+        verifyNoMoreInteractions(notificationRequestService);
     }
 
     @Test
-    void 완료_알림_생성_실패를_숨기지_않고_원래_예외를_전달한다() {
+    void 완료_알림_요청_등록_실패를_숨기지_않고_원래_예외를_전달한다() {
         AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
         AiSimulationReport report = new AiSimulationReport(session, LocalDateTime.now());
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
         given(reportRepository.findBySessionId(SESSION_ID)).willReturn(Optional.of(report));
-        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("알림 저장 실패");
-        willThrow(failure).given(notificationCreateService).createNotification(
-            USER_ID, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-            "시뮬레이션 완료", "두 사람의 대화 시뮬레이션과 분석 보고서가 준비됐어요.", "AI_SIMULATION", SESSION_ID);
+        var failure = new NotificationInvalidCreateRequestException();
+        willThrow(failure).given(notificationRequestService).requestNotification(any());
 
         assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse())).isSameAs(failure);
     }
@@ -137,7 +135,7 @@ class AiSimulationPersistenceServiceTest {
         assertThat(report.getStatus()).isEqualTo(AiSimulationReportStatus.FAILED);
         verify(messageRepository, org.mockito.Mockito.never())
             .saveAll(org.mockito.ArgumentMatchers.any());
-        verifyNoInteractions(notificationCreateService);
+        verifyNoInteractions(notificationRequestService);
     }
 
     @ParameterizedTest
@@ -154,7 +152,7 @@ class AiSimulationPersistenceServiceTest {
 
         assertThat(session.getStatus()).isEqualTo(status);
         assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
-        verifyNoInteractions(reportRepository, messageRepository, notificationCreateService);
+        verifyNoInteractions(reportRepository, messageRepository, notificationRequestService);
     }
 
     @ParameterizedTest
@@ -192,10 +190,8 @@ class AiSimulationPersistenceServiceTest {
         assertThat(report.getStatus()).isEqualTo(AiSimulationReportStatus.COMPLETED);
         verify(messageRepository, times(1)).saveAll(org.mockito.ArgumentMatchers.any());
         verify(reportRepository, times(1)).findBySessionId(SESSION_ID);
-        verify(notificationCreateService).createNotification(
-            USER_ID, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-            "시뮬레이션 완료", "두 사람의 대화 시뮬레이션과 분석 보고서가 준비됐어요.", "AI_SIMULATION", SESSION_ID);
-        verifyNoMoreInteractions(notificationCreateService);
+        assertNotificationRequest();
+        verifyNoMoreInteractions(notificationRequestService);
     }
 
     @Test
@@ -292,6 +288,16 @@ class AiSimulationPersistenceServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING));
         verifyNoInteractions(reportRepository, messageRepository);
+    }
+
+    private void assertNotificationRequest() {
+        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
+        verify(notificationRequestService).requestNotification(captor.capture());
+        var request = captor.getValue();
+        assertThat(request.requestedAt()).isNotNull();
+        assertThat(request).isEqualTo(new NotificationCreateRequested(1, "AI_SIMULATION_COMPLETED:" + SESSION_ID,
+            USER_ID, NotificationType.AI_SIMULATION_REPORT_COMPLETED, "시뮬레이션 완료",
+            "두 사람의 대화 시뮬레이션과 분석 보고서가 준비됐어요.", "AI_SIMULATION", SESSION_ID, request.requestedAt()));
     }
 
     private AiSimulationSession endedSession(AiSimulationSessionStatus status) {

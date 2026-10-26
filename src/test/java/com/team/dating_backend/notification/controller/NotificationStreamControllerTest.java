@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -19,8 +24,11 @@ import com.team.dating_backend.notification.service.NotificationSubscriptionServ
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
+import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.nio.charset.StandardCharsets;
+import jakarta.servlet.DispatcherType;
 import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -51,12 +59,14 @@ class NotificationStreamControllerTest {
     private NotificationEmitterRegistry registry;
     private NotificationStreamExceptionHandler handler;
     private MockMvc mockMvc;
+    private NotificationSseObservation observation;
 
     @BeforeEach
     void setUp() {
         service = mock(NotificationSubscriptionService.class);
-        registry = new NotificationEmitterRegistry();
-        handler = new NotificationStreamExceptionHandler(registry, new ObjectMapper());
+        observation = mock(NotificationSseObservation.class);
+        registry = new NotificationEmitterRegistry(observation);
+        handler = new NotificationStreamExceptionHandler(registry, new ObjectMapper(), observation);
         mockMvc = MockMvcBuilders.standaloneSetup(new NotificationStreamController(service))
             .setControllerAdvice(new GlobalExceptionHandler(), handler)
             .setCustomArgumentResolvers(new PrincipalArgumentResolver())
@@ -67,7 +77,7 @@ class NotificationStreamControllerTest {
     void 구독은_연결을_요청에_보관하고_초기_이벤트와_SSE_헤더를_반환한다() throws Exception {
         NotificationSseConnection connection = connection();
         registry.register(connection);
-        new NotificationSseSender(registry).sendConnected(connection);
+        new NotificationSseSender(registry, observation).sendConnected(connection);
         given(service.subscribe(1L)).willReturn(connection);
 
         try {
@@ -82,6 +92,18 @@ class NotificationStreamControllerTest {
         } finally {
             connection.getEmitter().complete();
         }
+    }
+
+    @Test
+    void 미준비_구독은_SSE만_요청해도_503_errorCode_JSON으로_반환한다() throws Exception {
+        willThrow(new NotificationBusinessException(NotificationErrorCode.NOTIFICATION_STREAM_NOT_READY))
+            .given(service).subscribe(1L);
+        mockMvc.perform(get("/api/v1/notifications/stream").accept(MediaType.TEXT_EVENT_STREAM))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(request().asyncNotStarted())
+            .andExpect(header().string("Cache-Control", "no-cache, no-store"))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(content().string("{\"errorCode\":\"NOTIFICATION_STREAM_NOT_READY\"}"));
     }
 
     @Test
@@ -109,7 +131,9 @@ class NotificationStreamControllerTest {
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
         response.getOutputStream().write("event:connected\n".getBytes(StandardCharsets.UTF_8));
 
-        handler.handleStreamException(new IllegalStateException(), request, response);
+        var failure = new IllegalStateException();
+        handler.handleStreamException(failure, request, response);
+        handler.handleStreamException(failure, request, response);
 
         assertThat(response.getStatus()).isEqualTo(500);
         assertThat(response.getContentType()).startsWith(MediaType.APPLICATION_JSON_VALUE);
@@ -117,6 +141,9 @@ class NotificationStreamControllerTest {
         assertThat(request.isAsyncStarted()).isFalse();
         assertThat(connection.isClosed()).isTrue();
         assertThat(registry.snapshotAll()).isEmpty();
+        verify(observation).initializationFailed(connection, failure);
+        verify(observation).connectionClosed(eq(connection),
+            eq(NotificationSseCloseReason.INITIALIZATION_FAILURE), anyLong());
     }
 
     @Test
@@ -128,12 +155,15 @@ class NotificationStreamControllerTest {
         request.setAttribute(NotificationStreamController.CONNECTION_ATTRIBUTE, connection);
         response.getWriter().write("event:connected\n\n");
         response.flushBuffer();
+        request.setDispatcherType(DispatcherType.ASYNC);
 
         handler.handleStreamException(new IllegalStateException(), request, response);
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(response.getContentAsString()).isEqualTo("event:connected\n\n");
         assertThat(registry.snapshotAll()).isEmpty();
+        verify(observation, never()).initializationFailed(any(), any());
+        verify(observation).connectionClosed(eq(connection), eq(NotificationSseCloseReason.SERVER_ERROR), anyLong());
     }
 
     @Test
@@ -153,15 +183,16 @@ class NotificationStreamControllerTest {
     @Test
     void 오류_응답_판단은_진행_중인_전송이_끝날_때까지_기다린다() throws Exception {
         CountDownLatch removed = new CountDownLatch(1);
-        NotificationEmitterRegistry concurrentRegistry = new NotificationEmitterRegistry() {
+        NotificationEmitterRegistry concurrentRegistry = new NotificationEmitterRegistry(observation) {
             @Override
-            public void remove(NotificationSseConnection connection) {
-                super.remove(connection);
+            public boolean remove(NotificationSseConnection connection, NotificationSseCloseReason reason) {
+                boolean result = super.remove(connection, reason);
                 removed.countDown();
+                return result;
             }
         };
         NotificationStreamExceptionHandler concurrentHandler = new NotificationStreamExceptionHandler(
-            concurrentRegistry, new ObjectMapper());
+            concurrentRegistry, new ObjectMapper(), observation);
         NotificationSseConnection connection = connection();
         concurrentRegistry.register(connection);
         MockHttpServletRequest request = new MockHttpServletRequest();
