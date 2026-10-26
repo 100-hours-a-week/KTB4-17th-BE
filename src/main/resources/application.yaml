@@ -138,6 +138,8 @@ app:
 
   chat:
     runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}
+    kafka:
+      message-created-topic: ${APP_CHAT_KAFKA_MESSAGE_CREATED_TOPIC:chat.message-created.v1}
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 
