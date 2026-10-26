@@ -70,7 +70,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     private String bootstrap;
 
     public enum Mode {
-        NORMAL, RECOVERY
+        NORMAL, RECOVERY, LIFECYCLE
     }
 
     public NotificationIntegrationEnvironment() {
@@ -84,7 +84,11 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     public NotificationIntegrationEnvironment(Mode mode, Map<String, String> settingsOverrides) {
         this.mode = mode;
         this.settingsOverrides = Map.copyOf(settingsOverrides);
-        runId = (mode == Mode.RECOVERY ? "pr25-" : "pr24-") + UUID.randomUUID();
+        runId = switch (mode) {
+            case NORMAL -> "pr24-";
+            case RECOVERY -> "pr25-";
+            case LIFECYCLE -> "pr26-";
+        } + UUID.randomUUID();
         directory = Path.of(System.getProperty("notification.test.output-directory")).resolve(runId);
     }
 
@@ -94,7 +98,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         var mysql = resource(new MySQLContainer("mysql:8.4")
             .withDatabaseName(DATABASE).withUsername("notification").withEnv("MYSQL_ROOT_HOST", "%")
             .withPassword(UUID.randomUUID().toString()));
-        if (mode == Mode.RECOVERY) {
+        if (mode != Mode.NORMAL) {
             kafkaFaultProxy = resource(new NotificationKafkaFaultProxy(network));
             kafkaFaultProxy.start();
         }
@@ -170,9 +174,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         settings.put("ALERT_WEBHOOK_URL", "");
         settings.put("ALERT_CONNECT_TIMEOUT_MS", "2000");
         settings.put("ALERT_READ_TIMEOUT_MS", "3000");
+        settings.put("CONSUMER_ASSIGNMENT_CONFIG", mode == Mode.LIFECYCLE
+            ? "\"[partition.assignment.strategy]\": org.apache.kafka.clients.consumer.RangeAssignor"
+            : "");
+        settings.put("SSE_DRAIN_TIMEOUT_MS", mode == Mode.LIFECYCLE ? "8000" : "500");
+        settings.put("MANAGEMENT_ENDPOINTS", mode == Mode.LIFECYCLE ? "health,prometheus" : "health");
         settings.put("PROCESS", "a");
         settings.put("DELIVERY_PREFIX", runId + "-sse-a");
-        settings.put("CREATION_ENABLED", "true");
+        settings.put("CREATION_ENABLED", Boolean.toString(mode != Mode.LIFECYCLE));
         settings.put("PRODUCER_BOOTSTRAP_SERVERS", kafkaFaultProxy == null
             ? bootstrap
             : kafkaFaultProxy.bootstrapServers(Channel.PRODUCER));
@@ -240,10 +249,15 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             .ignoreExceptions().untilAsserted(() -> {
                 var creation = admin.describeConsumerGroups(List.of(creationGroup())).all().get(10, TimeUnit.SECONDS)
                     .get(creationGroup());
-                int members = mode == Mode.RECOVERY ? 1 : 2;
+                int members = mode == Mode.NORMAL ? 2 : 1;
                 assertThat(creation.members()).hasSize(members)
                     .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
-                for (var backend : mode == Mode.RECOVERY ? List.of(first) : List.of(first, second)) {
+                var creators = switch (mode) {
+                    case NORMAL -> List.of(first, second);
+                    case RECOVERY -> List.of(first);
+                    case LIFECYCLE -> List.of(second);
+                };
+                for (var backend : creators) {
                     String prefix = backend.deliveryGroupPrefix();
                     assertThat(creation.members()).filteredOn(member -> member.clientId().equals(prefix)
                         || member.clientId().startsWith(prefix + "-")).hasSize(1);
@@ -352,8 +366,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     }
 
     public void restartFirst() throws IOException {
+        restartFirst(true);
+    }
+
+    public void restartFirst(boolean awaitReadiness) throws IOException {
         first.restart();
-        assertGroupsReady();
+        if (awaitReadiness) {
+            assertGroupsReady();
+        }
         reportProcesses();
     }
 
