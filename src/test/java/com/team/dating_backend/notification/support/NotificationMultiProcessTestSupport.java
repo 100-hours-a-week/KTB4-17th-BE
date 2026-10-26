@@ -42,12 +42,21 @@ public abstract class NotificationMultiProcessTestSupport {
 
     @BeforeAll
     void startEnvironment() throws Exception {
-        environment = new NotificationIntegrationEnvironment();
+        environment = createEnvironment();
         environment.start();
         jdbc = environment.jdbc();
         first = environment.first().address();
         second = environment.second().address();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+    }
+
+    protected NotificationIntegrationEnvironment createEnvironment() {
+        return new NotificationIntegrationEnvironment();
+    }
+
+    protected void restartFirst() throws Exception {
+        environment.restartFirst();
+        first = environment.first().address();
     }
 
     @AfterEach
