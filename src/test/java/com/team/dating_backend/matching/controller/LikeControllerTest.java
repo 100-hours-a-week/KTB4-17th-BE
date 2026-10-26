@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.common.exception.RequestValidationException;
 import com.team.dating_backend.matching.dto.response.LikeCreateResponse;
 import com.team.dating_backend.matching.dto.response.ReceivedLikeItemResponse;
@@ -70,6 +71,9 @@ class LikeControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private LikeSendService likeSendService;
