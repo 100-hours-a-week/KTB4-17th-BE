@@ -24,6 +24,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-restclient'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -49,13 +50,18 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-mysql'
+	testImplementation 'org.testcontainers:testcontainers-kafka'
+	testImplementation 'org.testcontainers:testcontainers-toxiproxy'
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
+def notificationMultiProcessTag = 'notification-multiprocess'
+
 tasks.named('test') {
 	useJUnitPlatform {
+		excludeTags notificationMultiProcessTag
 		if (!project.hasProperty('runS3IntegrationTest')) {
 			excludeTags 's3-integration'
 		}
@@ -76,7 +82,9 @@ tasks.register('apiTest', Test) {
 	group = 'verification'
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags notificationMultiProcessTag
+	}
 	filter {
 		apiTestPatterns.each { includeTestsMatching it }
 	}
@@ -87,10 +95,37 @@ tasks.register('unitTest', Test) {
 	group = 'verification'
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags notificationMultiProcessTag
+	}
 	filter {
 		(apiTestPatterns + integrationTestPatterns).each { excludeTestsMatching it }
 	}
+}
+
+def notificationApplicationJar = tasks.named('bootJar').flatMap { it.archiveFile }
+
+tasks.register('notificationMultiProcessTest', Test) {
+	description = '독립 JVM과 MySQL·Kafka를 사용하는 알림 통합 테스트 실행.'
+	group = 'verification'
+	dependsOn tasks.named('bootJar')
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags notificationMultiProcessTag
+	}
+	filter {
+		includeTestsMatching 'com.team.dating_backend.notification.integration.NotificationMultiProcess*IntegrationTest'
+		failOnNoMatchingTests = true
+	}
+	maxParallelForks = 1
+	failOnNoDiscoveredTests = true
+	inputs.file(notificationApplicationJar).withPropertyName('notificationApplicationJar')
+	systemProperty 'notification.test.application-jar', notificationApplicationJar.get().asFile.absolutePath
+	systemProperty 'notification.test.output-directory',
+		layout.projectDirectory.dir('../reports/notification-multiprocess').asFile.absolutePath
+	outputs.upToDateWhen { false }
+	outputs.doNotCacheIf('Independent backend processes, MySQL, and Kafka require a fresh run') { true }
 }
 
 spotless {

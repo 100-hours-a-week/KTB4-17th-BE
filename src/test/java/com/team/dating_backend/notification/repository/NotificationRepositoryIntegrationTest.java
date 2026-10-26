@@ -3,7 +3,9 @@ package com.team.dating_backend.notification.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.team.dating_backend.notification.dto.event.NotificationCreatedEvent;
+import com.team.dating_backend.notification.cursor.NotificationCursorCodec;
+import com.team.dating_backend.notification.dto.result.NotificationCreationResult;
+import com.team.dating_backend.notification.dto.read.NotificationCursor;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
 import com.team.dating_backend.notification.entity.Notification;
@@ -73,7 +75,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Import(
     {NotificationAccessService.class, NotificationDeleteService.class, NotificationListService.class,
         NotificationUnreadCountService.class, NotificationReadService.class,
-        ChatNotificationReadService.class}
+        ChatNotificationReadService.class, NotificationCursorCodec.class}
 )
 @Testcontainers
 class NotificationRepositoryIntegrationTest {
@@ -107,6 +109,9 @@ class NotificationRepositoryIntegrationTest {
 
     @Autowired
     private NotificationListService listService;
+
+    @Autowired
+    private NotificationCursorCodec cursorCodec;
 
     @Autowired
     private NotificationUnreadCountService unreadCountService;
@@ -153,6 +158,109 @@ class NotificationRepositoryIntegrationTest {
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
             Long.class, userId, "LIKE")).isEqualTo(2L);
+        assertThat(repository.findById(firstId).orElseThrow().getSourceEventId()).isNull();
+        assertThat(repository.findById(secondId).orElseThrow().getSourceEventId()).isNull();
+    }
+
+    @Test
+    void 같은_원본_키의_저장을_거절한_뒤_별도_조회로_읽고_삭제한_기존_알림을_찾는다() {
+        String sourceEventId = "LIKE_SENT:501";
+        Long notificationId = transaction.execute(status -> {
+            Notification notification = sourceNotification(sourceEventId, userId, NotificationType.LIKE);
+            notification.markAsRead(NOW.plusMinutes(1));
+            notification.markAsDeleted(NOW.plusMinutes(2));
+            return repository.saveAndFlush(notification).getId();
+        });
+        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", notificationId);
+
+        assertThatThrownBy(() -> saveSourceNotification(sourceEventId, userId, NotificationType.LIKE))
+            .isInstanceOfSatisfying(DataIntegrityViolationException.class,
+                exception -> assertThat(exception.getMostSpecificCause()).isInstanceOfSatisfying(SQLException.class,
+                    sql -> {
+                        assertThat(sql.getErrorCode()).isEqualTo(1062);
+                        assertThat(sql.getMessage()).contains("uk_notifications_source_recipient_type");
+                    }));
+
+        Notification existing = transaction.execute(status -> repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow());
+
+        assertThat(existing.getId()).isEqualTo(notificationId);
+        assertThat(existing.getReadAt()).isEqualTo(NOW.plusMinutes(1));
+        assertThat(existing.getDeletedAt()).isEqualTo(NOW.plusMinutes(2));
+        assertThat(jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", notificationId)).isEqualTo(before);
+        assertThat(repository.countVisibleUnreadByUserId(userId)).isZero();
+    }
+
+    @Test
+    void 원본_식별자와_수신자와_유형을_모두_구분하여_저장하고_조회한다() {
+        otherUserId = saveOtherUser();
+        Long original = saveSourceNotification("event-1", userId, NotificationType.LIKE);
+        Long differentSource = saveSourceNotification("event-2", userId, NotificationType.LIKE);
+        Long differentUser = saveSourceNotification("event-1", otherUserId, NotificationType.LIKE);
+        Long differentType = saveSourceNotification("event-1", userId, NotificationType.MATCH);
+
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(original);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-2", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(differentSource);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", otherUserId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(differentUser);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-1", userId, NotificationType.MATCH)
+            .orElseThrow().getId()).isEqualTo(differentType);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("event-2", userId, NotificationType.MATCH)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"like_sent:501", "LIKE_SENT:501 "})
+    void 원본_식별자의_대소문자와_후행_공백을_다른_키로_저장하고_정확히_조회한다(String variant) {
+        Long original = saveSourceNotification("LIKE_SENT:501", userId, NotificationType.LIKE);
+        Long different = saveSourceNotification(variant, userId, NotificationType.LIKE);
+
+        assertThat(repository.findBySourceEventIdAndUserIdAndType("LIKE_SENT:501", userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(original);
+        assertThat(repository.findBySourceEventIdAndUserIdAndType(variant, userId, NotificationType.LIKE)
+            .orElseThrow().getId()).isEqualTo(different);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "😀"})
+    void 유니코드_255자_원본_식별자를_변형_없이_저장하고_조회한다(String character) {
+        String sourceEventId = character.repeat(255);
+        Long id = saveSourceNotification(sourceEventId, userId, NotificationType.LIKE);
+
+        Notification stored = repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow();
+
+        assertThat(stored.getId()).isEqualTo(id);
+        assertThat(stored.getSourceEventId()).isEqualTo(sourceEventId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 같은_원본_키의_동시_INSERT는_선행_commit이면_중복_거절하고_rollback이면_저장한다(boolean rollbackFirst)
+        throws Exception {
+        String sourceEventId = "LIKE_SENT:501";
+        AtomicReference<Long> firstId = new AtomicReference<>();
+        AtomicReference<Long> secondId = new AtomicReference<>();
+
+        runWhileFirstTransactionIsOpen(
+            () -> firstId
+                .set(repository.saveAndFlush(sourceNotification(sourceEventId, userId, NotificationType.LIKE)).getId()),
+            () -> {
+                if (rollbackFirst) {
+                    secondId.set(saveSourceNotification(sourceEventId, userId, NotificationType.LIKE));
+                } else {
+                    assertThatThrownBy(() -> saveSourceNotification(sourceEventId, userId, NotificationType.LIKE))
+                        .isInstanceOf(DataIntegrityViolationException.class);
+                }
+            }, rollbackFirst);
+
+        Notification stored = repository.findBySourceEventIdAndUserIdAndType(
+            sourceEventId, userId, NotificationType.LIKE).orElseThrow();
+        assertThat(stored.getId()).isEqualTo(rollbackFirst ? secondId.get() : firstId.get());
+        assertThat(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM notifications WHERE source_event_id = ? AND user_id = ? AND type = 'LIKE'",
+            Long.class, sourceEventId, userId)).isEqualTo(1L);
     }
 
     @Test
@@ -333,10 +441,10 @@ class NotificationRepositoryIntegrationTest {
     }
 
     @Test
-    void 분리된_Entity에서도_회원_지연_로딩_없이_이벤트를_구성한다() {
+    void 분리된_Entity에서도_회원_지연_로딩_없이_저장_결과를_구성한다() {
         transaction.executeWithoutResult(status -> {
-            Notification notification = repository.saveAndFlush(new Notification(
-                userRepository.getReferenceById(userId), NotificationType.CHAT_MESSAGE,
+            Notification notification = repository.saveAndFlush(Notification.fromSourceEvent(
+                "CHAT_MESSAGE_SENT:7", userRepository.getReferenceById(userId), NotificationType.CHAT_MESSAGE,
                 "채팅", "메시지 도착", "CHAT_ROOM", 7L, NOW));
             Long notificationId = notification.getId();
             entityManager.clear();
@@ -344,15 +452,15 @@ class NotificationRepositoryIntegrationTest {
             assertThat(Hibernate.isInitialized(detached.getUser())).isFalse();
             entityManager.clear();
 
-            NotificationCreatedEvent event = NotificationCreatedEvent.from(detached);
+            NotificationCreationResult result = NotificationCreationResult.from(detached);
 
             assertThat(Hibernate.isInitialized(detached.getUser())).isFalse();
-            assertThat(event.recipientUserId()).isEqualTo(userId);
-            assertThat(event.notification()).isEqualTo(new NotificationEventResponse(
+            assertThat(result.recipientUserId()).isEqualTo(userId);
+            assertThat(result.notification()).isEqualTo(new NotificationEventResponse(
                 notificationId, "CHAT_MESSAGE", "채팅", "메시지 도착", "CHAT_ROOM", 7L,
                 null, NOW));
             detached.markAsRead(NOW.plusMinutes(1));
-            assertThat(event.notification().readAt()).isNull();
+            assertThat(result.notification().readAt()).isNull();
         });
     }
 
@@ -420,7 +528,7 @@ class NotificationRepositoryIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(NotificationCategory.class)
-    void 카테고리별로_본인_미삭제_알림만_ID_내림차순으로_조회한다(NotificationCategory category) {
+    void 카테고리별로_본인_미삭제_알림만_생성_시각_내림차순으로_조회한다(NotificationCategory category) {
         otherUserId = saveOtherUser();
         Map<NotificationType, Long> visibleIds = new EnumMap<>(NotificationType.class);
         int offset = 0;
@@ -430,15 +538,15 @@ class NotificationRepositoryIntegrationTest {
             saveNotification(otherUserId, type, NOW, false);
         }
         List<NotificationType> expectedTypes = switch (category) {
-            case ALL -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
-                NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.CHAT_MESSAGE,
-                NotificationType.MATCH, NotificationType.LIKE);
-            case INTEREST -> List.of(NotificationType.MATCH, NotificationType.LIKE);
+            case ALL -> List.of(NotificationType.LIKE, NotificationType.MATCH, NotificationType.CHAT_MESSAGE,
+                NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
+                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.NOTICE);
+            case INTEREST -> List.of(NotificationType.LIKE, NotificationType.MATCH);
             case CHAT -> List.of(NotificationType.CHAT_MESSAGE);
-            case SYSTEM -> List.of(NotificationType.NOTICE, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
-                NotificationType.PERSONA_TRAINING_COMPLETED);
+            case SYSTEM -> List.of(NotificationType.PERSONA_TRAINING_COMPLETED,
+                NotificationType.FACE_ANALYSIS_COMPLETED, NotificationType.AI_PRACTICE_CHAT_COMPLETED,
+                NotificationType.AI_SIMULATION_REPORT_COMPLETED, NotificationType.NOTICE);
         };
 
         NotificationListResponse response = listService.getNotifications(userId, category, null, 20);
@@ -452,38 +560,50 @@ class NotificationRepositoryIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(NotificationCategory.class)
-    void 후속_페이지는_경계_중복_없이_이어지고_삭제된_ID도_커서로_사용한다(NotificationCategory category) {
+    void 복합_경계는_동일_시각과_지연_저장을_이어_조회하고_필터와_삭제된_경계를_유지한다(
+        NotificationCategory category) {
         NotificationType type = switch (category) {
             case ALL, INTEREST -> NotificationType.LIKE;
             case CHAT -> NotificationType.CHAT_MESSAGE;
             case SYSTEM -> NotificationType.AI_PRACTICE_CHAT_COMPLETED;
         };
-        Long oldest = saveNotification(userId, type, NOW, false);
+        LocalDateTime createdAt = NOW.plusNanos(123_456_000);
+        LocalDateTime older = createdAt.minusNanos(1_000);
+        Long newerWithLowerId = saveNotification(userId, type, createdAt.plusNanos(1_000), false);
+        Long oldest = saveNotification(userId, type, older, false);
+        Long sameTimeOlder = saveNotification(userId, type, createdAt, false);
         otherUserId = saveOtherUser();
-        saveNotification(otherUserId, type, NOW, false);
+        saveNotification(otherUserId, type, createdAt, false);
+        saveNotification(otherUserId, type, older, false);
+        saveNotification(userId, type, older, true);
         if (category != NotificationCategory.ALL) {
             NotificationType otherType = category == NotificationCategory.CHAT
                 ? NotificationType.LIKE
                 : NotificationType.CHAT_MESSAGE;
-            saveNotification(userId, otherType, NOW, false);
+            saveNotification(userId, otherType, createdAt, false);
+            saveNotification(userId, otherType, older, false);
         }
-        Long deletedCursor = saveNotification(userId, type, NOW, true);
-        Long newest = saveNotification(userId, type, NOW, false);
+        Long deletedCursor = saveNotification(userId, type, createdAt, true);
+        Long newest = saveNotification(userId, type, createdAt, false);
+        Long delayed = saveNotification(userId, type, older, false);
 
-        NotificationListResponse first = listService.getNotifications(userId, category, null, 1);
+        NotificationListResponse first = listService.getNotifications(userId, category, null, 2);
         NotificationListResponse second = listService.getNotifications(
-            userId, category, first.pageInfo().nextCursor(), 1);
+            userId, category, cursorCodec.decode(first.pageInfo().nextCursor()), 20);
         NotificationListResponse fromDeleted = listService.getNotifications(
-            userId, category, deletedCursor, 20);
+            userId, category, new NotificationCursor(createdAt, deletedCursor), 20);
 
+        assertThat(delayed).isGreaterThan(newest);
         assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(newest);
-        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(newest, true));
+            .containsExactly(newerWithLowerId, newest);
+        assertThat(first.pageInfo().hasNext()).isTrue();
+        assertThat(cursorCodec.decode(first.pageInfo().nextCursor()))
+            .isEqualTo(new NotificationCursor(createdAt, newest));
         assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(oldest);
+            .containsExactly(sameTimeOlder, delayed, oldest);
         assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
         assertThat(fromDeleted.items()).extracting(NotificationListResponse.Item::notificationId)
-            .containsExactly(oldest);
+            .containsExactly(sameTimeOlder, delayed, oldest);
     }
 
     @Test
@@ -494,13 +614,15 @@ class NotificationRepositoryIntegrationTest {
         }
 
         NotificationListResponse first = listService.getNotifications(
-            userId, NotificationCategory.ALL, Long.MAX_VALUE, 20);
+            userId, NotificationCategory.ALL, null, 20);
         NotificationListResponse second = listService.getNotifications(
-            userId, NotificationCategory.ALL, first.pageInfo().nextCursor(), 20);
+            userId, NotificationCategory.ALL, cursorCodec.decode(first.pageInfo().nextCursor()), 20);
 
         assertThat(first.items()).extracting(NotificationListResponse.Item::notificationId)
             .containsExactlyElementsOf(ids.subList(1, 21).reversed());
-        assertThat(first.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(ids.get(1), true));
+        assertThat(first.pageInfo().hasNext()).isTrue();
+        assertThat(cursorCodec.decode(first.pageInfo().nextCursor()))
+            .isEqualTo(new NotificationCursor(NOW, ids.get(1)));
         assertThat(second.items()).extracting(NotificationListResponse.Item::notificationId)
             .containsExactly(ids.getFirst());
         assertThat(second.pageInfo()).isEqualTo(new NotificationListResponse.PageInfo(null, false));
@@ -536,7 +658,8 @@ class NotificationRepositoryIntegrationTest {
         NotificationListResponse empty = listService.getNotifications(userId, category, null, 20);
         saveNotification(userId, NotificationType.AI_PRACTICE_CHAT_COMPLETED, NOW, false);
 
-        NotificationListResponse beyond = listService.getNotifications(userId, category, 1L, 20);
+        NotificationListResponse beyond = listService.getNotifications(
+            userId, category, new NotificationCursor(NOW.minusNanos(1_000), Long.MAX_VALUE), 20);
 
         assertThat(empty).isEqualTo(new NotificationListResponse(
             List.of(), new NotificationListResponse.PageInfo(null, false)));
@@ -760,6 +883,16 @@ class NotificationRepositoryIntegrationTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("동시성 테스트 대기 중 중단", exception);
         }
+    }
+
+    private Long saveSourceNotification(String sourceEventId, Long recipientId, NotificationType type) {
+        return transaction
+            .execute(status -> repository.saveAndFlush(sourceNotification(sourceEventId, recipientId, type)).getId());
+    }
+
+    private Notification sourceNotification(String sourceEventId, Long recipientId, NotificationType type) {
+        return Notification.fromSourceEvent(sourceEventId, userRepository.getReferenceById(recipientId),
+            type, "저장된 제목", "저장된 본문", "CHAT_ROOM", 999999L, NOW);
     }
 
     private Long saveOtherUser() {

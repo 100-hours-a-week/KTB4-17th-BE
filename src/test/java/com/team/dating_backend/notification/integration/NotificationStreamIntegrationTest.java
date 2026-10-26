@@ -12,6 +12,10 @@ import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.notification.config.NotificationSseProperties;
+import com.team.dating_backend.notification.config.NotificationKafkaProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
+import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
+import com.team.dating_backend.notification.sse.NotificationSseLifecycle;
 import com.team.dating_backend.notification.controller.NotificationStreamController;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationStreamExceptionHandler;
@@ -21,6 +25,8 @@ import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationHeartbeatScheduler;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
 import com.team.dating_backend.notification.sse.NotificationSseSender;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
+import com.team.dating_backend.notification.sse.NotificationSseProcessIdentity;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.UserAuthenticationService;
@@ -61,6 +67,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.config.name=notification-stream-test",
+        "app.notification.kafka.create-requested-topic=test-create",
+        "app.notification.kafka.delivery-topic=test-delivery",
         "server.address=127.0.0.1",
         "app.notification.sse.heartbeat-delay-ms=50"
     }
@@ -87,6 +95,9 @@ class NotificationStreamIntegrationTest {
 
     @MockitoBean
     private UserAuthenticationService userAuthenticationService;
+
+    @MockitoBean
+    private NotificationSseProcessIdentity processIdentity;
 
     private HttpClient client;
     private ExecutorService readerExecutor;
@@ -200,7 +211,10 @@ class NotificationStreamIntegrationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
-    @EnableConfigurationProperties({NotificationSseProperties.class, SecurityProperties.class})
+    @EnableConfigurationProperties(
+        {NotificationSseProperties.class, SecurityProperties.class, NotificationKafkaProperties.class,
+            NotificationDeliveryProperties.class}
+    )
     @Import(
         {
             SecurityConfig.class,
@@ -208,8 +222,9 @@ class NotificationStreamIntegrationTest {
             ApiAccessDeniedHandler.class,
             GlobalExceptionHandler.class,
             NotificationStreamController.class,
-            NotificationSubscriptionService.class,
-            NotificationEmitterRegistry.class,
+            NotificationSubscriptionService.class, NotificationSseLifecycle.class,
+            NotificationDeliveryReadinessTracker.class,
+            NotificationEmitterRegistry.class, NotificationSseObservation.class,
             NotificationSseSender.class,
             NotificationStreamExceptionHandler.class,
             NotificationHeartbeatScheduler.class,

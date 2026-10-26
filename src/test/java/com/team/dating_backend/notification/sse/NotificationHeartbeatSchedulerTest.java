@@ -15,8 +15,9 @@ class NotificationHeartbeatSchedulerTest {
 
     @Test
     void heartbeat_순회는_실패한_연결만_제거하고_다른_회원의_연결도_처리한다() throws Exception {
-        NotificationEmitterRegistry registry = new NotificationEmitterRegistry();
-        NotificationSseSender sender = new NotificationSseSender(registry);
+        var observation = mock(NotificationSseObservation.class);
+        NotificationEmitterRegistry registry = new NotificationEmitterRegistry(observation);
+        NotificationSseSender sender = new NotificationSseSender(registry, observation);
         NotificationHeartbeatScheduler scheduler = new NotificationHeartbeatScheduler(registry, sender);
         SseEmitter failedEmitter = mock(SseEmitter.class);
         SseEmitter healthyEmitter = mock(SseEmitter.class);

@@ -3,7 +3,9 @@ package com.team.dating_backend.notification.sse;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.response.NotificationConnectedResponse;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
+import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.sse.NotificationSseObservation.EventKind;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ public class NotificationSseSender {
     private static final String HEARTBEAT_COMMENT = "heartbeat";
 
     private final NotificationEmitterRegistry registry;
+    private final NotificationSseObservation observation;
 
     public void sendConnected(NotificationSseConnection connection) throws IOException {
         requireConnection(connection);
@@ -30,19 +33,23 @@ public class NotificationSseSender {
             .data(new NotificationConnectedResponse(connection.getConnectionId()),
                 MediaType.APPLICATION_JSON);
 
+        boolean sent;
         try {
-            if (!send(connection, event)) {
-                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-            }
+            sent = send(connection, event);
         } catch (IOException | RuntimeException exception) {
-            registry.remove(connection);
+            if (!isCompletionRace(connection, exception)) {
+                observation.sendFailed(connection, EventKind.CONNECTED, failureReason(exception), exception);
+            }
             throw exception;
+        }
+        if (!sent) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
     public void sendHeartbeat(NotificationSseConnection connection) {
         requireConnection(connection);
-        sendSafely(connection, SseEmitter.event().comment(HEARTBEAT_COMMENT), HEARTBEAT_COMMENT);
+        sendSafely(connection, SseEmitter.event().comment(HEARTBEAT_COMMENT), EventKind.HEARTBEAT);
     }
 
     public void sendNotification(Long userId, NotificationEventResponse response) {
@@ -54,7 +61,7 @@ public class NotificationSseSender {
             SseEmitter.SseEventBuilder event = SseEmitter.event()
                 .name(NOTIFICATION_EVENT)
                 .data(response, MediaType.APPLICATION_JSON);
-            sendSafely(connection, event, NOTIFICATION_EVENT);
+            sendSafely(connection, event, EventKind.NOTIFICATION);
         }
     }
 
@@ -74,37 +81,29 @@ public class NotificationSseSender {
     }
 
     private void sendSafely(
-        NotificationSseConnection connection, SseEmitter.SseEventBuilder event, String eventName) {
+        NotificationSseConnection connection, SseEmitter.SseEventBuilder event, EventKind eventKind) {
         try {
             send(connection, event);
         } catch (IOException | RuntimeException exception) {
-            handleSendFailure(connection, eventName, exception);
+            handleSendFailure(connection, eventKind, exception);
         }
     }
 
     private void handleSendFailure(
-        NotificationSseConnection connection, String eventName, Exception exception) {
-        boolean alreadyClosed = connection.isClosed();
-        registry.remove(connection);
-
-        if (exception instanceof IOException
-            || DisconnectedClientHelper.isClientDisconnectedException(exception)) {
-            log.debug("SSE transport write failed. userId={}, connectionId={}, event={}, exceptionType={}",
-                connection.getUserId(), connection.getConnectionId(), eventName,
-                exception.getClass().getSimpleName());
-            return;
-        }
-
-        if (alreadyClosed && exception instanceof IllegalStateException && exception.getCause() == null) {
+        NotificationSseConnection connection, EventKind eventKind, Exception exception) {
+        if (isCompletionRace(connection, exception)) {
+            registry.remove(connection, NotificationSseCloseReason.COMPLETION);
             log.debug("SSE send skipped after completion. userId={}, connectionId={}, event={}",
-                connection.getUserId(), connection.getConnectionId(), eventName);
+                connection.getUserId(), connection.getConnectionId(), eventKind);
             return;
         }
 
-        log.error("SSE send failed. errorCode={}, userId={}, connectionId={}, event={}, exceptionType={}, causeType={}",
-            CommonErrorCode.INTERNAL_SERVER_ERROR, connection.getUserId(), connection.getConnectionId(),
-            eventName, exception.getClass().getSimpleName(),
-            exception.getCause() == null ? null : exception.getCause().getClass().getSimpleName());
+        NotificationSseCloseReason reason = failureReason(exception);
+        registry.remove(connection, reason);
+        observation.sendFailed(connection, eventKind, reason, exception);
+        if (reason == NotificationSseCloseReason.TRANSPORT_ERROR) {
+            return;
+        }
 
         NotificationBusinessException failure = new NotificationBusinessException(
             CommonErrorCode.INTERNAL_SERVER_ERROR);
@@ -122,6 +121,18 @@ public class NotificationSseSender {
                 CommonErrorCode.INTERNAL_SERVER_ERROR, connection.getUserId(), connection.getConnectionId(),
                 completionFailure.getClass().getSimpleName());
         }
+    }
+
+    private boolean isCompletionRace(NotificationSseConnection connection, Exception exception) {
+        return connection.isClosed() && exception instanceof IllegalStateException && exception.getCause() == null
+            && !DisconnectedClientHelper.isClientDisconnectedException(exception);
+    }
+
+    private NotificationSseCloseReason failureReason(Exception exception) {
+        return exception instanceof IOException
+            || DisconnectedClientHelper.isClientDisconnectedException(exception)
+                ? NotificationSseCloseReason.TRANSPORT_ERROR
+                : NotificationSseCloseReason.SERVER_ERROR;
     }
 
     private void requireConnection(NotificationSseConnection connection) {
