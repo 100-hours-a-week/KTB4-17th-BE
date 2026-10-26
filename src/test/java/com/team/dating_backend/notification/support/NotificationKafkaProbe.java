@@ -19,6 +19,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.ListOffsetsOptions;
 import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -35,11 +36,14 @@ public final class NotificationKafkaProbe implements AutoCloseable {
     private static final JsonMapper JSON = JsonMapper.builder().findAndAddModules().build();
     private static final Duration API_TIMEOUT = Duration.ofSeconds(5);
     private final Admin admin;
+    private final String bootstrapServers;
     private final String creationTopic;
     private final Set<String> topics;
     private final KafkaProducer<String, byte[]> producer;
     private final KafkaConsumer<String, byte[]> consumer;
     private final Map<String, List<TopicPartition>> partitions = new HashMap<>();
+    private final Map<TopicPartition, Integer> observedLeaders = new HashMap<>();
+    private Admin offsetReader;
 
     public record Position(String topic, int partition, long offset) {
         public TopicPartition topicPartition() {
@@ -52,6 +56,18 @@ public final class NotificationKafkaProbe implements AutoCloseable {
             return committedOffset != null && committedOffset > input.offset();
         }
     }
+
+    public record PartitionState(String topic, int partition, Integer leaderNodeId,
+        List<Integer> replicas, List<Integer> inSyncReplicas) {}
+
+    public record Topology(Instant observedAt, String clusterId, List<Integer> brokerIds,
+        Map<Integer, String> endpoints,
+        List<PartitionState> partitions) {}
+
+    public record PartitionProgress(int partition, long endOffset, Long committedOffset, Long lag) {}
+
+    public record GroupProgress(String group, String topic, Instant observedAt,
+        List<PartitionProgress> partitions) {}
 
     public record ObservedHeader(String key, String valueBase64) {}
 
@@ -77,6 +93,7 @@ public final class NotificationKafkaProbe implements AutoCloseable {
 
     public NotificationKafkaProbe(Admin admin, String bootstrap, String creationTopic, Set<String> topics) {
         this.admin = admin;
+        this.bootstrapServers = bootstrap;
         this.creationTopic = creationTopic;
         this.topics = Set.copyOf(topics);
         consumer = new KafkaConsumer<>(Map.of("bootstrap.servers", bootstrap,
@@ -116,6 +133,66 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         var committed = awaitResult(admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata(), API_TIMEOUT)
             .get(input.topicPartition());
         return new InputState(group, input, committed == null ? null : committed.offset());
+    }
+
+    public Topology topology() throws Exception {
+        return topology(topics);
+    }
+
+    public Topology topologyWithConsumerOffsets() throws Exception {
+        var observedTopics = new java.util.HashSet<>(topics);
+        observedTopics.add("__consumer_offsets");
+        return topology(observedTopics);
+    }
+
+    private Topology topology(Set<String> observedTopics) throws Exception {
+        Instant observedAt = Instant.now();
+        var cluster = admin.describeCluster();
+        var descriptions = admin.describeTopics(observedTopics).allTopicNames();
+        String clusterId = awaitResult(cluster.clusterId(), API_TIMEOUT);
+        var nodes = awaitResult(cluster.nodes(), API_TIMEOUT);
+        var endpoints = new HashMap<Integer, String>();
+        nodes.forEach(node -> endpoints.put(node.id(), node.host() + ":" + node.port()));
+        var states = new ArrayList<PartitionState>();
+        for (var topic : awaitResult(descriptions, API_TIMEOUT).values()) {
+            for (var partition : topic.partitions()) {
+                var leader = partition.leader();
+                states.add(new PartitionState(topic.name(), partition.partition(),
+                    leader == null || leader.id() < 0 ? null : leader.id(),
+                    partition.replicas().stream().map(node -> node.id()).sorted().toList(),
+                    partition.isr().stream().map(node -> node.id()).sorted().toList()));
+            }
+        }
+        states.sort(Comparator.comparing(PartitionState::topic).thenComparingInt(PartitionState::partition));
+        var leaders = new HashMap<TopicPartition, Integer>();
+        states.stream().filter(state -> topics.contains(state.topic()))
+            .forEach(state -> leaders.put(new TopicPartition(state.topic(), state.partition()), state.leaderNodeId()));
+        if (!leaders.equals(observedLeaders)) {
+            if (offsetReader != null) {
+                var previous = offsetReader;
+                offsetReader = null;
+                previous.close(API_TIMEOUT);
+            }
+            observedLeaders.clear();
+            observedLeaders.putAll(leaders);
+        }
+        return new Topology(observedAt, clusterId, nodes.stream().map(node -> node.id()).sorted().toList(),
+            Map.copyOf(endpoints), List.copyOf(states));
+    }
+
+    public GroupProgress progress(String group, String topic) throws Exception {
+        assertThat(topics).contains(topic);
+        Instant observedAt = Instant.now();
+        var end = offsets(partitions(topic), OffsetSpec.latest());
+        var committed = awaitResult(admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata(), API_TIMEOUT);
+        var progress = end.entrySet().stream().sorted(Comparator.comparingInt(entry -> entry.getKey().partition()))
+            .map(entry -> {
+                var metadata = committed.get(entry.getKey());
+                Long offset = metadata == null ? null : metadata.offset();
+                return new PartitionProgress(entry.getKey().partition(), entry.getValue(), offset,
+                    offset == null ? null : entry.getValue() - offset);
+            }).toList();
+        return new GroupProgress(group, topic, observedAt, progress);
     }
 
     public TopicSnapshot snapshot(String topic) throws Exception {
@@ -161,8 +238,13 @@ public final class NotificationKafkaProbe implements AutoCloseable {
 
     private Map<TopicPartition, Long> offsets(List<TopicPartition> assigned, OffsetSpec specification)
         throws Exception {
-        var result = awaitResult(admin.listOffsets(assigned.stream().collect(Collectors.toMap(partition -> partition,
-            partition -> specification))).all(), API_TIMEOUT);
+        var request = assigned.stream().collect(Collectors.toMap(partition -> partition, partition -> specification));
+        if (offsetReader == null) {
+            offsetReader = Admin.create(Map.of("bootstrap.servers", bootstrapServers,
+                "default.api.timeout.ms", 10000, "request.timeout.ms", 3000));
+        }
+        var result = awaitResult(offsetReader.listOffsets(request, new ListOffsetsOptions().timeoutMs(10000)).all(),
+            Duration.ofSeconds(12));
         return result.entrySet().stream()
             .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().offset()));
     }
@@ -196,6 +278,17 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         }
         try {
             producer.close(API_TIMEOUT);
+        } catch (RuntimeException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        try {
+            if (offsetReader != null) {
+                offsetReader.close(API_TIMEOUT);
+            }
         } catch (RuntimeException exception) {
             if (failure == null) {
                 failure = exception;
