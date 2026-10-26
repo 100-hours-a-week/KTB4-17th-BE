@@ -67,9 +67,6 @@ jobs:
                   aws-region: ${{ env.AWS_REGION }}
 
             - name: Deploy to DEV EC2 via SSM
-              env:
-                  DEV_EC2_INSTANCE_ID: ${{ secrets.DEV_EC2_INSTANCE_ID }}
-
               run: |
                   set -euo pipefail
                   IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
@@ -93,11 +90,15 @@ jobs:
                       )
                     ]}')
 
+                  # Environment=dev 태그가 붙은 모든 SSM 관리 EC2를 대상으로 동시에 실행한다.
+                  # 대상 중 한 대라도 실패하면 전체 명령을 실패 처리한다.
                   COMMAND_ID=$(aws ssm send-command \
-                    --instance-ids "$DEV_EC2_INSTANCE_ID" \
+                    --targets "Key=tag:Environment,Values=dev" \
                     --document-name "AWS-RunShellScript" \
                     --comment "Deploy backend image $IMAGE_TAG to DEV" \
                     --timeout-seconds 600 \
+                    --max-concurrency "100%" \
+                    --max-errors "0" \
                     --parameters "$PARAMETERS" \
                     --region "$AWS_REGION" \
                     --query 'Command.CommandId' \
@@ -105,22 +106,24 @@ jobs:
 
                   echo "SSM command ID: $COMMAND_ID"
 
+                  # 여러 EC2에 실행된 SSM 명령의 전체 상태가 종료될 때까지 기다린다.
                   for attempt in $(seq 1 120); do
-                    STATUS=$(aws ssm get-command-invocation \
+                    COMMAND=$(aws ssm list-commands \
                       --command-id "$COMMAND_ID" \
-                      --instance-id "$DEV_EC2_INSTANCE_ID" \
                       --region "$AWS_REGION" \
-                      --query 'Status' \
-                      --output text 2>/dev/null || true)
+                      --output json)
+
+                    STATUS=$(jq -r '.Commands[0].Status // empty' <<< "$COMMAND")
+                    TARGET_COUNT=$(jq -r '.Commands[0].TargetCount // 0' <<< "$COMMAND")
 
                     case "$STATUS" in
                       Success)
                         break
                         ;;
                       Failed|Cancelled|TimedOut|Cancelling)
-                        aws ssm get-command-invocation \
+                        aws ssm list-command-invocations \
                           --command-id "$COMMAND_ID" \
-                          --instance-id "$DEV_EC2_INSTANCE_ID" \
+                          --details \
                           --region "$AWS_REGION"
                         exit 1
                         ;;
@@ -136,17 +139,38 @@ jobs:
 
                   if [ "${STATUS:-}" != "Success" ]; then
                     echo "SSM command did not complete within 10 minutes. Last status: ${STATUS:-unknown}"
-                    aws ssm get-command-invocation \
+                    aws ssm list-command-invocations \
                       --command-id "$COMMAND_ID" \
-                      --instance-id "$DEV_EC2_INSTANCE_ID" \
+                      --details \
                       --region "$AWS_REGION" || true
                     exit 1
                   fi
 
-                  aws ssm get-command-invocation \
+                  # 태그 오타 등으로 배포 대상이 0대인 경우 성공으로 오인하지 않도록 실패시킨다.
+                  if [ "${TARGET_COUNT:-0}" -eq 0 ]; then
+                    echo "No SSM managed instances matched Environment=dev"
+                    exit 1
+                  fi
+
+                  INVOCATIONS=$(aws ssm list-command-invocations \
                     --command-id "$COMMAND_ID" \
-                    --instance-id "$DEV_EC2_INSTANCE_ID" \
-                    --region "$AWS_REGION"
+                    --details \
+                    --region "$AWS_REGION" \
+                    --output json)
+
+                  jq . <<< "$INVOCATIONS"
+
+                  # 대상 EC2의 개별 실행 결과가 모두 성공했는지 확인한다.
+                  if ! jq -e \
+                    '(.CommandInvocations | length) > 0 and
+                     all(.CommandInvocations[]; .Status == "Success")' \
+                    <<< "$INVOCATIONS" > /dev/null; then
+                    echo "One or more DEV EC2 deployments failed"
+                    exit 1
+                  fi
+
+                  SUCCESS_COUNT=$(jq '.CommandInvocations | length' <<< "$INVOCATIONS")
+                  echo "Successfully deployed to $SUCCESS_COUNT DEV EC2 instance(s)"
 
             # 기존 SSH 배포 방식
             # - name: Configure SSH

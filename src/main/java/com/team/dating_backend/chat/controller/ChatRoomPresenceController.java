@@ -8,6 +8,7 @@ import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -15,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
 @Controller
+@ConditionalOnProperty(prefix = "app.chat", name = "runtime-enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ChatRoomPresenceController {
 

@@ -32,6 +32,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @WebMvcTest(
     controllers = ChatMessageListController.class,
+    properties = "app.chat.runtime-enabled=true",
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
         ServletWebSecurityAutoConfiguration.class
@@ -65,7 +66,8 @@ class ChatMessageListControllerTest {
                     ChatRoomStatus.ACTIVE,
                     true,
                     new ChatMessageListResponse.OtherParticipant(
-                        OTHER_USER_ID, "상대방", PROFILE_IMAGE_URL)),
+                        OTHER_USER_ID, "상대방", PROFILE_IMAGE_URL),
+                    null),
                 List.of(),
                 new ChatMessageListResponse.PageInfo(null, false)));
 

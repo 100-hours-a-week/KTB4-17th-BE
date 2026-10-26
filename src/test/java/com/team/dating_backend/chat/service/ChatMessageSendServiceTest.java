@@ -9,6 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
 import com.team.dating_backend.chat.dto.request.ChatMessageCreateRequest;
 import com.team.dating_backend.chat.dto.response.ChatMessageCreateResponse;
 import com.team.dating_backend.chat.entity.ChatMessage;
@@ -63,6 +65,8 @@ class ChatMessageSendServiceTest {
     private ChatRoomPresenceRegistry presenceRegistry;
     private NotificationRequestService notificationRequestService;
     private ProfileRepository profileRepository;
+    private ChatDelegationParticipantService delegationParticipantService;
+    private ChatDelegationRescheduleService delegationRescheduleService;
     private ChatMessageSendService service;
     private ChatMessageCreateRequest request;
     private ChatRoom room;
@@ -80,6 +84,8 @@ class ChatMessageSendServiceTest {
         presenceRegistry = mock(ChatRoomPresenceRegistry.class);
         notificationRequestService = mock(NotificationRequestService.class);
         profileRepository = mock(ProfileRepository.class);
+        delegationParticipantService = mock(ChatDelegationParticipantService.class);
+        delegationRescheduleService = mock(ChatDelegationRescheduleService.class);
         service = new ChatMessageSendService(
             chatRoomRepository,
             chatMessageRepository,
@@ -90,7 +96,9 @@ class ChatMessageSendServiceTest {
             fileRepository,
             presenceRegistry,
             notificationRequestService,
-            profileRepository);
+            profileRepository,
+            delegationParticipantService,
+            delegationRescheduleService);
 
         Profile profile = mock(Profile.class);
         given(profile.getNickname()).willReturn("보내는사람");
@@ -146,6 +154,7 @@ class ChatMessageSendServiceTest {
         assertThat(savedMessage.getTextContent()).isEqualTo(request.textContent());
         assertThat(savedOutbox.getChatMessageId()).isEqualTo(savedMessage.getId());
         assertThat(savedOutbox.getCreatedAt()).isEqualTo(savedMessage.getCreatedAt());
+        verify(delegationRescheduleService).rescheduleForNewMessage(savedMessage);
         assertNotificationRequest("보내는사람님에게서 메시지가 도착했어요.");
     }
 
@@ -247,7 +256,9 @@ class ChatMessageSendServiceTest {
         verify(chatMessageRepository, never()).save(any(ChatMessage.class));
         verify(outboxRepository, never()).save(any(ChatMessageOutbox.class));
         verify(rateLimiter, never()).tryAcquire(SENDER_USER_ID);
-        verifyNoInteractions(presenceRegistry, notificationRequestService, profileRepository);
+        verifyNoInteractions(
+            delegationRescheduleService, presenceRegistry,
+            notificationRequestService, profileRepository);
     }
 
     @Test

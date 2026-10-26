@@ -60,6 +60,8 @@ kakao:
     user-info-uri: "@AI_URL@/unused"
     talk-profile-uri: "@AI_URL@/unused"
 app:
+  chat:
+    runtime-enabled: true
   auth:
     login-redirect-uri: "@AI_URL@/unused"
     service-redirect-uri: "@AI_URL@/unused"

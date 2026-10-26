@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.dto.response;
 
+import com.team.dating_backend.chat.delegation.dto.response.ChatDelegationSummary;
 import com.team.dating_backend.chat.enums.ChatMessageStatus;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatRoomStatus;
@@ -15,7 +16,8 @@ public record ChatMessageListResponse(
         Long chatRoomId,
         ChatRoomStatus status,
         boolean chatNotification,
-        OtherParticipant otherParticipant) {}
+        OtherParticipant otherParticipant,
+        ChatDelegationSummary delegation) {}
 
     public record OtherParticipant(Long userId, String nickname, String profileImageUrl) {}
 

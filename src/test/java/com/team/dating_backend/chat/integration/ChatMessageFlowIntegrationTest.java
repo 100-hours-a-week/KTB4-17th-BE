@@ -22,6 +22,9 @@ import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
 import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
 import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationParticipantService;
+import com.team.dating_backend.chat.delegation.service.ChatDelegationRescheduleService;
+import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.enums.ChatRoomPresenceAction;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
@@ -101,6 +104,7 @@ import org.testcontainers.mysql.MySQLContainer;
     properties = {
         "spring.config.name=chat-message-flow-test",
         "server.address=127.0.0.1",
+        "app.chat.runtime-enabled=true",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
@@ -151,6 +155,15 @@ class ChatMessageFlowIntegrationTest {
 
     @MockitoBean
     private ChatMessageRateLimiter rateLimiter;
+
+    @MockitoBean
+    private ChatDelegationParticipantService delegationParticipantService;
+
+    @MockitoBean
+    private ChatDelegationRescheduleService delegationRescheduleService;
+
+    @MockitoBean
+    private ChatDelegationMessageRepository delegationMessageRepository;
 
     @MockitoBean
     private ProfileImageGetService profileImageGetService;

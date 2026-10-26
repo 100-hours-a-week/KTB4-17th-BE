@@ -72,7 +72,7 @@ class FaceVerificationControllerTest {
             .contentType(MediaType.APPLICATION_JSON).content("{\"uploadIntentId\":7}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.sessionId").value(9))
-            .andExpect(jsonPath("$.data.maxAttempts").value(5))
+            .andExpect(jsonPath("$.data.maxAttempts").value(3))
             .andExpect(jsonPath("$.data.nextAttemptNo").value(1))
             .andExpect(jsonPath("$.data.attempts").isEmpty())
             .andExpect(jsonPath("$.data.challenges[0]").value("LOOK_STRAIGHT"))
@@ -107,33 +107,33 @@ class FaceVerificationControllerTest {
     }
 
     @Test
-    void 다섯번째_미통과_응답과_조회에_모든_시도결과를_포함한다() throws Exception {
+    void 세번째_미통과_응답과_조회에_모든_시도결과를_포함한다() throws Exception {
         var exhausted = response(List.of(VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY,
-            VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY, VerificationDecision.NOT_VERIFIED));
-        given(service.submit(eq(41L), eq(9L), eq(5), any())).willReturn(exhausted);
+            VerificationDecision.NOT_VERIFIED));
+        given(service.submit(eq(41L), eq(9L), eq(3), any())).willReturn(exhausted);
         given(service.get(41L, 9L)).willReturn(exhausted);
         mvc.perform(multipart(BASE + "/9/attempts")
-            .file(new MockMultipartFile("video", "clip.webm", "video/webm", new byte[]{5}))
-            .param("attemptNo", "5").requestAttr("principal", PRINCIPAL))
+            .file(new MockMultipartFile("video", "clip.webm", "video/webm", new byte[]{3}))
+            .param("attemptNo", "3").requestAttr("principal", PRINCIPAL))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("EXHAUSTED"))
             .andExpect(jsonPath("$.data.canRetry").value(false))
-            .andExpect(jsonPath("$.data.attemptsUsed").value(5))
+            .andExpect(jsonPath("$.data.attemptsUsed").value(3))
             .andExpect(jsonPath("$.data.remainingAttempts").value(0))
             .andExpect(jsonPath("$.data.nextAttemptNo").isEmpty())
-            .andExpect(jsonPath("$.data.attempt.attemptNo").value(5))
+            .andExpect(jsonPath("$.data.attempt.attemptNo").value(3))
             .andExpect(jsonPath("$.data.attempt.reasonCodes[0]").value("FACE_MISMATCH"))
-            .andExpect(jsonPath("$.data.attempts.length()").value(5))
+            .andExpect(jsonPath("$.data.attempts.length()").value(3))
             .andExpect(jsonPath("$.data.attempts[0].attemptNo").value(1))
             .andExpect(jsonPath("$.data.attempts[1].reasonCodes[0]").value("LIVENESS_FAILED"))
-            .andExpect(jsonPath("$.data.attempts[4].decision").value("NOT_VERIFIED"))
+            .andExpect(jsonPath("$.data.attempts[2].decision").value("NOT_VERIFIED"))
             .andExpect(jsonPath("$.data.attempts[0].videoHash").doesNotExist())
             .andExpect(jsonPath("$.data.challengeToken").doesNotExist());
         mvc.perform(get(BASE + "/9").requestAttr("principal", PRINCIPAL))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("EXHAUSTED"))
-            .andExpect(jsonPath("$.data.attempts.length()").value(5))
-            .andExpect(jsonPath("$.data.attempts[4].reasonCodes[0]").value("FACE_MISMATCH"));
+            .andExpect(jsonPath("$.data.attempts.length()").value(3))
+            .andExpect(jsonPath("$.data.attempts[2].reasonCodes[0]").value("FACE_MISMATCH"));
     }
 
     @Test

@@ -29,6 +29,11 @@ public class FaceVerificationService {
 
     private static final long MAX_PHOTO_BYTES = 10 * 1024 * 1024;
     private static final Set<String> PHOTO_CONTENT_TYPES = Set.of("image/jpeg", "image/png");
+    private static final Set<String> HAND_GESTURES = Set.of(
+        "HAND_FIST", "HAND_ONE", "HAND_TWO", "HAND_THREE", "HAND_FOUR", "HAND_OPEN_PALM",
+        "HAND_THUMBS_UP", "HAND_L_SHAPE", "HAND_LOVE_YOU", "HAND_CALL_ME");
+    private static final Set<String> HAND_DIRECTIONS = Set.of("HAND_UP", "HAND_DOWN", "HAND_SIDEWAYS");
+    private static final Set<String> HEAD_MOVEMENTS = Set.of("TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN");
     private final FaceVerificationSessionStore store;
     private final FaceVerificationAiClient aiClient;
     private final VerificationVideoReader videoReader;
@@ -40,10 +45,7 @@ public class FaceVerificationService {
         validateId(uploadIntentId);
         FileUploadIntent photo = approvedPhoto(ownerUserId, uploadIntentId, null);
         ChallengeResponse challenge = aiClient.createChallenge();
-        if (challenge == null || challenge.challengeToken() == null || challenge.challengeToken().isBlank()
-            || challenge.challengeToken().length() > 2048
-            || !List.of("LOOK_STRAIGHT").equals(challenge.challenges())
-            || challenge.expiresAt() == null || !challenge.expiresAt().isAfter(OffsetDateTime.now())) {
+        if (!isValidChallenge(challenge)) {
             throw failure(ProfileTrustErrorCode.AI_SERVER_RESPONSE_INVALID);
         }
         return store.create(ownerUserId, uploadIntentId, photo.getValidatedVersionToken(), challenge);
@@ -81,7 +83,7 @@ public class FaceVerificationService {
             }
             VerificationResponse result = aiClient.verify(
                 session.getChallengeToken(), primaryPhoto, photo.getDeclaredContentType(),
-                video.bytes(), video.contentType());
+                video.bytes(), video.contentType(), attemptNo);
             validateResult(result);
             return responseOrThrow(store.finish(ownerUserId, sessionId, attemptNo, result));
         } catch (ProfileTrustBusinessException exception) {
@@ -139,6 +141,33 @@ public class FaceVerificationService {
             || (result.decision() == VerificationDecision.NOT_VERIFIED && !result.liveness().passed())) {
             throw failure(ProfileTrustErrorCode.AI_SERVER_RESPONSE_INVALID);
         }
+    }
+
+    private boolean isValidChallenge(ChallengeResponse challenge) {
+        if (challenge == null || challenge.challengeToken() == null || challenge.challengeToken().isBlank()
+            || challenge.challengeToken().length() > 2048
+            || challenge.expiresAt() == null || !challenge.expiresAt().isAfter(OffsetDateTime.now())) {
+            return false;
+        }
+        if (challenge.protocolVersion() == 1) {
+            return List.of("LOOK_STRAIGHT").equals(challenge.challenges())
+                && (challenge.challengePlan() == null || challenge.challengePlan().isEmpty());
+        }
+        if (challenge.protocolVersion() != 2 || challenge.challengePlan() == null
+            || challenge.challengePlan().size() != FaceVerificationSession.MAX_ATTEMPTS
+            || challenge.challenges() == null || challenge.challenges().size() != 4
+            || !challenge.challenges().equals(challenge.challengePlan().getFirst())) {
+            return false;
+        }
+        return challenge.challengePlan().stream().allMatch(this::isValidActiveChallenge);
+    }
+
+    private boolean isValidActiveChallenge(List<String> codes) {
+        return codes != null && codes.size() == 4
+            && "LOOK_STRAIGHT".equals(codes.getFirst())
+            && HAND_GESTURES.contains(codes.get(1))
+            && HAND_DIRECTIONS.contains(codes.get(2))
+            && HEAD_MOVEMENTS.contains(codes.get(3));
     }
 
     private FaceVerificationResponse responseOrThrow(FaceVerificationResponse response) {

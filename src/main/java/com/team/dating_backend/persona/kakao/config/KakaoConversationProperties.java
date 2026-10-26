@@ -16,7 +16,7 @@ public class KakaoConversationProperties {
 
     private String baseUrl = "";
     @NotBlank
-    private String conversationPath = "/ai/api/v1/persona-extraction/conversation";
+    private String conversationPath = "/ai/api/v2/persona-extraction/conversation";
     @Positive
     @Max(5 * 1024 * 1024)
     private int maxSizeBytes = 5 * 1024 * 1024;

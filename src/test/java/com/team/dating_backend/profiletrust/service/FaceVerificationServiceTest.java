@@ -134,25 +134,25 @@ class FaceVerificationServiceTest {
         assertThat(service.submit(USER_ID, id, 1, video("one")).attempt()).isEqualTo(result.attempt());
         assertError(() -> service.submit(USER_ID, id, 2, video("two")),
             ProfileTrustErrorCode.VERIFICATION_SESSION_CLOSED);
-        verify(ai, times(1)).verify(anyString(), any(), anyString(), any(), anyString());
+        verify(ai, times(1)).verify(anyString(), any(), anyString(), any(), anyString(), anyInt());
         verify(storage, never()).createUploadUrl(anyString(), anyString(), any());
         verify(storage, never()).promote(anyString(), anyString(), anyString(), anyString());
     }
 
     @ParameterizedTest
     @EnumSource(value = VerificationDecision.class, names = {"RETRY", "NOT_VERIFIED"})
-    void 미통과_5회면_EXHAUSTED로_종료하고_6번째는_거부한다(VerificationDecision decision) {
+    void 미통과_3회면_EXHAUSTED로_종료하고_4번째는_거부한다(VerificationDecision decision) {
         Long id = createSession();
         stubResult(decision);
-        for (int i = 1; i <= 5; i++) {
+        for (int i = 1; i <= 3; i++) {
             var result = service.submit(USER_ID, id, i, video("video-" + i));
             assertThat(result.attemptsUsed()).isEqualTo(i);
-            assertThat(result.canRetry()).isEqualTo(i < 5);
-            assertThat(result.status()).isEqualTo(i < 5
+            assertThat(result.canRetry()).isEqualTo(i < 3);
+            assertThat(result.status()).isEqualTo(i < 3
                 ? VerificationSessionStatus.READY
                 : VerificationSessionStatus.EXHAUSTED);
-            assertThat(result.remainingAttempts()).isEqualTo(5 - i);
-            assertThat(result.nextAttemptNo()).isEqualTo(i < 5 ? Integer.valueOf(i + 1) : null);
+            assertThat(result.remainingAttempts()).isEqualTo(3 - i);
+            assertThat(result.nextAttemptNo()).isEqualTo(i < 3 ? Integer.valueOf(i + 1) : null);
             assertThat(result.attempt().decision()).isEqualTo(decision);
             assertThat(result.attempts()).hasSize(i);
             assertThat(result.attempts()).allSatisfy(attempt -> {
@@ -162,11 +162,11 @@ class FaceVerificationServiceTest {
         }
         var finalResult = service.get(USER_ID, id);
         assertThat(finalResult.status()).isEqualTo(VerificationSessionStatus.EXHAUSTED);
-        assertThat(finalResult.attempts()).extracting(Attempt::attemptNo).containsExactly(1, 2, 3, 4, 5);
-        assertThat(service.submit(USER_ID, id, 5, video("video-5"))).isEqualTo(finalResult);
-        assertError(() -> service.submit(USER_ID, id, 6, video("six")),
+        assertThat(finalResult.attempts()).extracting(Attempt::attemptNo).containsExactly(1, 2, 3);
+        assertThat(service.submit(USER_ID, id, 3, video("video-3"))).isEqualTo(finalResult);
+        assertError(() -> service.submit(USER_ID, id, 4, video("four")),
             ProfileTrustErrorCode.VERIFICATION_ATTEMPT_LIMIT_REACHED);
-        verify(ai, times(5)).verify(anyString(), any(), anyString(), any(), anyString());
+        verify(ai, times(3)).verify(anyString(), any(), anyString(), any(), anyString(), anyInt());
     }
 
     @Test
@@ -183,7 +183,7 @@ class FaceVerificationServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {2, 5})
+    @ValueSource(ints = {2, 3})
     void 이전_불일치와_RETRY가_있어도_VERIFIED면_성공한다(int successfulAttempt) {
         Long id = createSession();
         for (int i = 1; i < successfulAttempt; i++) {
@@ -206,14 +206,14 @@ class FaceVerificationServiceTest {
         assertThat(replayed.attempts()).isEqualTo(verified.attempts());
         assertError(() -> service.submit(USER_ID, id, successfulAttempt + 1, video("extra")),
             ProfileTrustErrorCode.VERIFICATION_SESSION_CLOSED);
-        verify(ai, times(successfulAttempt)).verify(anyString(), any(), anyString(), any(), anyString());
+        verify(ai, times(successfulAttempt)).verify(anyString(), any(), anyString(), any(), anyString(), anyInt());
     }
 
     @Test
-    void 서로_다른_실패_사유를_누적하고_5번째_실패에서_이력을_반환한다() {
+    void 서로_다른_실패_사유를_누적하고_3번째_실패에서_이력을_반환한다() {
         Long id = createSession();
         var decisions = List.of(VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY,
-            VerificationDecision.NOT_VERIFIED, VerificationDecision.RETRY, VerificationDecision.RETRY);
+            VerificationDecision.NOT_VERIFIED);
         for (int i = 0; i < decisions.size(); i++) {
             stubResult(decisions.get(i));
             service.submit(USER_ID, id, i + 1, video("video-" + i));
@@ -223,8 +223,7 @@ class FaceVerificationServiceTest {
         assertThat(exhausted.attempts()).extracting(Attempt::decision).containsExactlyElementsOf(decisions);
         assertThat(exhausted.attempts()).extracting(Attempt::reasonCodes).containsExactly(
             List.of(VerificationReasonCode.FACE_MISMATCH), List.of(VerificationReasonCode.LIVENESS_FAILED),
-            List.of(VerificationReasonCode.FACE_MISMATCH), List.of(VerificationReasonCode.LIVENESS_FAILED),
-            List.of(VerificationReasonCode.LIVENESS_FAILED));
+            List.of(VerificationReasonCode.FACE_MISMATCH));
         assertThat(exhausted.attempt()).isEqualTo(exhausted.attempts().getLast());
     }
 
@@ -245,7 +244,7 @@ class FaceVerificationServiceTest {
     @Test
     void AI_오류도_한번_차감하고_같은_시도의_오류를_재반환한다() {
         Long id = createSession();
-        given(ai.verify(anyString(), any(), anyString(), any(), anyString()))
+        given(ai.verify(anyString(), any(), anyString(), any(), anyString(), anyInt()))
             .willThrow(new ProfileTrustBusinessException(ProfileTrustErrorCode.AI_SERVER_UNAVAILABLE));
         assertError(() -> service.submit(USER_ID, id, 1, video("one")),
             ProfileTrustErrorCode.AI_SERVER_UNAVAILABLE);
@@ -256,7 +255,7 @@ class FaceVerificationServiceTest {
         assertThat(result.nextAttemptNo()).isEqualTo(2);
         assertThat(result.attempt().errorCode()).isEqualTo(ProfileTrustErrorCode.AI_SERVER_UNAVAILABLE);
         assertThat(result.attempts()).containsExactly(result.attempt());
-        verify(ai, times(1)).verify(anyString(), any(), anyString(), any(), anyString());
+        verify(ai, times(1)).verify(anyString(), any(), anyString(), any(), anyString(), anyInt());
     }
 
     @Test
@@ -267,13 +266,13 @@ class FaceVerificationServiceTest {
         assertError(() -> service.submit(USER_ID, id, 1, video("one")),
             ProfileTrustErrorCode.PRIMARY_PHOTO_CHANGED);
         assertThat(service.get(USER_ID, id).status()).isEqualTo(VerificationSessionStatus.EXPIRED);
-        verify(ai, never()).verify(anyString(), any(), anyString(), any(), anyString());
+        verify(ai, never()).verify(anyString(), any(), anyString(), any(), anyString(), anyInt());
     }
 
     @Test
     void 만료후_도착한_VERIFIED는_반영하지_않는다() {
         Long id = createSession();
-        given(ai.verify(anyString(), any(), anyString(), any(), anyString())).willAnswer(invocation -> {
+        given(ai.verify(anyString(), any(), anyString(), any(), anyString(), anyInt())).willAnswer(invocation -> {
             ReflectionTestUtils.setField(sessionRows.get(id), "expiresAt", LocalDateTime.now().minusSeconds(1));
             return result(VerificationDecision.VERIFIED);
         });
@@ -294,7 +293,7 @@ class FaceVerificationServiceTest {
     @Test
     void 라이브니스_실패를_VERIFIED로_반환한_비정상_응답은_거부한다() {
         Long id = createSession();
-        given(ai.verify(anyString(), any(), anyString(), any(), anyString())).willReturn(
+        given(ai.verify(anyString(), any(), anyString(), any(), anyString(), anyInt())).willReturn(
             new VerificationResponse(VerificationDecision.VERIFIED, List.of(), new Liveness(false)));
         assertError(() -> service.submit(USER_ID, id, 1, video("one")),
             ProfileTrustErrorCode.AI_SERVER_RESPONSE_INVALID);
@@ -314,7 +313,7 @@ class FaceVerificationServiceTest {
     }
 
     private void stubResult(VerificationDecision decision) {
-        given(ai.verify(anyString(), any(), anyString(), any(), anyString())).willReturn(result(decision));
+        given(ai.verify(anyString(), any(), anyString(), any(), anyString(), anyInt())).willReturn(result(decision));
     }
 
     private VerificationResponse result(VerificationDecision decision) {

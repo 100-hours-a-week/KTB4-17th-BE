@@ -147,9 +147,11 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         resource(() -> admin.close(Duration.ofSeconds(5)));
         assertThat(admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)).hasSize(3);
         var topics = Stream.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic())
-            .map(name -> new NewTopic(name, 2, (short) 3).configs(name.equals(dltTopic())
-                ? Map.of("min.insync.replicas", "2", "retention.ms", "1209600000", "retention.bytes", "-1")
-                : Map.of("min.insync.replicas", "2")))
+            .map(name -> (mode == Mode.BROKER
+                ? new NewTopic(name, Map.of(0, List.of(1, 2, 3), 1, List.of(3, 2, 1)))
+                : new NewTopic(name, 2, (short) 3)).configs(name.equals(dltTopic())
+                    ? Map.of("min.insync.replicas", "2", "retention.ms", "1209600000", "retention.bytes", "-1")
+                    : Map.of("min.insync.replicas", "2")))
             .toList();
         admin.createTopics(topics).all().get(20, TimeUnit.SECONDS);
         var configurations = admin.describeConfigs(topics.stream()
@@ -232,7 +234,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         server.createContext("/", exchange -> {
             try (exchange) {
                 if (!exchange.getRequestMethod().equals("POST")
-                    || !exchange.getRequestURI().getPath().equals("/ai/api/v1/simulation")) {
+                    || !exchange.getRequestURI().getPath().equals("/ai/api/v2/simulation")) {
                     byte[] error = JSON.writeValueAsBytes(Map.of("errorCode", "INTERNAL_SERVER_ERROR"));
                     exchange.sendResponseHeaders(404, error.length);
                     exchange.getResponseBody().write(error);
