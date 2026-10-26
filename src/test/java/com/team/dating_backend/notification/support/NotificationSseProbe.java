@@ -27,6 +27,7 @@ public final class NotificationSseProbe implements AutoCloseable {
     private final URI server;
     private final InputStream stream;
     private final List<NotificationEventResponse> notifications = new CopyOnWriteArrayList<>();
+    private final List<NotificationReceipt> receipts = new CopyOnWriteArrayList<>();
     private final List<Instant> heartbeats = new CopyOnWriteArrayList<>();
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
     private final Thread reader;
@@ -34,6 +35,8 @@ public final class NotificationSseProbe implements AutoCloseable {
     private volatile boolean closed;
     private volatile boolean remoteEndExpected;
     private volatile Instant remoteEndedAt;
+
+    public record NotificationReceipt(long notificationId, Instant receivedAt, long receivedNanos) {}
 
     private NotificationSseProbe(long userId, URI server, InputStream stream) {
         this.userId = userId;
@@ -90,7 +93,10 @@ public final class NotificationSseProbe implements AutoCloseable {
                     } else if (event.equals("notification")) {
                         var payload = JSON.readTree(data.toString());
                         assertThat(payload.properties()).hasSize(8);
-                        notifications.add(JSON.treeToValue(payload, NotificationEventResponse.class));
+                        var notification = JSON.treeToValue(payload, NotificationEventResponse.class);
+                        receipts.add(
+                            new NotificationReceipt(notification.notificationId(), Instant.now(), System.nanoTime()));
+                        notifications.add(notification);
                     }
                     event = "";
                     data.setLength(0);
@@ -140,6 +146,10 @@ public final class NotificationSseProbe implements AutoCloseable {
 
     public List<Instant> heartbeats() {
         return List.copyOf(heartbeats);
+    }
+
+    public List<NotificationReceipt> receipts() {
+        return List.copyOf(receipts);
     }
 
     public void expectRemoteEnd() {

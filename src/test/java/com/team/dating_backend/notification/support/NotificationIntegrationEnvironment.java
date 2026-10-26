@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.support;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.github.dockerjava.api.model.ExposedPort;
 import com.sun.net.httpserver.HttpServer;
 import com.team.dating_backend.aisimulation.AiSimulationTestFixtures;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.PersonaBrief;
@@ -56,6 +57,8 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     private final Path directory;
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
     private final List<KafkaContainer> brokers = new ArrayList<>();
+    private final Map<Integer, BrokerState> stoppedBrokers = new LinkedHashMap<>();
+    private final List<BrokerTransition> brokerHistory = new ArrayList<>();
     private final String jwtSecret = Base64.getEncoder().encodeToString(randomKey());
     private final AtomicInteger aiRequests = new AtomicInteger();
     private Admin admin;
@@ -68,10 +71,16 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     private DriverManagerDataSource observationDataSource;
     private DriverManagerDataSource lockDataSource;
     private String bootstrap;
+    private String clusterId;
 
     public enum Mode {
-        NORMAL, RECOVERY, LIFECYCLE
+        NORMAL, RECOVERY, LIFECYCLE, BROKER
     }
+
+    public record BrokerState(int nodeId, String containerId, String host, Integer hostPort, String clientEndpoint,
+        boolean running, String status, Instant observedAt) {}
+
+    public record BrokerTransition(String action, BrokerState before, BrokerState after) {}
 
     public NotificationIntegrationEnvironment() {
         this(Mode.NORMAL);
@@ -88,6 +97,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             case NORMAL -> "pr24-";
             case RECOVERY -> "pr25-";
             case LIFECYCLE -> "pr26-";
+            case BROKER -> "pr27-";
         } + UUID.randomUUID();
         directory = Path.of(System.getProperty("notification.test.output-directory")).resolve(runId);
     }
@@ -102,7 +112,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             kafkaFaultProxy = resource(new NotificationKafkaFaultProxy(network));
             kafkaFaultProxy.start();
         }
-        String clusterId = Uuid.randomUuid().toString();
+        clusterId = Uuid.randomUuid().toString();
         String voters = "1@kafka-1:9094,2@kafka-2:9094,3@kafka-3:9094";
         for (int index = 1; index <= 3; index++) {
             String alias = "kafka-" + index;
@@ -128,7 +138,9 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             brokers.add(broker);
         }
         Startables.deepStart(Stream.concat(Stream.of(mysql), brokers.stream())).join();
-        bootstrap = brokers.stream().map(KafkaContainer::getBootstrapServers).collect(Collectors.joining(","));
+        bootstrap = mode == Mode.BROKER
+            ? kafkaFaultProxy.bootstrapServers(Channel.PRODUCER)
+            : brokers.stream().map(KafkaContainer::getBootstrapServers).collect(Collectors.joining(","));
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap,
             AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 10000,
             AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000));
@@ -249,11 +261,11 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             .ignoreExceptions().untilAsserted(() -> {
                 var creation = admin.describeConsumerGroups(List.of(creationGroup())).all().get(10, TimeUnit.SECONDS)
                     .get(creationGroup());
-                int members = mode == Mode.NORMAL ? 2 : 1;
+                int members = mode == Mode.NORMAL || mode == Mode.BROKER ? 2 : 1;
                 assertThat(creation.members()).hasSize(members)
                     .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
                 var creators = switch (mode) {
-                    case NORMAL -> List.of(first, second);
+                    case NORMAL, BROKER -> List.of(first, second);
                     case RECOVERY -> List.of(first);
                     case LIFECYCLE -> List.of(second);
                 };
@@ -401,6 +413,74 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
 
     public String bootstrapServers() {
         return bootstrap;
+    }
+
+    public BrokerState brokerState(int nodeId) {
+        assertThat(nodeId).isBetween(1, brokers.size());
+        var broker = brokers.get(nodeId - 1);
+        var inspected = broker.getDockerClient().inspectContainerCmd(broker.getContainerId()).exec();
+        var ports = inspected.getNetworkSettings().getPorts();
+        var bindings = ports == null ? null : ports.getBindings().get(ExposedPort.tcp(9092));
+        Integer port = bindings == null || bindings.length == 0
+            ? null
+            : Integer.valueOf(bindings[0].getHostPortSpec());
+        String clientEndpoint = mode == Mode.BROKER ? bootstrap.split(",")[nodeId - 1] : broker.getBootstrapServers();
+        return new BrokerState(nodeId, inspected.getId(), broker.getHost(), port, clientEndpoint,
+            Boolean.TRUE.equals(inspected.getState().getRunning()), inspected.getState().getStatus(), Instant.now());
+    }
+
+    public BrokerState stopBroker(int nodeId) throws IOException {
+        assertThat(mode).isEqualTo(Mode.BROKER);
+        assertThat(stoppedBrokers).isEmpty();
+        var before = brokerState(nodeId);
+        assertThat(before.running()).isTrue();
+        assertThat(before.hostPort()).isNotNull();
+        stoppedBrokers.put(nodeId, before);
+        var broker = brokers.get(nodeId - 1);
+        String logs = broker.getLogs();
+        Files.writeString(directory.resolve("kafka-" + nodeId + "-before-stop.log"),
+            logs.substring(Math.max(0, logs.length() - 512000)));
+        broker.getDockerClient().killContainerCmd(before.containerId()).withSignal("KILL").exec();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(brokerState(nodeId).running()).isFalse());
+        var after = brokerState(nodeId);
+        brokerHistory.add(new BrokerTransition("KILL", before, after));
+        report("broker-history", brokerHistory);
+        return after;
+    }
+
+    public BrokerState restoreBroker(int nodeId) throws Exception {
+        assertThat(mode).isEqualTo(Mode.BROKER);
+        var expected = stoppedBrokers.get(nodeId);
+        assertThat(expected).isNotNull();
+        var before = brokerState(nodeId);
+        assertThat(before.containerId()).isEqualTo(expected.containerId());
+        if (!before.running()) {
+            brokers.get(nodeId - 1).getDockerClient().startContainerCmd(expected.containerId()).exec();
+        }
+        await().atMost(Duration.ofSeconds(60)).ignoreExceptions().untilAsserted(() -> {
+            var current = brokerState(nodeId);
+            assertThat(current.running()).isTrue();
+            assertThat(current.containerId()).isEqualTo(expected.containerId());
+            assertThat(current.clientEndpoint()).isEqualTo(expected.clientEndpoint());
+            var topology = kafkaProbe().topologyWithConsumerOffsets();
+            assertThat(topology.clusterId()).isEqualTo(clusterId);
+            assertThat(topology.brokerIds()).containsExactly(1, 2, 3);
+            assertThat(topology.endpoints()).containsEntry(nodeId, expected.clientEndpoint());
+            assertThat(topology.partitions()).hasSize(11).allSatisfy(partition -> {
+                assertThat(partition.leaderNodeId()).isNotNull();
+                assertThat(partition.replicas()).containsExactly(1, 2, 3);
+                assertThat(partition.inSyncReplicas()).containsExactly(1, 2, 3);
+            });
+        });
+        var after = brokerState(nodeId);
+        brokerHistory.add(new BrokerTransition("START", before, after));
+        stoppedBrokers.remove(nodeId);
+        report("broker-history", brokerHistory);
+        return after;
+    }
+
+    public List<BrokerTransition> brokerHistory() {
+        return List.copyOf(brokerHistory);
     }
 
     public String jwtSecret() {
