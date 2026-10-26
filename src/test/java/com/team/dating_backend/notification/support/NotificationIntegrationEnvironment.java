@@ -9,18 +9,22 @@ import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.Person
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationResponse;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import com.team.dating_backend.notification.support.NotificationKafkaFaultProxy.Channel;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -45,8 +49,11 @@ import tools.jackson.databind.json.JsonMapper;
 public final class NotificationIntegrationEnvironment implements AutoCloseable {
 
     private static final JsonMapper JSON = JsonMapper.builder().findAndAddModules().build();
-    private final String runId = "pr24-" + UUID.randomUUID();
-    private final Path directory = Path.of(System.getProperty("notification.test.output-directory")).resolve(runId);
+    private static final String DATABASE = "notification";
+    private final Mode mode;
+    private final Map<String, String> settingsOverrides;
+    private final String runId;
+    private final Path directory;
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
     private final List<KafkaContainer> brokers = new ArrayList<>();
     private final String jwtSecret = Base64.getEncoder().encodeToString(randomKey());
@@ -55,13 +62,42 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     private JdbcTemplate jdbc;
     private NotificationBackendProcess first;
     private NotificationBackendProcess second;
+    private NotificationKafkaFaultProxy kafkaFaultProxy;
+    private NotificationKafkaProbe kafkaProbe;
+    private NotificationDatabaseProbe databaseProbe;
+    private DriverManagerDataSource observationDataSource;
+    private DriverManagerDataSource lockDataSource;
+    private String bootstrap;
+
+    public enum Mode {
+        NORMAL, RECOVERY
+    }
+
+    public NotificationIntegrationEnvironment() {
+        this(Mode.NORMAL);
+    }
+
+    public NotificationIntegrationEnvironment(Mode mode) {
+        this(mode, Map.of());
+    }
+
+    public NotificationIntegrationEnvironment(Mode mode, Map<String, String> settingsOverrides) {
+        this.mode = mode;
+        this.settingsOverrides = Map.copyOf(settingsOverrides);
+        runId = (mode == Mode.RECOVERY ? "pr25-" : "pr24-") + UUID.randomUUID();
+        directory = Path.of(System.getProperty("notification.test.output-directory")).resolve(runId);
+    }
 
     public void start() throws Exception {
         Files.createDirectories(directory);
         var network = resource(Network.newNetwork());
         var mysql = resource(new MySQLContainer("mysql:8.4")
-            .withDatabaseName("notification").withUsername("notification")
+            .withDatabaseName(DATABASE).withUsername("notification").withEnv("MYSQL_ROOT_HOST", "%")
             .withPassword(UUID.randomUUID().toString()));
+        if (mode == Mode.RECOVERY) {
+            kafkaFaultProxy = resource(new NotificationKafkaFaultProxy(network));
+            kafkaFaultProxy.start();
+        }
         String clusterId = Uuid.randomUuid().toString();
         String voters = "1@kafka-1:9094,2@kafka-2:9094,3@kafka-3:9094";
         for (int index = 1; index <= 3; index++) {
@@ -82,10 +118,13 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
                 .withEnv("KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE", "false")
                 .withEnv("KAFKA_HEAP_OPTS", "-Xms128m -Xmx256m")
                 .withStartupTimeout(Duration.ofSeconds(90)));
+            if (kafkaFaultProxy != null) {
+                kafkaFaultProxy.registerBroker(broker, alias, index);
+            }
             brokers.add(broker);
         }
         Startables.deepStart(Stream.concat(Stream.of(mysql), brokers.stream())).join();
-        String bootstrap = brokers.stream().map(KafkaContainer::getBootstrapServers).collect(Collectors.joining(","));
+        bootstrap = brokers.stream().map(KafkaContainer::getBootstrapServers).collect(Collectors.joining(","));
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap,
             AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 10000,
             AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000));
@@ -117,25 +156,51 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         String aiUrl = startAiServer();
         var dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
         jdbc = new JdbcTemplate(dataSource);
+        String observationUrl = mysql.getJdbcUrl() + (mysql.getJdbcUrl().contains("?") ? "&" : "?")
+            + "connectTimeout=3000&socketTimeout=5000&allowPublicKeyRetrieval=true&useSSL=false";
+        observationDataSource = new DriverManagerDataSource(observationUrl, mysql.getUsername(), mysql.getPassword());
+        lockDataSource = new DriverManagerDataSource(observationUrl, "root", mysql.getPassword());
         var settings = new HashMap<>(Map.of(
             "DB_URL", mysql.getJdbcUrl(), "DB_USERNAME", mysql.getUsername(), "DB_PASSWORD", mysql.getPassword(),
             "BOOTSTRAP_SERVERS", bootstrap, "JWT_SECRET", jwtSecret, "AI_URL", aiUrl,
             "CREATION_TOPIC", creationTopic(), "DELIVERY_TOPIC", deliveryTopic(), "CREATION_GROUP", creationGroup()));
         first = resource(new NotificationBackendProcess("a", directory));
+        settings.put("DB_CONNECTION_INIT_SQL", "SET SESSION innodb_lock_wait_timeout = 50");
+        settings.put("ALERT_ENABLED", "false");
+        settings.put("ALERT_WEBHOOK_URL", "");
+        settings.put("ALERT_CONNECT_TIMEOUT_MS", "2000");
+        settings.put("ALERT_READ_TIMEOUT_MS", "3000");
         settings.put("PROCESS", "a");
         settings.put("DELIVERY_PREFIX", runId + "-sse-a");
+        settings.put("CREATION_ENABLED", "true");
+        settings.put("PRODUCER_BOOTSTRAP_SERVERS", kafkaFaultProxy == null
+            ? bootstrap
+            : kafkaFaultProxy.bootstrapServers(Channel.PRODUCER));
+        settings.put("CONSUMER_BOOTSTRAP_SERVERS", kafkaFaultProxy == null
+            ? bootstrap
+            : kafkaFaultProxy.bootstrapServers(Channel.CONSUMER));
+        settings.putAll(settingsOverrides);
         first.start(settings);
         second = resource(new NotificationBackendProcess("b", directory));
         settings.put("PROCESS", "b");
         settings.put("DELIVERY_PREFIX", runId + "-sse-b");
+        settings.put("CREATION_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
+        settings.put("PRODUCER_BOOTSTRAP_SERVERS", bootstrap);
+        settings.put("CONSUMER_BOOTSTRAP_SERVERS", bootstrap);
+        settings.put("ALERT_ENABLED", "false");
+        settings.remove("HTTPS_PROXY_PORT");
         second.start(settings);
         assertThat(first.pid()).isNotEqualTo(second.pid()).isNotEqualTo(ProcessHandle.current().pid());
         assertThat(second.pid()).isNotEqualTo(ProcessHandle.current().pid());
         assertGroupsReady();
-        report("environment", Map.of("runId", runId, "clusterId", clusterId,
+        report("environment", Map.of("runId", runId, "mode", mode.name(), "clusterId", clusterId,
             "brokers", bootstrap, "replicationFactor", 3, "minInSyncReplicas", 2,
             "creationGroup", creationGroup(), "deliveryGroups", deliveryGroups(),
             "backends", List.of(processDescription(first), processDescription(second))));
+        if (kafkaFaultProxy != null) {
+            report("kafka-routes", kafkaFaultProxy.description());
+        }
+        reportProcesses();
     }
 
     private String startAiServer() throws IOException {
@@ -171,24 +236,34 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     }
 
     public void assertGroupsReady() {
-        await().atMost(Duration.ofSeconds(45)).ignoreExceptions().untilAsserted(() -> {
-            var creation = admin.describeConsumerGroups(List.of(creationGroup())).all().get(10, TimeUnit.SECONDS)
-                .get(creationGroup());
-            assertThat(creation.members()).hasSize(2)
-                .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(1));
-            assertThat(creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
-                .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
-                    new TopicPartition(creationTopic(), 1));
-            var groups = deliveryGroups();
-            assertThat(groups).hasSize(2);
-            var deliveries = admin.describeConsumerGroups(groups).all().get(10, TimeUnit.SECONDS);
-            assertThat(deliveries.values()).allSatisfy(group -> {
-                assertThat(group.members()).hasSize(1);
-                assertThat(group.members().iterator().next().assignment().topicPartitions())
-                    .containsExactlyInAnyOrder(new TopicPartition(deliveryTopic(), 0),
-                        new TopicPartition(deliveryTopic(), 1));
+        await().atMost(Duration.ofSeconds(45)).failFast(() -> !first.isAlive() || !second.isAlive())
+            .ignoreExceptions().untilAsserted(() -> {
+                var creation = admin.describeConsumerGroups(List.of(creationGroup())).all().get(10, TimeUnit.SECONDS)
+                    .get(creationGroup());
+                int members = mode == Mode.RECOVERY ? 1 : 2;
+                assertThat(creation.members()).hasSize(members)
+                    .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
+                for (var backend : mode == Mode.RECOVERY ? List.of(first) : List.of(first, second)) {
+                    String prefix = backend.deliveryGroupPrefix();
+                    assertThat(creation.members()).filteredOn(member -> member.clientId().equals(prefix)
+                        || member.clientId().startsWith(prefix + "-")).hasSize(1);
+                }
+                assertThat(
+                    creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
+                    .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
+                        new TopicPartition(creationTopic(), 1));
+                var groups = deliveryGroups();
+                assertThat(groups).hasSize(2);
+                assertThat(groups).anyMatch(group -> group.startsWith(first.deliveryGroupPrefix() + "-"));
+                assertThat(groups).anyMatch(group -> group.startsWith(second.deliveryGroupPrefix() + "-"));
+                var deliveries = admin.describeConsumerGroups(groups).all().get(10, TimeUnit.SECONDS);
+                assertThat(deliveries.values()).allSatisfy(group -> {
+                    assertThat(group.members()).hasSize(1);
+                    assertThat(group.members().iterator().next().assignment().topicPartitions())
+                        .containsExactlyInAnyOrder(new TopicPartition(deliveryTopic(), 0),
+                            new TopicPartition(deliveryTopic(), 1));
+                });
             });
-        });
     }
 
     public void awaitProcessed() {
@@ -217,7 +292,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().offset()));
     }
 
-    private List<String> deliveryGroups() throws Exception {
+    public List<String> deliveryGroups() throws Exception {
+        var prefixes = Stream.of(first, second).filter(backend -> backend != null && backend.isAlive())
+            .map(backend -> backend.deliveryGroupPrefix() + "-").toList();
+        return allDeliveryGroups().stream()
+            .filter(group -> prefixes.stream().anyMatch(group::startsWith)).toList();
+    }
+
+    public List<String> allDeliveryGroups() throws Exception {
         return admin.listGroups().all().get(10, TimeUnit.SECONDS).stream()
             .map(group -> group.groupId()).filter(group -> group.startsWith(runId + "-sse-")).sorted().toList();
     }
@@ -228,7 +310,23 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     }
 
     private Map<String, Object> processDescription(NotificationBackendProcess backend) {
-        return Map.of("pid", backend.pid(), "address", backend.address().toString(), "log", backend.log().toString());
+        var description = new LinkedHashMap<String, Object>();
+        description.put("pid", backend.pid());
+        description.put("address", backend.address());
+        description.put("log", backend.log().toString());
+        description.put("alive", backend.isAlive());
+        description.put("generation", backend.generation());
+        description.put("deliveryGroupPrefix", backend.deliveryGroupPrefix());
+        description.put("history", backend.history());
+        return description;
+    }
+
+    private void reportProcesses() throws IOException {
+        var processes = Stream.of(first, second).filter(backend -> backend != null && !backend.history().isEmpty())
+            .map(this::processDescription).toList();
+        if (!processes.isEmpty()) {
+            report("processes", Map.of("observedAt", Instant.now(), "backends", processes));
+        }
     }
 
     private <T extends AutoCloseable> T resource(T resource) {
@@ -246,6 +344,43 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
 
     public NotificationBackendProcess second() {
         return second;
+    }
+
+    public void killFirst() throws IOException, InterruptedException {
+        first.kill();
+        reportProcesses();
+    }
+
+    public void restartFirst() throws IOException {
+        first.restart();
+        assertGroupsReady();
+        reportProcesses();
+    }
+
+    public NotificationKafkaFaultProxy kafkaFaultProxy() {
+        assertThat(kafkaFaultProxy).isNotNull();
+        return kafkaFaultProxy;
+    }
+
+    public NotificationKafkaProbe kafkaProbe() {
+        assertThat(admin).isNotNull();
+        if (kafkaProbe == null) {
+            kafkaProbe = resource(new NotificationKafkaProbe(admin, bootstrap, creationTopic(),
+                Set.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic())));
+        }
+        return kafkaProbe;
+    }
+
+    public NotificationDatabaseProbe databaseProbe() {
+        assertThat(observationDataSource).isNotNull();
+        if (databaseProbe == null) {
+            databaseProbe = resource(new NotificationDatabaseProbe(observationDataSource, lockDataSource, DATABASE));
+        }
+        return databaseProbe;
+    }
+
+    public String bootstrapServers() {
+        return bootstrap;
     }
 
     public String jwtSecret() {
@@ -272,7 +407,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         return runId + "-delivery";
     }
 
-    private String creationGroup() {
+    public String creationGroup() {
         return runId + "-creation";
     }
 
@@ -310,6 +445,15 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
                 } else {
                     failure.addSuppressed(exception);
                 }
+            }
+        }
+        try {
+            reportProcesses();
+        } catch (Exception exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
             }
         }
         if (failure != null) {

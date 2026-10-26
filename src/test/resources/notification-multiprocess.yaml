@@ -8,6 +8,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 5
+      connection-init-sql: "@DB_CONNECTION_INIT_SQL@"
   jpa:
     open-in-view: false
     hibernate:
@@ -21,6 +22,7 @@ spring:
     admin:
       auto-create: false
     producer:
+      bootstrap-servers: "@PRODUCER_BOOTSTRAP_SERVERS@"
       acks: all
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
@@ -31,6 +33,8 @@ spring:
         "[request.timeout.ms]": 3000
         "[delivery.timeout.ms]": 10000
     consumer:
+      bootstrap-servers: "@CONSUMER_BOOTSTRAP_SERVERS@"
+      client-id: "@DELIVERY_PREFIX@"
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
@@ -69,7 +73,7 @@ app:
       create-requested-topic: "@CREATION_TOPIC@"
       delivery-topic: "@DELIVERY_TOPIC@"
     creation:
-      enabled: true
+      enabled: @CREATION_ENABLED@
       group-id: "@CREATION_GROUP@"
     delivery:
       enabled: true
@@ -78,7 +82,10 @@ app:
       max-attempts: 4
       delay-ms: 5000
     alert:
-      enabled: false
+      enabled: @ALERT_ENABLED@
+      webhook-url: "@ALERT_WEBHOOK_URL@"
+      connect-timeout-ms: @ALERT_CONNECT_TIMEOUT_MS@
+      read-timeout-ms: @ALERT_READ_TIMEOUT_MS@
     sse:
       timeout-ms: 300000
       heartbeat-delay-ms: 1000
