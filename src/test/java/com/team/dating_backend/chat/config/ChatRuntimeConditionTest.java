@@ -36,10 +36,12 @@ import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
 import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
+import com.team.dating_backend.chat.service.ChatOutboxPublisherLockService;
 import com.team.dating_backend.chat.service.ChatRoomLeaveService;
 import com.team.dating_backend.chat.service.ChatRoomListService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
 import com.team.dating_backend.chat.service.ChatRoomPresenceService;
+import com.team.dating_backend.common.lock.repository.PublisherLockRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
@@ -71,6 +73,8 @@ class ChatRuntimeConditionTest {
         .withBean(ChatMessageRepository.class, () -> mock(ChatMessageRepository.class))
         .withBean(ChatParticipantRepository.class,
             () -> mock(ChatParticipantRepository.class))
+        .withBean(PublisherLockRepository.class,
+            () -> mock(PublisherLockRepository.class))
         .withBean(ChatDelegationMessageRepository.class,
             () -> mock(ChatDelegationMessageRepository.class))
         .withBean(SimpMessagingTemplate.class, () -> mock(SimpMessagingTemplate.class))
@@ -116,6 +120,7 @@ class ChatRuntimeConditionTest {
                 assertThat(context).hasSingleBean(ChatRoomListController.class);
                 assertThat(context).hasSingleBean(ChatRoomPresenceController.class);
                 assertThat(context).hasSingleBean(ChatMessageOutboxPublishJob.class);
+                assertThat(context).hasSingleBean(ChatOutboxPublisherLockService.class);
                 assertThat(context).hasSingleBean(ChatMessageReadReceiptPublisher.class);
                 assertThat(context).hasSingleBean(AiPracticeOutboxPublishJob.class);
                 assertThat(context).hasSingleBean(AiPracticeWebSocketEventPublisher.class);
@@ -133,6 +138,7 @@ class ChatRuntimeConditionTest {
         assertThat(context.getBeansOfType(ChatRoomListController.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatRoomPresenceController.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMessageOutboxPublishJob.class)).isEmpty();
+        assertThat(context.getBeansOfType(ChatOutboxPublisherLockService.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMessageReadReceiptPublisher.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeOutboxPublishJob.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeWebSocketEventPublisher.class)).isEmpty();
@@ -151,6 +157,7 @@ class ChatRuntimeConditionTest {
             ChatRoomListController.class,
             ChatRoomPresenceController.class,
             ChatMessageOutboxPublishJob.class,
+            ChatOutboxPublisherLockService.class,
             ChatMessageReadReceiptPublisher.class,
             AiPracticeOutboxPublishJob.class,
             AiPracticeWebSocketEventPublisher.class,
