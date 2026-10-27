@@ -14,6 +14,9 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.boot.kafka.autoconfigure.DefaultKafkaProducerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -37,8 +40,17 @@ public class NotificationKafkaConfiguration {
     @Bean
     public DefaultKafkaProducerFactoryCustomizer notificationKafkaProducerFactoryCustomizer(
         JsonMapper jsonMapper) {
-        return factory -> factory.setValueSerializerSupplier(
-            () -> notificationValueSerializer(jsonMapper));
+        return factory -> {
+            factory.setKeySerializerSupplier(() -> notificationKeySerializer());
+            factory.setValueSerializerSupplier(() -> notificationValueSerializer(jsonMapper));
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> Serializer<T> notificationKeySerializer() {
+        return (Serializer<T>) new DelegatingByTypeSerializer(Map.of(
+            Long.class, new LongSerializer(),
+            String.class, new StringSerializer()));
     }
 
     @SuppressWarnings("unchecked")
@@ -152,6 +164,7 @@ public class NotificationKafkaConfiguration {
         Map<String, Object> overrides) {
         Map<String, Object> consumerProperties = new HashMap<>(kafkaConsumerFactory.getConfigurationProperties());
         consumerProperties.putAll(overrides);
+        consumerProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class);
         consumerProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset);
         consumerProperties.put(JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, payloadType);
         consumerProperties.put(JacksonJsonDeserializer.USE_TYPE_INFO_HEADERS, false);

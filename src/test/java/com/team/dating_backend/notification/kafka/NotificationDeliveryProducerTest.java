@@ -63,11 +63,11 @@ class NotificationDeliveryProducerTest {
     @Test
     void delivery_토픽과_수신자_key로_원본_이벤트를_발행하고_metadata를_반환한다() throws Exception {
         var result = sendResult();
-        given(kafkaTemplate.send(TOPIC, "7", EVENT)).willReturn(CompletableFuture.completedFuture(result));
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(CompletableFuture.completedFuture(result));
 
         assertThat(producer.publishAndAwait(EVENT)).isSameAs(result.getRecordMetadata());
 
-        verify(kafkaTemplate).send(eq(TOPIC), eq("7"), same(EVENT));
+        verify(kafkaTemplate).send(eq(TOPIC), eq(7L), same(EVENT));
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -85,23 +85,23 @@ class NotificationDeliveryProducerTest {
     @Test
     void send_호출_실패는_원래_예외를_전달한다() {
         var failure = new SerializationException();
-        given(kafkaTemplate.send(TOPIC, "7", EVENT)).willThrow(failure);
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willThrow(failure);
 
         assertThatThrownBy(() -> producer.publishAndAwait(EVENT)).isSameAs(failure);
 
-        verify(kafkaTemplate).send(TOPIC, "7", EVENT);
+        verify(kafkaTemplate).send(TOPIC, 7L, EVENT);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
     @Test
     void 비동기_발행_실패는_원인을_보존해_전달한다() {
         var failure = new org.apache.kafka.common.errors.TimeoutException();
-        given(kafkaTemplate.send(TOPIC, "7", EVENT)).willReturn(CompletableFuture.failedFuture(failure));
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(CompletableFuture.failedFuture(failure));
 
         assertThatThrownBy(() -> producer.publishAndAwait(EVENT))
             .isInstanceOf(ExecutionException.class).cause().isSameAs(failure);
 
-        verify(kafkaTemplate).send(TOPIC, "7", EVENT);
+        verify(kafkaTemplate).send(TOPIC, 7L, EVENT);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -109,7 +109,7 @@ class NotificationDeliveryProducerTest {
     void 결과_대기_timeout은_발행을_취소하거나_재발행하지_않고_늦은_완료를_허용한다() {
         var future = new CompletableFuture<SendResult<Object, Object>>();
         properties.setDeliveryResultTimeoutMs(1L);
-        given(kafkaTemplate.send(TOPIC, "7", EVENT)).willReturn(future);
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(future);
 
         assertThatThrownBy(() -> producer.publishAndAwait(EVENT)).isInstanceOf(TimeoutException.class);
         assertThat(future.isDone()).isFalse();
@@ -118,14 +118,14 @@ class NotificationDeliveryProducerTest {
         assertThat(future.complete(result)).isTrue();
         assertThat(future.getNow(null)).isSameAs(result);
 
-        verify(kafkaTemplate).send(TOPIC, "7", EVENT);
+        verify(kafkaTemplate).send(TOPIC, 7L, EVENT);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
     @Test
     void interrupt_상태를_복원하고_중단을_전달한다() {
         var future = new CompletableFuture<SendResult<Object, Object>>();
-        given(kafkaTemplate.send(TOPIC, "7", EVENT)).willReturn(future);
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(future);
 
         try {
             Thread.currentThread().interrupt();
@@ -136,7 +136,7 @@ class NotificationDeliveryProducerTest {
             Thread.interrupted();
         }
 
-        verify(kafkaTemplate).send(TOPIC, "7", EVENT);
+        verify(kafkaTemplate).send(TOPIC, 7L, EVENT);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -152,6 +152,6 @@ class NotificationDeliveryProducerTest {
 
     private SendResult<Object, Object> sendResult() {
         var metadata = new RecordMetadata(new TopicPartition(TOPIC, 1), 42L, 0, 0L, 0, 0);
-        return new SendResult<>(new ProducerRecord<>(TOPIC, "7", EVENT), metadata);
+        return new SendResult<>(new ProducerRecord<>(TOPIC, 7L, EVENT), metadata);
     }
 }

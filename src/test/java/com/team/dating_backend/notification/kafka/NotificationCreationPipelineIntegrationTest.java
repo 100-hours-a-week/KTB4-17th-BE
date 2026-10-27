@@ -55,6 +55,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -173,7 +174,7 @@ class NotificationCreationPipelineIntegrationTest {
     private NotificationPersistenceService persistenceService;
 
     private Admin admin;
-    private KafkaConsumer<String, String> deliveryConsumer;
+    private KafkaConsumer<Long, String> deliveryConsumer;
     private ConcurrentMessageListenerContainer<?, ?> container;
     private TransactionTemplate transaction;
     private Long userId;
@@ -195,7 +196,7 @@ class NotificationCreationPipelineIntegrationTest {
             new NewTopic(topics.getDeliveryTopic(), 1, (short) 1))).all().get(20, TimeUnit.SECONDS);
         deliveryConsumer = new KafkaConsumer<>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
-            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class,
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
             ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false));
         deliveryConsumer.assign(List.of(deliveryPartition()));
@@ -419,7 +420,7 @@ class NotificationCreationPipelineIntegrationTest {
             assertThat(details.processingExceptionType()).isEqualTo("TimeoutException");
             assertThat(details.processingCauseType()).isNull();
             var deadLetter = readDeadLetter();
-            assertThat(deadLetter.key()).isEqualTo(userId.toString());
+            assertThat(deadLetter.key()).isEqualTo(userId);
             assertThat(deadLetter.offset()).isEqualTo(details.destinationLocation().offset());
             assertThat(jsonMapper.readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(original);
         } finally {
@@ -484,7 +485,7 @@ class NotificationCreationPipelineIntegrationTest {
     }
 
     private void send(NotificationCreateRequested request) throws Exception {
-        template.send(topics.getCreateRequestedTopic(), 0, userId.toString(), request).get(15, TimeUnit.SECONDS);
+        template.send(topics.getCreateRequestedTopic(), 0, userId, request).get(15, TimeUnit.SECONDS);
     }
 
     private NotificationCreateRequested request(String title, Instant requestedAt) {
@@ -519,16 +520,16 @@ class NotificationCreationPipelineIntegrationTest {
             .partitionResult(partition).get(10, TimeUnit.SECONDS).offset();
     }
 
-    private ConsumerRecord<String, String> readDeadLetter() {
-        try (var consumer = new KafkaConsumer<String, String>(Map.of(
+    private ConsumerRecord<Long, String> readDeadLetter() {
+        try (var consumer = new KafkaConsumer<Long, String>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
-            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class,
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
             ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
             var partition = new TopicPartition(topics.getCreateRequestedTopic() + "-dlt", 0);
             consumer.assign(List.of(partition));
             consumer.seekToBeginning(List.of(partition));
-            var records = new ArrayList<ConsumerRecord<String, String>>();
+            var records = new ArrayList<ConsumerRecord<Long, String>>();
             await().atMost(Duration.ofSeconds(15)).until(() -> {
                 consumer.poll(Duration.ofMillis(200)).forEach(records::add);
                 return !records.isEmpty();
@@ -548,7 +549,7 @@ class NotificationCreationPipelineIntegrationTest {
     }
 
     private List<NotificationDeliveryEvent> readDelivery(int expectedCount) throws Exception {
-        List<ConsumerRecord<String, String>> records = new ArrayList<>();
+        List<ConsumerRecord<Long, String>> records = new ArrayList<>();
         long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
         while (records.size() < expectedCount && System.nanoTime() < deadline) {
             deliveryConsumer.poll(Duration.ofMillis(200)).forEach(records::add);
@@ -556,7 +557,7 @@ class NotificationCreationPipelineIntegrationTest {
         assertThat(records).hasSize(expectedCount);
         List<NotificationDeliveryEvent> events = new ArrayList<>();
         for (var record : records) {
-            assertThat(record.key()).isEqualTo(userId.toString());
+            assertThat(record.key()).isEqualTo(userId);
             assertThat(record.headers().lastHeader("__TypeId__")).isNull();
             var event = jsonMapper.readValue(record.value(), NotificationDeliveryEvent.class);
             assertThat(event.sourceEventId()).isEqualTo(sourceEventId);

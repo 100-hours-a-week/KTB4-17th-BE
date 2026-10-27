@@ -28,8 +28,8 @@ class NotificationCreationConsumerTest {
     private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested(
         1, "source", 7L, NotificationType.LIKE, "제목", "본문", null, null,
         Instant.parse("2026-10-22T01:00:00Z"));
-    private static final ConsumerRecord<String, NotificationCreateRequested> RECORD = new ConsumerRecord<>("creation",
-        0, 0L, "7", REQUEST);
+    private static final ConsumerRecord<Long, NotificationCreateRequested> RECORD = new ConsumerRecord<>("creation",
+        0, 0L, 7L, REQUEST);
 
     private final NotificationCreationProcessor processor = mock(NotificationCreationProcessor.class);
     private final NotificationCreationConsumer consumer = new NotificationCreationConsumer(

@@ -22,6 +22,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -89,14 +90,15 @@ class NotificationRequestProducerIntegrationTest {
                 var consumerProperties = new HashMap<>(factory.getConfigurationProperties());
                 consumerProperties.put(ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID());
                 consumerProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+                consumerProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class);
                 var partitions = List.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1));
-                try (var consumer = new KafkaConsumer<String, String>(consumerProperties)) {
+                try (var consumer = new KafkaConsumer<Long, String>(consumerProperties)) {
                     consumer.assign(partitions);
                     consumer.seekToBeginning(partitions);
                     var records = KafkaTestUtils.getRecords(consumer, Duration.ofSeconds(20), 1);
                     assertThat(records.count()).isEqualTo(1);
                     var record = records.iterator().next();
-                    assertThat(record.key()).isEqualTo("101");
+                    assertThat(record.key()).isEqualTo(101L);
                     assertThat(record.partition()).isEqualTo(metadata.partition());
                     assertThat(record.offset()).isEqualTo(metadata.offset());
                     assertThat(record.headers().lastHeader("__TypeId__")).isNull();

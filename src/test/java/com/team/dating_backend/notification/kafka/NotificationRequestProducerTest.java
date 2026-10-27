@@ -60,11 +60,11 @@ class NotificationRequestProducerTest {
     void 설정한_토픽과_수신자_key로_원본_요청을_발행하고_metadata를_반환한다() throws Exception {
         var request = request(101L);
         var result = sendResult(request);
-        given(kafkaTemplate.send(TOPIC, "101", request)).willReturn(CompletableFuture.completedFuture(result));
+        given(kafkaTemplate.send(TOPIC, 101L, request)).willReturn(CompletableFuture.completedFuture(result));
 
         assertThat(producer.publishAndAwait(request)).isSameAs(result.getRecordMetadata());
 
-        verify(kafkaTemplate).send(eq(TOPIC), eq("101"), same(request));
+        verify(kafkaTemplate).send(eq(TOPIC), eq(101L), same(request));
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -83,11 +83,11 @@ class NotificationRequestProducerTest {
     void 발행_호출의_동기_예외를_그대로_전달한다() {
         var request = request(101L);
         var failure = new SerializationException();
-        given(kafkaTemplate.send(TOPIC, "101", request)).willThrow(failure);
+        given(kafkaTemplate.send(TOPIC, 101L, request)).willThrow(failure);
 
         assertThatThrownBy(() -> producer.publishAndAwait(request)).isSameAs(failure);
 
-        verify(kafkaTemplate).send(TOPIC, "101", request);
+        verify(kafkaTemplate).send(TOPIC, 101L, request);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -95,12 +95,12 @@ class NotificationRequestProducerTest {
     @MethodSource("publishFailures")
     void 최종_발행_실패는_원인을_보존한_ExecutionException으로_전달한다(Throwable failure) {
         var request = request(101L);
-        given(kafkaTemplate.send(TOPIC, "101", request)).willReturn(CompletableFuture.failedFuture(failure));
+        given(kafkaTemplate.send(TOPIC, 101L, request)).willReturn(CompletableFuture.failedFuture(failure));
 
         assertThatThrownBy(() -> producer.publishAndAwait(request))
             .isInstanceOf(ExecutionException.class).cause().isSameAs(failure);
 
-        verify(kafkaTemplate).send(TOPIC, "101", request);
+        verify(kafkaTemplate).send(TOPIC, 101L, request);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -109,7 +109,7 @@ class NotificationRequestProducerTest {
         var request = request(101L);
         var future = new CompletableFuture<SendResult<Object, Object>>();
         publishProperties.setResultTimeoutMs(1L);
-        given(kafkaTemplate.send(TOPIC, "101", request)).willReturn(future);
+        given(kafkaTemplate.send(TOPIC, 101L, request)).willReturn(future);
 
         assertThatThrownBy(() -> producer.publishAndAwait(request)).isInstanceOf(TimeoutException.class);
         assertThat(future.isDone()).isFalse();
@@ -118,7 +118,7 @@ class NotificationRequestProducerTest {
         assertThat(future.complete(result)).isTrue();
         assertThat(future.getNow(null)).isSameAs(result);
 
-        verify(kafkaTemplate).send(TOPIC, "101", request);
+        verify(kafkaTemplate).send(TOPIC, 101L, request);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -126,7 +126,7 @@ class NotificationRequestProducerTest {
     void 결과_대기_interrupt는_상태를_복원하고_원래_예외를_전달한다() {
         var request = request(101L);
         var future = new CompletableFuture<SendResult<Object, Object>>();
-        given(kafkaTemplate.send(TOPIC, "101", request)).willReturn(future);
+        given(kafkaTemplate.send(TOPIC, 101L, request)).willReturn(future);
 
         try {
             Thread.currentThread().interrupt();
@@ -137,7 +137,7 @@ class NotificationRequestProducerTest {
             Thread.interrupted();
         }
 
-        verify(kafkaTemplate).send(TOPIC, "101", request);
+        verify(kafkaTemplate).send(TOPIC, 101L, request);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
@@ -156,6 +156,6 @@ class NotificationRequestProducerTest {
 
     private SendResult<Object, Object> sendResult(NotificationCreateRequested request) {
         var metadata = new RecordMetadata(new TopicPartition(TOPIC, 1), 42L, 0, 0L, 0, 0);
-        return new SendResult<>(new ProducerRecord<>(TOPIC, "101", request), metadata);
+        return new SendResult<>(new ProducerRecord<>(TOPIC, 101L, request), metadata);
     }
 }
