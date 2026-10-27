@@ -85,7 +85,7 @@ class NotificationKafkaConnectionIntegrationTest {
                         .all().get(20, TimeUnit.SECONDS);
                 }
                 KafkaTemplate<Object, Object> template = context.getBean(KafkaTemplate.class);
-                template.send(topic, 0, "history", message).get(20, TimeUnit.SECONDS);
+                template.send(topic, 0, 101L, message).get(20, TimeUnit.SECONDS);
                 ConcurrentKafkaListenerContainerFactory<?, ?> factory = context.getBean(factoryName,
                     ConcurrentKafkaListenerContainerFactory.class);
                 try (var consumer = factory.getConsumerFactory().createConsumer("test-" + UUID.randomUUID())) {
@@ -94,8 +94,8 @@ class NotificationKafkaConnectionIntegrationTest {
                     consumer.assign(List.of(first, second));
                     assertThat(consumer.position(first, Duration.ofSeconds(20))).isEqualTo(readsHistory ? 0L : 1L);
                     assertThat(consumer.position(second, Duration.ofSeconds(20))).isZero();
-                    template.send(topic, 0, "new-0", message).get(20, TimeUnit.SECONDS);
-                    template.send(topic, 1, "new-1", message).get(20, TimeUnit.SECONDS);
+                    template.send(topic, 0, 101L, message).get(20, TimeUnit.SECONDS);
+                    template.send(topic, 1, 101L, message).get(20, TimeUnit.SECONDS);
                     List<ConsumerRecord<?, ?>> records = new ArrayList<>();
                     int expectedCount = readsHistory ? 3 : 2;
                     long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
@@ -104,11 +104,12 @@ class NotificationKafkaConnectionIntegrationTest {
                     }
                     assertThat(records).hasSize(expectedCount);
                     assertThat(records).extracting(ConsumerRecord::partition).contains(0, 1);
-                    assertThat(records).extracting(ConsumerRecord::key, ConsumerRecord::value)
-                        .contains(tuple("new-0", message), tuple("new-1", message));
-                    assertThat(records.stream().anyMatch(record -> "history".equals(record.key())))
+                    assertThat(records).extracting(ConsumerRecord::partition, ConsumerRecord::offset)
+                        .contains(tuple(0, 1L), tuple(1, 0L));
+                    assertThat(records.stream().anyMatch(record -> record.partition() == 0 && record.offset() == 0))
                         .isEqualTo(readsHistory);
                     assertThat(records).allSatisfy(record -> {
+                        assertThat(record.key()).isEqualTo(101L);
                         assertThat(record.value()).isEqualTo(message);
                         assertThat(record.headers().lastHeader("__TypeId__")).isNull();
                     });

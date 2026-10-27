@@ -45,7 +45,7 @@ class NotificationDeliveryFailureRecovererTest {
             new NotificationInvalidDeliveryEventException(new IllegalArgumentException()));
         doThrow(new IllegalStateException()).when(reporter).report(any());
 
-        assertThatCode(() -> recoverer.accept(new ConsumerRecord<>("delivery", 2, 18, "7", event), failure))
+        assertThatCode(() -> recoverer.accept(new ConsumerRecord<>("delivery", 2, 18, 7L, event), failure))
             .doesNotThrowAnyException();
 
         var captor = ArgumentCaptor.forClass(NotificationFailureContext.class);
@@ -70,7 +70,7 @@ class NotificationDeliveryFailureRecovererTest {
         properties.setDeliveryTopic("delivery");
         var failure = new IllegalStateException();
 
-        assertThatThrownBy(() -> recoverer.accept(new ConsumerRecord<>("delivery", 0, 0, "7", null), failure))
+        assertThatThrownBy(() -> recoverer.accept(new ConsumerRecord<>("delivery", 0, 0, 7L, null), failure))
             .isSameAs(failure);
 
         var captor = ArgumentCaptor.forClass(NotificationFailureContext.class);
@@ -86,7 +86,7 @@ class NotificationDeliveryFailureRecovererTest {
         properties.setDeliveryTopic("delivery");
         var failure = new NotificationInvalidDeliveryEventException(cause);
         try {
-            assertThatThrownBy(() -> recoverer.accept(new ConsumerRecord<>("delivery", 0, 0, "7", null), failure))
+            assertThatThrownBy(() -> recoverer.accept(new ConsumerRecord<>("delivery", 0, 0, 7L, null), failure))
                 .isSameAs(cause instanceof Error ? cause : failure);
             assertThat(Thread.currentThread().isInterrupted()).isEqualTo(cause instanceof InterruptedException);
             verifyNoInteractions(reporter);

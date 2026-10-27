@@ -304,7 +304,7 @@ class NotificationDeliveryIntegrationTest {
         var request = publishedRequests.snapshot().getFirst();
         var event = new NotificationDeliveryEvent(1, request.sourceEventId(), recipientId, storedNotification());
         new NotificationDeliveryConsumer(deliveryValidator, sender, registry, observation)
-            .consume(new ConsumerRecord<>("test-delivery", 0, 0L, recipientId.toString(), event));
+            .consume(new ConsumerRecord<>("test-delivery", 0, 0L, recipientId, event));
     }
 
     private NotificationEventResponse storedNotification() {

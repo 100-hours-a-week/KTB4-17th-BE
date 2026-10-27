@@ -62,8 +62,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -169,7 +169,7 @@ class NotificationCreationConsumerIntegrationTest {
                     verify(processor).process(afterFailure);
                     verifyNoMoreInteractions(processor);
                     var deadLetter = readRecord(topic + "-dlt", 0);
-                    assertThat(deadLetter.key()).isEqualTo("7");
+                    assertThat(deadLetter.key()).isEqualTo(7L);
                     assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(failed);
                 });
@@ -217,7 +217,7 @@ class NotificationCreationConsumerIntegrationTest {
                         assertThat(processed).contains("after-retry");
                         assertThat(container.isRunning()).isTrue();
                         var retryRecord = readRecord(topic + "-retry", 0);
-                        assertThat(retryRecord.key()).isEqualTo("7");
+                        assertThat(retryRecord.key()).isEqualTo(7L);
                         assertThat(retryRecord.headers().lastHeader("__TypeId__")).isNull();
                         assertThat(context.getBean(JsonMapper.class)
                             .readValue(retryRecord.value(), NotificationCreateRequested.class))
@@ -272,7 +272,7 @@ class NotificationCreationConsumerIntegrationTest {
                     await().atMost(Duration.ofSeconds(45))
                         .untilAsserted(() -> assertThat(endOffset(admin, topic + "-dlt")).isEqualTo(1L));
                     var deadLetter = readRecord(topic + "-dlt", 0);
-                    assertThat(deadLetter.key()).isEqualTo("7");
+                    assertThat(deadLetter.key()).isEqualTo(7L);
                     assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class)).isEqualTo(request);
                     await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
@@ -285,7 +285,7 @@ class NotificationCreationConsumerIntegrationTest {
                     for (int index = 0; index < retryRecords.size(); index++) {
                         var retry = retryRecords.get(index);
                         assertThat(retry.offset()).isEqualTo(index);
-                        assertThat(retry.key()).isEqualTo("7");
+                        assertThat(retry.key()).isEqualTo(7L);
                         assertThat(context.getBean(JsonMapper.class)
                             .readValue(retry.value(), NotificationCreateRequested.class)).isEqualTo(request);
                         assertThat(ByteBuffer.wrap(retry.headers().lastHeader(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS)
@@ -317,18 +317,18 @@ class NotificationCreationConsumerIntegrationTest {
                     case UNSUPPORTED_SCHEMA ->
                         context.getBean(JsonMapper.class).writeValueAsBytes(request("invalid", 2));
                 };
-                try (var producer = new KafkaProducer<String, byte[]>(Map.of(
+                try (var producer = new KafkaProducer<Long, byte[]>(Map.of(
                     ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
-                    ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                    ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, LongSerializer.class,
                     ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class))) {
-                    producer.send(new ProducerRecord<>(topic, 0, "7", payload)).get(10, TimeUnit.SECONDS);
+                    producer.send(new ProducerRecord<>(topic, 0, 7L, payload)).get(10, TimeUnit.SECONDS);
                 }
                 var container = start(context, 1);
                 await().atMost(Duration.ofSeconds(15))
                     .untilAsserted(() -> assertThat(committed(admin, group, topic, 0)).isEqualTo(1L));
                 assertThat(container.isRunning()).isTrue();
                 var deadLetter = readRecord(topic + "-dlt", 0);
-                assertThat(deadLetter.key()).isEqualTo("7");
+                assertThat(deadLetter.key()).isEqualTo(7L);
                 assertThat(new String(deadLetter.headers().lastHeader(KafkaHeaders.ORIGINAL_TOPIC).value(),
                     StandardCharsets.UTF_8)).isEqualTo(topic);
                 assertThat(ByteBuffer.wrap(deadLetter.headers().lastHeader(KafkaHeaders.ORIGINAL_PARTITION)
@@ -628,7 +628,7 @@ class NotificationCreationConsumerIntegrationTest {
 
     private void send(AssertableApplicationContext context, String topic, int partition,
         NotificationCreateRequested request) throws Exception {
-        context.getBean(KafkaTemplate.class).send(topic, partition, "7", request).get(10, TimeUnit.SECONDS);
+        context.getBean(KafkaTemplate.class).send(topic, partition, 7L, request).get(10, TimeUnit.SECONDS);
     }
 
     private String groupFor(AssertableApplicationContext context, String topic) {
@@ -643,21 +643,21 @@ class NotificationCreationConsumerIntegrationTest {
             .partitionResult(partition).get(10, TimeUnit.SECONDS).offset();
     }
 
-    private ConsumerRecord<String, byte[]> readRecord(String topic, int partition) throws Exception {
+    private ConsumerRecord<Long, byte[]> readRecord(String topic, int partition) throws Exception {
         return readRecords(topic, partition, 1).getFirst();
     }
 
-    private List<ConsumerRecord<String, byte[]>> readRecords(String topic, int partition, int count) throws Exception {
-        try (var consumer = new KafkaConsumer<String, byte[]>(Map.of(
+    private List<ConsumerRecord<Long, byte[]>> readRecords(String topic, int partition, int count) throws Exception {
+        try (var consumer = new KafkaConsumer<Long, byte[]>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
             ConsumerConfig.GROUP_ID_CONFIG, "read-" + UUID.randomUUID(),
-            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class,
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class,
             ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
             var topicPartition = new TopicPartition(topic, partition);
             consumer.assign(List.of(topicPartition));
             consumer.seekToBeginning(List.of(topicPartition));
-            var received = new ArrayList<ConsumerRecord<String, byte[]>>();
+            var received = new ArrayList<ConsumerRecord<Long, byte[]>>();
             long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
             while (System.nanoTime() < deadline) {
                 var records = consumer.poll(Duration.ofMillis(200));

@@ -22,6 +22,9 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.Deserializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -354,6 +357,24 @@ class NotificationKafkaConfigurationTest {
     }
 
     @Test
+    void 알림_Key는_Long으로_왕복하고_기존_문자열_Key의_발행도_유지한다() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            Serializer<Object> serializer = context.getBean(DefaultKafkaProducerFactory.class).getKeySerializer();
+            byte[] key = serializer.serialize("notification", 101L);
+            try (var expected = new LongSerializer();
+                var deserializer = new LongDeserializer();
+                var stringSerializer = new StringSerializer()) {
+                assertThat(key).isEqualTo(expected.serialize("notification", 101L));
+                assertThat(deserializer.deserialize("notification", key)).isEqualTo(101L);
+                assertThat(serializer.serialize("chat", "101"))
+                    .isEqualTo(stringSerializer.serialize("chat", "101"));
+            }
+            serializer.close();
+        });
+    }
+
+    @Test
     void byte_array는_변경없이_원시_바이트로_발행한다() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
@@ -405,6 +426,7 @@ class NotificationKafkaConfigurationTest {
         assertThat(factory.isBatchListener()).isFalse();
         assertThat(factory.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.RECORD);
         assertThat(factory.getConsumerFactory().getConfigurationProperties())
+            .containsEntry(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class)
             .containsEntry(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, resetPolicy)
             .containsEntry(JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, payloadType)
             .containsEntry(JacksonJsonDeserializer.USE_TYPE_INFO_HEADERS, false)

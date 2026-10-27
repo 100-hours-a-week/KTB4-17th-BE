@@ -125,10 +125,10 @@ class NotificationSseObservationTest {
         return new NotificationSseConnection(7L, "connection-7", mock(SseEmitter.class), LocalDateTime.now());
     }
 
-    private ConsumerRecord<String, NotificationDeliveryEvent> record(long timestamp, TimestampType type) {
+    private ConsumerRecord<Long, NotificationDeliveryEvent> record(long timestamp, TimestampType type) {
         var snapshot = new NotificationEventResponse(31L, "LIKE", "", "", null, null, null,
             LocalDateTime.of(2026, 10, 24, 12, 0));
-        return new ConsumerRecord<>("delivery", 0, 11, timestamp, type, 0, 0, "7",
+        return new ConsumerRecord<>("delivery", 0, 11, timestamp, type, 0, 0, 7L,
             new NotificationDeliveryEvent(1, "source", 7L, snapshot), new RecordHeaders(), Optional.empty());
     }
 }

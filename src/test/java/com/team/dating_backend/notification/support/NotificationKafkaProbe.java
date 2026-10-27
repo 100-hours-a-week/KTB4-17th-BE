@@ -27,8 +27,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
 import tools.jackson.databind.json.JsonMapper;
 
 public final class NotificationKafkaProbe implements AutoCloseable {
@@ -39,8 +39,8 @@ public final class NotificationKafkaProbe implements AutoCloseable {
     private final String bootstrapServers;
     private final String creationTopic;
     private final Set<String> topics;
-    private final KafkaProducer<String, byte[]> producer;
-    private final KafkaConsumer<String, byte[]> consumer;
+    private final KafkaProducer<Long, byte[]> producer;
+    private final KafkaConsumer<Long, byte[]> consumer;
     private final Map<String, List<TopicPartition>> partitions = new HashMap<>();
     private final Map<TopicPartition, Integer> observedLeaders = new HashMap<>();
     private Admin offsetReader;
@@ -71,7 +71,7 @@ public final class NotificationKafkaProbe implements AutoCloseable {
 
     public record ObservedHeader(String key, String valueBase64) {}
 
-    public record ObservedRecord(Position position, long timestamp, String key, String valueBase64,
+    public record ObservedRecord(Position position, long timestamp, Long key, String valueBase64,
         List<ObservedHeader> headers) {
         public ObservedRecord {
             headers = List.copyOf(headers);
@@ -97,12 +97,12 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         this.creationTopic = creationTopic;
         this.topics = Set.copyOf(topics);
         consumer = new KafkaConsumer<>(Map.of("bootstrap.servers", bootstrap,
-            "key.deserializer", StringDeserializer.class, "value.deserializer", ByteArrayDeserializer.class,
+            "key.deserializer", LongDeserializer.class, "value.deserializer", ByteArrayDeserializer.class,
             "enable.auto.commit", false, "allow.auto.create.topics", false, "auto.offset.reset", "none",
             "default.api.timeout.ms", 5000, "request.timeout.ms", 3000));
         try {
             producer = new KafkaProducer<>(Map.of("bootstrap.servers", bootstrap,
-                "key.serializer", StringSerializer.class, "value.serializer", ByteArraySerializer.class,
+                "key.serializer", LongSerializer.class, "value.serializer", ByteArraySerializer.class,
                 "acks", "all", "enable.idempotence", true, "max.block.ms", 5000,
                 "request.timeout.ms", 3000, "delivery.timeout.ms", 10000));
         } catch (RuntimeException | Error failure) {
@@ -122,7 +122,7 @@ public final class NotificationKafkaProbe implements AutoCloseable {
 
     public Position publish(NotificationCreateRequested request, Integer partition)
         throws InterruptedException, ExecutionException, TimeoutException {
-        var record = new ProducerRecord<>(creationTopic, partition, request.recipientUserId().toString(),
+        var record = new ProducerRecord<>(creationTopic, partition, request.recipientUserId(),
             JSON.writeValueAsBytes(request));
         var metadata = awaitResult(producer.send(record), Duration.ofSeconds(12));
         return new Position(metadata.topic(), metadata.partition(), metadata.offset());
