@@ -62,6 +62,8 @@ kakao:
 app:
   chat:
     runtime-enabled: true
+    kafka:
+      message-created-topic: notification-test-chat-message-created-v1
   auth:
     login-redirect-uri: "@AI_URL@/unused"
     service-redirect-uri: "@AI_URL@/unused"
