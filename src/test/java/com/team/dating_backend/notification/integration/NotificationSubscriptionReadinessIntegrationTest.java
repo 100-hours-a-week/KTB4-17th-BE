@@ -291,7 +291,7 @@ class NotificationSubscriptionReadinessIntegrationTest {
     }
 
     private void send(long id) throws Exception {
-        template.send(TOPIC, 0, "42", event(id)).get(10, TimeUnit.SECONDS);
+        template.send(TOPIC, 0, 42L, event(id)).get(10, TimeUnit.SECONDS);
     }
 
     private NotificationDeliveryEvent event(long id) {

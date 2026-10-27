@@ -45,7 +45,7 @@ class NotificationDeliveryConsumerTest {
         var event = new NotificationDeliveryEvent(1, "😀".repeat(255), 7L, snapshot);
         when(registry.findByUserId(7L)).thenReturn(List.of(mock(NotificationSseConnection.class)));
 
-        consumer.consume(new ConsumerRecord<>("delivery", 0, 0, "7", event));
+        consumer.consume(new ConsumerRecord<>("delivery", 0, 0, 7L, event));
 
         verify(sender).sendNotification(eq(7L), same(snapshot));
         verify(observation).deliveryProcessed(any(), eq(1), anyLong(), isNull());
@@ -56,7 +56,7 @@ class NotificationDeliveryConsumerTest {
         var snapshot = new NotificationEventResponse(31L, "NOTICE", "", "", null, null, null,
             LocalDateTime.of(2026, 10, 23, 12, 0));
 
-        consumer.consume(new ConsumerRecord<>("delivery", 0, 0, "7",
+        consumer.consume(new ConsumerRecord<>("delivery", 0, 0, 7L,
             new NotificationDeliveryEvent(1, "source", 7L, snapshot)));
 
         verify(sender).sendNotification(eq(7L), same(snapshot));
@@ -66,7 +66,7 @@ class NotificationDeliveryConsumerTest {
     @ParameterizedTest
     @MethodSource("invalidEvents")
     void 계약_위반은_SSE에_전달하지_않고_전용_예외로_구분한다(NotificationDeliveryEvent event) {
-        var record = new ConsumerRecord<>("delivery", 0, 0, "7", event);
+        var record = new ConsumerRecord<>("delivery", 0, 0, 7L, event);
         assertThatThrownBy(() -> consumer.consume(record))
             .isInstanceOf(NotificationInvalidDeliveryEventException.class);
 
@@ -80,7 +80,7 @@ class NotificationDeliveryConsumerTest {
     void 처리_실패와_관측_Error가_겹쳐도_원인을_보존하고_정상_처리로_반환하지_않는다(Throwable failure) {
         var snapshot = new NotificationEventResponse(31L, "LIKE", "", "", null, null, null,
             LocalDateTime.of(2026, 10, 24, 12, 0));
-        var record = new ConsumerRecord<>("delivery", 0, 0, "7",
+        var record = new ConsumerRecord<>("delivery", 0, 0, 7L,
             new NotificationDeliveryEvent(1, "source", 7L, snapshot));
         var observationFailure = new AssertionError();
         doThrow(failure).when(sender).sendNotification(7L, snapshot);

@@ -156,7 +156,7 @@ class NotificationRecoveryReporterTest {
 
     @Test
     void Retry_입력의_원본_위치와_현재_시도를_구분하고_raw_값은_역파싱하지_않는다() {
-        var record = new ConsumerRecord<Object, Object>(TOPIC + "-retry", 0, 4, "7", new byte[]{1, 2});
+        var record = new ConsumerRecord<Object, Object>(TOPIC + "-retry", 0, 4, 7L, new byte[]{1, 2});
         record.headers().add(KafkaHeaders.ORIGINAL_TOPIC, TOPIC.getBytes(StandardCharsets.UTF_8));
         record.headers().add(KafkaHeaders.ORIGINAL_PARTITION, ByteBuffer.allocate(4).putInt(1).array());
         record.headers().add(KafkaHeaders.ORIGINAL_OFFSET, ByteBuffer.allocate(8).putLong(77).array());
@@ -270,7 +270,7 @@ class NotificationRecoveryReporterTest {
     private ConsumerRecord<Object, Object> record(String topic, String source) {
         var request = new NotificationCreateRequested(1, source, 7L, NotificationType.LIKE,
             "private-title", "private-body", null, null, Instant.parse("2026-10-22T01:00:00Z"));
-        return new ConsumerRecord<>(topic, 0, 4, "7", request);
+        return new ConsumerRecord<>(topic, 0, 4, 7L, request);
     }
 
     private Exception processingFailure() {
@@ -279,7 +279,7 @@ class NotificationRecoveryReporterTest {
     }
 
     private SendResult<Object, Object> result(String topic, int partition, long offset) {
-        return new SendResult<>(new ProducerRecord<>(topic, "7", null),
+        return new SendResult<>(new ProducerRecord<>(topic, 7L, null),
             new RecordMetadata(new TopicPartition(topic, partition), offset, 0, 0, 0, 0));
     }
 

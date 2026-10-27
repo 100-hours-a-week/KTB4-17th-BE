@@ -94,7 +94,7 @@ public class NotificationSseObservation {
         });
     }
 
-    public void deliveryReceived(ConsumerRecord<String, NotificationDeliveryEvent> record) {
+    public void deliveryReceived(ConsumerRecord<Long, NotificationDeliveryEvent> record) {
         if (!require(record != null, "DELIVERY_RECEIVED")) {
             return;
         }
@@ -116,7 +116,7 @@ public class NotificationSseObservation {
     }
 
     public void deliveryProcessed(
-        ConsumerRecord<String, NotificationDeliveryEvent> record,
+        ConsumerRecord<Long, NotificationDeliveryEvent> record,
         Integer localConnectionCount,
         long processingNanos,
         Throwable exception) {

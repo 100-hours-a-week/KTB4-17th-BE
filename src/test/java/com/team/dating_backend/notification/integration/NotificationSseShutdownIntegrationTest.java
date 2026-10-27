@@ -239,7 +239,7 @@ class NotificationSseShutdownIntegrationTest {
         var snapshot = new NotificationEventResponse(id, "LIKE", "제목", "본문", null, null, null,
             LocalDateTime.of(2026, 10, 24, 12, 0));
         if (enabled) {
-            context.getBean(KafkaTemplate.class).send(topic, 0, "42",
+            context.getBean(KafkaTemplate.class).send(topic, 0, 42L,
                 new NotificationDeliveryEvent(1, "source-" + id, 42L, snapshot)).get(10, TimeUnit.SECONDS);
         } else {
             context.getBean(NotificationSseSender.class).sendNotification(42L, snapshot);

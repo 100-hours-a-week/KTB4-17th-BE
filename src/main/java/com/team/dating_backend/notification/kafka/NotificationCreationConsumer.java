@@ -24,7 +24,7 @@ public class NotificationCreationConsumer {
         topics = "${app.notification.kafka.create-requested-topic}",
         containerFactory = "notificationCreateRequestedKafkaListenerContainerFactory"
     )
-    public void consume(ConsumerRecord<String, NotificationCreateRequested> record)
+    public void consume(ConsumerRecord<Long, NotificationCreateRequested> record)
         throws ExecutionException, InterruptedException, TimeoutException {
         try {
             processor.process(record.value());

@@ -273,7 +273,7 @@ class NotificationDeliveryConsumerIntegrationTest {
     @SuppressWarnings("unchecked")
     private void send(AssertableApplicationContext context, String topic, int partition, Object value)
         throws Exception {
-        context.getBean(KafkaTemplate.class).send(topic, partition, "7", value).get(10, TimeUnit.SECONDS);
+        context.getBean(KafkaTemplate.class).send(topic, partition, 7L, value).get(10, TimeUnit.SECONDS);
     }
 
     private ConcurrentLinkedQueue<NotificationEventResponse> connection(AssertableApplicationContext context,
