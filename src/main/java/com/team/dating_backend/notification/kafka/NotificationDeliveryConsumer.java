@@ -27,7 +27,7 @@ public class NotificationDeliveryConsumer {
         containerFactory = "notificationDeliveryKafkaListenerContainerFactory",
         autoStartup = "${app.notification.delivery.enabled:false}"
     )
-    public void consume(ConsumerRecord<String, NotificationDeliveryEvent> record) {
+    public void consume(ConsumerRecord<Long, NotificationDeliveryEvent> record) {
         observation.deliveryReceived(record);
         long startedAtNanos = System.nanoTime();
         Integer localConnectionCount = null;

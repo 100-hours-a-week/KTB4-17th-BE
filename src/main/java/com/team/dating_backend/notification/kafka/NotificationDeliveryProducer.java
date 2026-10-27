@@ -35,7 +35,7 @@ public class NotificationDeliveryProducer {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
 
-        String key = event.recipientUserId().toString();
+        Long key = event.recipientUserId();
         var result = kafkaTemplate.send(kafkaProperties.getDeliveryTopic(), key, event);
 
         try {
