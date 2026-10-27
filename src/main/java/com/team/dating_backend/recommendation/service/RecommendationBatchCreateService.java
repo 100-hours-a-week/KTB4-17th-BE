@@ -61,18 +61,18 @@ public class RecommendationBatchCreateService {
             .orElseGet(List::of);
         List<Smoking> smoking = preference.map(RecommendationPreference::getSmoking)
             .orElseGet(List::of);
+        List<Gender> preferredGenders = preference.map(RecommendationPreference::getPreferredGenders)
+            .orElseGet(() -> RecommendationPreference.defaultTargetGenders(requester.getGender()));
         LocalDate today = LocalDate.now();
         LocalDate birthDateAfter = maxAge == null ? null : today.minusYears(maxAge + 1L);
         LocalDate birthDateOnOrBefore = minAge == null ? null : today.minusYears(minAge);
-        Gender candidateGender = requester.getGender() == Gender.MALE ? Gender.FEMALE : Gender.MALE;
 
-        List<Long> candidateUserIds = new ArrayList<>(recommendationCandidateRepository
-            .findEligibleCandidateIds(
-                requesterUserId, candidateGender, birthDateAfter, birthDateOnOrBefore,
-                minHeight, maxHeight,
-                religion.isEmpty(), religion.isEmpty() ? List.of(Religion.values()) : religion,
-                drinking.isEmpty(), drinking.isEmpty() ? List.of(Drinking.values()) : drinking,
-                smoking.isEmpty(), smoking.isEmpty() ? List.of(Smoking.values()) : smoking));
+        List<Long> candidateUserIds = new ArrayList<>(findEligibleCandidateIds(
+            requesterUserId, preferredGenders, birthDateAfter, birthDateOnOrBefore,
+            minHeight, maxHeight,
+            religion.isEmpty(), religion.isEmpty() ? List.of(Religion.values()) : religion,
+            drinking.isEmpty(), drinking.isEmpty() ? List.of(Drinking.values()) : drinking,
+            smoking.isEmpty(), smoking.isEmpty() ? List.of(Smoking.values()) : smoking));
         LocalDateTime now = LocalDateTime.now();
         if (candidateUserIds.isEmpty()) {
             recommendationBatchRepository.markActiveBatchesDeleted(requesterUserId, now);
@@ -82,7 +82,8 @@ public class RecommendationBatchCreateService {
 
         boolean hasPreferenceFilters = minAge != null || maxAge != null
             || minHeight != null || maxHeight != null
-            || !religion.isEmpty() || !drinking.isEmpty() || !smoking.isEmpty();
+            || !religion.isEmpty() || !drinking.isEmpty() || !smoking.isEmpty()
+            || !preferredGenders.equals(RecommendationPreference.defaultTargetGenders(requester.getGender()));
         RecommendationGenerationType generationType = hasPreferenceFilters
             ? RecommendationGenerationType.PREFERENCE
             : RecommendationGenerationType.DEFAULT;
@@ -98,5 +99,30 @@ public class RecommendationBatchCreateService {
             requesterUserId, batch.getId(), now);
         return Optional
             .of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
+    }
+
+    private List<Long> findEligibleCandidateIds(
+        Long requesterUserId,
+        List<Gender> preferredGenders,
+        LocalDate birthDateAfter,
+        LocalDate birthDateOnOrBefore,
+        Short minHeight,
+        Short maxHeight,
+        boolean religionUnrestricted,
+        List<Religion> religion,
+        boolean drinkingUnrestricted,
+        List<Drinking> drinking,
+        boolean smokingUnrestricted,
+        List<Smoking> smoking) {
+        if (preferredGenders.size() == 1) {
+            return recommendationCandidateRepository.findEligibleCandidateIds(
+                requesterUserId, preferredGenders.get(0), birthDateAfter, birthDateOnOrBefore,
+                minHeight, maxHeight, religionUnrestricted, religion,
+                drinkingUnrestricted, drinking, smokingUnrestricted, smoking);
+        }
+        return recommendationCandidateRepository.findEligibleCandidateIdsByGenders(
+            requesterUserId, preferredGenders, birthDateAfter, birthDateOnOrBefore,
+            minHeight, maxHeight, religionUnrestricted, religion,
+            drinkingUnrestricted, drinking, smokingUnrestricted, smoking);
     }
 }

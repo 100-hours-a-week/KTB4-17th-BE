@@ -12,6 +12,7 @@ import com.team.dating_backend.recommendation.enums.RecommendationPreferenceErro
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.recommendation.exception.RecommendationPreferenceBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationPreferenceRepository;
+import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -43,7 +44,7 @@ public class RecommendationPreferenceService {
 
         RecommendationPreferenceResponse preference = recommendationPreferenceRepository.findById(userId)
             .map(RecommendationPreferenceResponse::from)
-            .orElseGet(RecommendationPreferenceResponse::unrestricted);
+            .orElseGet(() -> RecommendationPreferenceResponse.unrestricted(user.getGender()));
         return new RecommendationPreferenceGetResponse(preference);
     }
 
@@ -58,6 +59,9 @@ public class RecommendationPreferenceService {
         List<Religion> religion = emptyIfNull(request.religion());
         List<Drinking> drinking = emptyIfNull(request.drinking());
         List<Smoking> smoking = emptyIfNull(request.smoking());
+        List<Gender> preferredGenders = request.preferredGenders() == null
+            ? null
+            : emptyIfNull(request.preferredGenders());
 
         User user = userRepository.findByIdForUpdate(userId)
             .orElseThrow(() -> new RecommendationPreferenceBusinessException(
@@ -69,9 +73,13 @@ public class RecommendationPreferenceService {
         RecommendationPreference preference = recommendationPreferenceRepository.findById(userId).orElse(null);
         if (preference == null) {
             recommendationPreferenceRepository.save(new RecommendationPreference(
-                user, minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, now));
+                user, minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking,
+                preferredGenders == null || preferredGenders.isEmpty()
+                    ? RecommendationPreference.defaultTargetGenders(user.getGender())
+                    : preferredGenders,
+                now));
         } else if (!preference.updatePreferences(
-            minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, now)) {
+            minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, preferredGenders, now)) {
             return;
         }
 
@@ -116,6 +124,9 @@ public class RecommendationPreferenceService {
         validateSelectedValues(request.smoking(),
             RecommendationPreferenceErrorCode.PREFERENCE_SMOKING_NULL_ELEMENT,
             RecommendationPreferenceErrorCode.PREFERENCE_SMOKING_DUPLICATE_VALUE);
+        validateSelectedValues(request.preferredGenders(),
+            RecommendationPreferenceErrorCode.PREFERENCE_GENDER_NULL_ELEMENT,
+            RecommendationPreferenceErrorCode.PREFERENCE_GENDER_DUPLICATE_VALUE);
     }
 
     private <T> void validateSelectedValues(

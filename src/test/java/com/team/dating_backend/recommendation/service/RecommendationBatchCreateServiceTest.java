@@ -175,22 +175,28 @@ class RecommendationBatchCreateServiceTest {
     }
 
     @Test
-    void 저장된_선호조건과_만_나이_날짜_경계를_후보_조회에_전달한다() {
+    void 저장된_선호조건과_선택_성별과_만_나이_날짜_경계를_후보_조회에_전달한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
+        List<Gender> preferredGenders = List.of(Gender.MALE, Gender.FEMALE);
         RecommendationPreference preference = new RecommendationPreference(requester,
             (short) 25, (short) 30, (short) 160, (short) 180,
             List.of(Religion.NONE, Religion.CATHOLIC), List.of(Drinking.NEVER),
-            List.of(Smoking.NON_SMOKER), LocalDateTime.now());
+            List.of(Smoking.NON_SMOKER), preferredGenders, LocalDateTime.now());
         given(recommendationPreferenceRepository.findById(5L)).willReturn(Optional.of(preference));
+        given(recommendationCandidateRepository.findEligibleCandidateIdsByGenders(
+            eq(5L), eq(preferredGenders), any(LocalDate.class), any(LocalDate.class),
+            eq((short) 160), eq((short) 180), eq(false), eq(List.of(Religion.NONE, Religion.CATHOLIC)),
+            eq(false), eq(List.of(Drinking.NEVER)), eq(false), eq(List.of(Smoking.NON_SMOKER))))
+            .willReturn(List.of(2L));
         LocalDate before = LocalDate.now();
 
         service.createRecommendationBatch(5L);
 
         ArgumentCaptor<LocalDate> lowerBound = ArgumentCaptor.forClass(LocalDate.class);
         ArgumentCaptor<LocalDate> upperBound = ArgumentCaptor.forClass(LocalDate.class);
-        verify(recommendationCandidateRepository).findEligibleCandidateIds(
-            eq(5L), eq(Gender.FEMALE), lowerBound.capture(), upperBound.capture(),
+        verify(recommendationCandidateRepository).findEligibleCandidateIdsByGenders(
+            eq(5L), eq(preferredGenders), lowerBound.capture(), upperBound.capture(),
             eq((short) 160), eq((short) 180), eq(false), eq(List.of(Religion.NONE, Religion.CATHOLIC)),
             eq(false), eq(List.of(Drinking.NEVER)), eq(false), eq(List.of(Smoking.NON_SMOKER)));
         LocalDate after = LocalDate.now();

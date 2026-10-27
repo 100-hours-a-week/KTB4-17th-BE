@@ -4,6 +4,7 @@ import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.user.entity.User;
+import com.team.dating_backend.user.enums.Gender;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -61,6 +62,10 @@ public class RecommendationPreference {
     @Column(name = "smoking", nullable = false, columnDefinition = "JSON")
     private List<Smoking> smoking;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "preferred_genders", nullable = true, columnDefinition = "JSON")
+    private List<Gender> preferredGenders;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -68,7 +73,8 @@ public class RecommendationPreference {
     private LocalDateTime updatedAt;
 
     public RecommendationPreference(User user, LocalDateTime now) {
-        this(user, List.of(), List.of(), List.of(), now);
+        this(user, null, null, null, null, List.of(), List.of(), List.of(),
+            defaultTargetGenders(user.getGender()), now);
     }
 
     public RecommendationPreference(
@@ -77,7 +83,8 @@ public class RecommendationPreference {
         List<Drinking> drinking,
         List<Smoking> smoking,
         LocalDateTime now) {
-        this(user, null, null, null, null, religion, drinking, smoking, now);
+        this(user, null, null, null, null, religion, drinking, smoking,
+            defaultTargetGenders(user.getGender()), now);
     }
 
     public RecommendationPreference(
@@ -90,6 +97,21 @@ public class RecommendationPreference {
         List<Drinking> drinking,
         List<Smoking> smoking,
         LocalDateTime now) {
+        this(user, minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking,
+            defaultTargetGenders(user.getGender()), now);
+    }
+
+    public RecommendationPreference(
+        User user,
+        Short minAge,
+        Short maxAge,
+        Short minHeight,
+        Short maxHeight,
+        List<Religion> religion,
+        List<Drinking> drinking,
+        List<Smoking> smoking,
+        List<Gender> preferredGenders,
+        LocalDateTime now) {
         this.user = user;
         this.minAge = minAge;
         this.maxAge = maxAge;
@@ -98,6 +120,7 @@ public class RecommendationPreference {
         this.religion = List.copyOf(religion);
         this.drinking = List.copyOf(drinking);
         this.smoking = List.copyOf(smoking);
+        this.preferredGenders = normalizeTargetGenders(preferredGenders, user.getGender());
         this.createdAt = now;
         this.updatedAt = now;
     }
@@ -110,17 +133,22 @@ public class RecommendationPreference {
         List<Religion> religion,
         List<Drinking> drinking,
         List<Smoking> smoking,
+        List<Gender> preferredGenders,
         LocalDateTime now) {
         List<Religion> nextReligion = List.copyOf(religion);
         List<Drinking> nextDrinking = List.copyOf(drinking);
         List<Smoking> nextSmoking = List.copyOf(smoking);
+        List<Gender> nextPreferredGenders = preferredGenders == null
+            ? getPreferredGenders()
+            : normalizeTargetGenders(preferredGenders, user.getGender());
         if (Objects.equals(this.minAge, minAge)
             && Objects.equals(this.maxAge, maxAge)
             && Objects.equals(this.minHeight, minHeight)
             && Objects.equals(this.maxHeight, maxHeight)
             && containsSameValues(this.religion, nextReligion)
             && containsSameValues(this.drinking, nextDrinking)
-            && containsSameValues(this.smoking, nextSmoking)) {
+            && containsSameValues(this.smoking, nextSmoking)
+            && containsSameValues(getPreferredGenders(), nextPreferredGenders)) {
             return false;
         }
 
@@ -131,8 +159,22 @@ public class RecommendationPreference {
         this.religion = nextReligion;
         this.drinking = nextDrinking;
         this.smoking = nextSmoking;
+        this.preferredGenders = nextPreferredGenders;
         this.updatedAt = now;
         return true;
+    }
+
+    public boolean updatePreferences(
+        Short minAge,
+        Short maxAge,
+        Short minHeight,
+        Short maxHeight,
+        List<Religion> religion,
+        List<Drinking> drinking,
+        List<Smoking> smoking,
+        LocalDateTime now) {
+        return updatePreferences(minAge, maxAge, minHeight, maxHeight,
+            religion, drinking, smoking, null, now);
     }
 
     public List<Religion> getReligion() {
@@ -145,6 +187,21 @@ public class RecommendationPreference {
 
     public List<Smoking> getSmoking() {
         return List.copyOf(smoking);
+    }
+
+    public List<Gender> getPreferredGenders() {
+        return normalizeTargetGenders(preferredGenders, user.getGender());
+    }
+
+    public static List<Gender> defaultTargetGenders(Gender requesterGender) {
+        return List.of(requesterGender == Gender.MALE ? Gender.FEMALE : Gender.MALE);
+    }
+
+    private static List<Gender> normalizeTargetGenders(List<Gender> genders, Gender requesterGender) {
+        if (genders == null || genders.isEmpty()) {
+            return defaultTargetGenders(requesterGender);
+        }
+        return List.copyOf(genders);
     }
 
     private <T> boolean containsSameValues(List<T> current, List<T> requested) {

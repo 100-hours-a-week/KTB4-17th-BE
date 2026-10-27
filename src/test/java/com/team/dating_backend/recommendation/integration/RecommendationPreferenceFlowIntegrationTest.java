@@ -283,13 +283,16 @@ class RecommendationPreferenceFlowIntegrationTest {
 
     @Test
     void 초기화는_행을_유지하고_null_배열을_빈_배열로_저장한다() throws Exception {
-        assertNoContent(putPreferences(token, SAVED_PREFERENCE));
+        ObjectNode selectedBothGenders = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
+        selectedBothGenders.set("preferredGenders", objectMapper.readTree("[\"MALE\", \"FEMALE\"]"));
+        assertNoContent(putPreferences(token, selectedBothGenders.toString()));
         assertThat(activeBatchGenerationType()).isEqualTo("PREFERENCE");
         Map<String, Object> before = storedPreference();
         ObjectNode reset = (ObjectNode) objectMapper.readTree(UNRESTRICTED_PREFERENCE);
         reset.putNull("religion");
         reset.putNull("drinking");
         reset.putNull("smoking");
+        reset.set("preferredGenders", objectMapper.readTree("[]"));
 
         assertNoContent(putPreferences(token, reset.toString()));
         assertThat(activeBatchGenerationType()).isEqualTo("DEFAULT");
@@ -356,7 +359,8 @@ class RecommendationPreferenceFlowIntegrationTest {
         HttpResponse<String> response = getPreferences(token);
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         assertThat(objectMapper.readTree(response.body()).at("/data/preference"))
-            .isIn(objectMapper.readTree(SAVED_PREFERENCE), objectMapper.readTree(secondBody));
+            .isIn(objectMapper.readTree(expectedPreference(SAVED_PREFERENCE)),
+                objectMapper.readTree(expectedPreference(secondBody)));
         assertThat(storedPreference().get("user_id")).isEqualTo(userId);
         assertThat(recommendationPreferenceRepository.count()).isEqualTo(1);
         if (sameConditions) {
@@ -542,12 +546,26 @@ class RecommendationPreferenceFlowIntegrationTest {
                 "select JSON_LENGTH(" + column + ") from recommendation_preferences where user_id = ?",
                 Integer.class, userId)).isZero();
         }
+        assertThat(jdbcTemplate.queryForObject("""
+            select JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[0]'))
+            from recommendation_preferences where user_id = ?
+            """, String.class, userId)).isEqualTo(Gender.FEMALE.name());
     }
 
     private void assertPreferenceResponse(HttpResponse<String> response, String preference) {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
-        assertThat(objectMapper.readTree(response.body())).isEqualTo(objectMapper.readTree(
-            "{\"message\":\"preference_get_success\",\"data\":{\"preference\":" + preference + "}}"));
+        assertThat(objectMapper.readTree(response.body()).at("/data/preference"))
+            .isEqualTo(objectMapper.readTree(expectedPreference(preference)));
+    }
+
+    private String expectedPreference(String requestedPreference) {
+        ObjectNode expected = (ObjectNode) objectMapper.readTree(requestedPreference);
+        var preferredGenders = expected.get("preferredGenders");
+        if (preferredGenders == null || preferredGenders.isNull()
+            || preferredGenders.isArray() && preferredGenders.size() == 0) {
+            expected.set("preferredGenders", objectMapper.readTree("[\"FEMALE\"]"));
+        }
+        return expected.toString();
     }
 
     private void assertNoContent(HttpResponse<String> response) {
