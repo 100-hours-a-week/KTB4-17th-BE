@@ -6,7 +6,6 @@ import com.team.dating_backend.recommendation.dto.response.RecommendationItemPag
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
 import com.team.dating_backend.recommendation.dto.response.RecommendationProfileImageResponse;
-import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
@@ -55,16 +54,8 @@ public class RecommendationItemGetService {
             .orElseThrow(() -> new RecommendationBusinessException(
                 RecommendationErrorCode.RESOURCE_NOT_AVAILABLE));
 
-        Integer cursorRankingOrder = null;
-        if (cursor != null) {
-            RecommendationItem cursorItem = recommendationItemRepository
-                .findByIdAndRecommendationBatchId(cursor, batchId)
-                .orElseThrow(RequestValidationException::new);
-            cursorRankingOrder = cursorItem.getRankingOrder();
-        }
-
         List<RecommendationItemCandidateRow> rows = recommendationItemRepository.findEligibleItems(
-            batchId, requesterUserId, cursorRankingOrder, cursor,
+            batchId, requesterUserId, cursor,
             PageRequest.of(0, ITEMS_PER_REQUEST + 1));
         boolean hasNext = rows.size() > ITEMS_PER_REQUEST;
         List<RecommendationItemCandidateRow> responseRows = rows.stream()

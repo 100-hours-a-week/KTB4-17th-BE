@@ -80,6 +80,14 @@ kakao:
     talk-profile-uri: ${KAKAO_TALK_PROFILE_URI}
 
 app:
+  recommendation:
+    refresh:
+      enabled: ${APP_RECOMMENDATION_REFRESH_ENABLED:false}
+      cron: ${APP_RECOMMENDATION_REFRESH_CRON:-}
+      zone: ${APP_RECOMMENDATION_REFRESH_ZONE:Asia/Seoul}
+      page-size: ${APP_RECOMMENDATION_REFRESH_PAGE_SIZE:100}
+      cleanup-chunks: ${APP_RECOMMENDATION_REFRESH_CLEANUP_CHUNKS:100}
+
   auth:
     login-redirect-uri: ${AUTH_LOGIN_REDIRECT_URI:${AUTH_SERVICE_REDIRECT_URI}}
     service-redirect-uri: ${AUTH_SERVICE_REDIRECT_URI}

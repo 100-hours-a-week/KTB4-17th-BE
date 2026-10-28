@@ -21,6 +21,7 @@ import com.team.dating_backend.recommendation.dto.response.RecommendationPrefere
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.recommendation.entity.RecommendationPreference;
 import com.team.dating_backend.recommendation.enums.RecommendationPreferenceErrorCode;
+import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.recommendation.exception.RecommendationPreferenceBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationPreferenceRepository;
@@ -82,7 +83,11 @@ class RecommendationPreferenceServiceTest {
                 RecommendationPreferenceErrorCode.PREFERENCE_SMOKING_NULL_ELEMENT),
             Arguments.of(selectedValues(List.of(), List.of(),
                 List.of(Smoking.NON_SMOKER, Smoking.NON_SMOKER)),
-                RecommendationPreferenceErrorCode.PREFERENCE_SMOKING_DUPLICATE_VALUE));
+                RecommendationPreferenceErrorCode.PREFERENCE_SMOKING_DUPLICATE_VALUE),
+            Arguments.of(selectedValues(List.of(), List.of(), List.of(), Arrays.asList(Gender.MALE, null)),
+                RecommendationPreferenceErrorCode.PREFERENCE_GENDER_NULL_ELEMENT),
+            Arguments.of(selectedValues(List.of(), List.of(), List.of(), List.of(Gender.MALE, Gender.MALE)),
+                RecommendationPreferenceErrorCode.PREFERENCE_GENDER_DUPLICATE_VALUE));
     }
 
     @ParameterizedTest
@@ -102,6 +107,10 @@ class RecommendationPreferenceServiceTest {
             .containsExactlyElementsOf(request.drinking() == null ? List.of() : request.drinking());
         assertThat(preference.getSmoking())
             .containsExactlyElementsOf(request.smoking() == null ? List.of() : request.smoking());
+        assertThat(preference.getPreferredGenders()).containsExactlyElementsOf(
+            request.preferredGenders() == null || request.preferredGenders().isEmpty()
+                ? List.of(Gender.FEMALE)
+                : request.preferredGenders());
     }
 
     private static Stream<RecommendationPreferenceSaveRequest> validSelectedValues() {
@@ -111,7 +120,7 @@ class RecommendationPreferenceServiceTest {
             selectedValues(List.of(Religion.NONE), List.of(Drinking.NEVER), null),
             selectedValues(List.of(Religion.NONE, Religion.CATHOLIC),
                 List.of(Drinking.NEVER, Drinking.SOCIAL),
-                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL)),
+                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL), List.of(Gender.MALE, Gender.FEMALE)),
             selectedValues(List.of(Religion.values()), List.of(Drinking.values()),
                 List.of(Smoking.values())));
     }
@@ -152,20 +161,29 @@ class RecommendationPreferenceServiceTest {
         return new RecommendationPreferenceSaveRequest(null, null, null, null, religion, drinking, smoking);
     }
 
+    private static RecommendationPreferenceSaveRequest selectedValues(
+        List<Religion> religion,
+        List<Drinking> drinking,
+        List<Smoking> smoking,
+        List<Gender> preferredGenders) {
+        return new RecommendationPreferenceSaveRequest(
+            null, null, null, null, religion, drinking, smoking, preferredGenders);
+    }
+
     @Test
     void 조회_시_행이_없으면_기본_조건을_반환하고_행을_생성하지_않는다() {
         givenActiveUserForRead();
 
         RecommendationPreferenceGetResponse response = service.getPreferences(USER_ID);
 
-        assertThat(response.preference()).isEqualTo(RecommendationPreferenceResponse.unrestricted());
+        assertThat(response.preference()).isEqualTo(RecommendationPreferenceResponse.unrestricted(Gender.MALE));
         verify(userRepository).findById(USER_ID);
         verify(userRepository, never()).findByIdForUpdate(any());
         verify(recommendationPreferenceRepository, never()).save(any());
     }
 
     @Test
-    void 기본_조건_응답은_숫자_null과_빈_배열을_포함한_일곱_필드를_반환한다() {
+    void 기본_조건_응답은_숫자_null과_기본_성별을_포함한_여덟_필드를_반환한다() {
         givenActiveUserForRead();
 
         RecommendationPreferenceGetResponse response = service.getPreferences(USER_ID);
@@ -174,7 +192,8 @@ class RecommendationPreferenceServiceTest {
             SuccessResponse.of("preference_get_success", response)))
             .isEqualTo("{\"message\":\"preference_get_success\",\"data\":{\"preference\":{"
                 + "\"minAge\":null,\"maxAge\":null,\"minHeight\":null,\"maxHeight\":null,"
-                + "\"religion\":[],\"drinking\":[],\"smoking\":[]}}}");
+                + "\"religion\":[],\"drinking\":[],\"smoking\":[],"
+                + "\"preferredGenders\":[\"FEMALE\"]}}}");
     }
 
     @Test
@@ -191,7 +210,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(response.preference()).isEqualTo(new RecommendationPreferenceResponse(
             (short) 25, (short) 30, (short) 160, (short) 180,
             List.of(Religion.NONE, Religion.CATHOLIC), List.of(Drinking.NEVER),
-            List.of(Smoking.NON_SMOKER)));
+            List.of(Smoking.NON_SMOKER), List.of(Gender.FEMALE)));
         assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
         assertThatThrownBy(() -> response.preference().religion().add(Religion.OTHER))
             .isInstanceOf(UnsupportedOperationException.class);
@@ -377,7 +396,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getMaxHeight()).isEqualTo((short) 220);
         assertThat(preference.getCreatedAt()).isNotNull();
         assertThat(preference.getUpdatedAt()).isEqualTo(preference.getCreatedAt());
-        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
+        verify(recommendationBatchCreateService).refreshRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -397,12 +416,14 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getReligion()).isEmpty();
         assertThat(preference.getDrinking()).isEmpty();
         assertThat(preference.getSmoking()).isEmpty();
+        assertThat(preference.getPreferredGenders()).containsExactly(Gender.FEMALE);
     }
 
     @Test
     void 기존_행이_있으면_전체_조건을_대체하고_새_행을_저장하지_않는다() {
         User user = givenActiveUser();
-        RecommendationPreference preference = new RecommendationPreference(user, CREATED_AT);
+        RecommendationPreference preference = new RecommendationPreference(
+            user, null, null, null, null, List.of(), List.of(), List.of(), List.of(Gender.MALE), CREATED_AT);
         given(recommendationPreferenceRepository.findById(USER_ID)).willReturn(Optional.of(preference));
         RecommendationPreferenceSaveRequest request = new RecommendationPreferenceSaveRequest(
             25, 30, 160, 180, List.of(Religion.NONE), List.of(Drinking.NEVER),
@@ -417,10 +438,11 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getReligion()).containsExactly(Religion.NONE);
         assertThat(preference.getDrinking()).containsExactly(Drinking.NEVER);
         assertThat(preference.getSmoking()).containsExactly(Smoking.NON_SMOKER);
+        assertThat(preference.getPreferredGenders()).containsExactly(Gender.MALE);
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isAfter(CREATED_AT);
         verify(recommendationPreferenceRepository, never()).save(any());
-        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
+        verify(recommendationBatchCreateService).refreshRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -446,11 +468,12 @@ class RecommendationPreferenceServiceTest {
         RecommendationPreference preference = new RecommendationPreference(user,
             (short) 25, (short) 30, (short) 160, (short) 180,
             List.of(Religion.NONE), List.of(Drinking.NEVER),
-            List.of(Smoking.NON_SMOKER), CREATED_AT);
+            List.of(Smoking.NON_SMOKER), List.of(Gender.MALE), CREATED_AT);
         given(recommendationPreferenceRepository.findById(USER_ID)).willReturn(Optional.of(preference));
 
         service.savePreferences(USER_ID,
-            new RecommendationPreferenceSaveRequest(null, null, null, null, null, null, null));
+            new RecommendationPreferenceSaveRequest(null, null, null, null,
+                null, null, null, List.of()));
 
         assertThat(preference.getMinAge()).isNull();
         assertThat(preference.getMaxAge()).isNull();
@@ -459,6 +482,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getReligion()).isEmpty();
         assertThat(preference.getDrinking()).isEmpty();
         assertThat(preference.getSmoking()).isEmpty();
+        assertThat(preference.getPreferredGenders()).containsExactly(Gender.FEMALE);
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isAfter(CREATED_AT);
         verify(recommendationPreferenceRepository, never()).save(any());
@@ -469,7 +493,7 @@ class RecommendationPreferenceServiceTest {
         givenActiveUser();
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException(
             "recommendation generation failed");
-        given(recommendationBatchCreateService.createRecommendationBatch(USER_ID)).willThrow(failure);
+        given(recommendationBatchCreateService.refreshRecommendationBatch(USER_ID)).willThrow(failure);
 
         assertThatThrownBy(() -> service.savePreferences(USER_ID, request(25, 30, 160, 180)))
             .isSameAs(failure);
@@ -492,6 +516,7 @@ class RecommendationPreferenceServiceTest {
         User user = mock(User.class);
         given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(user.getGender()).willReturn(Gender.MALE);
         return user;
     }
 
@@ -499,6 +524,7 @@ class RecommendationPreferenceServiceTest {
         User user = mock(User.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
         given(user.getStatus()).willReturn(UserStatus.ACTIVE);
+        given(user.getGender()).willReturn(Gender.MALE);
         return user;
     }
 

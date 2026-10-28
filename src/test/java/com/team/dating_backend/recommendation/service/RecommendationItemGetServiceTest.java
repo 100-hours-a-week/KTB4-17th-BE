@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -16,7 +15,6 @@ import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.dto.response.RecommendationItemsGetResponse;
 import com.team.dating_backend.recommendation.entity.RecommendationBatch;
-import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.enums.RecommendationErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationBusinessException;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
@@ -67,7 +65,7 @@ class RecommendationItemGetServiceTest {
             .mapToObj(index -> row(101L + index, 21L + index))
             .toList();
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, null, null, PageRequest.of(0, 21)))
+            42L, 5L, null, PageRequest.of(0, 21)))
             .willReturn(rows);
         given(profileImageGetService.getProfileImagesByUserIds(
             LongStream.rangeClosed(21L, 40L).boxed().toList()))
@@ -116,14 +114,10 @@ class RecommendationItemGetServiceTest {
     }
 
     @Test
-    void 커서가_있는_페이지는_해당_Item의_순위와_ID_이후부터_조회한다() {
+    void 삭제된_커서도_ID_경계로_사용해_다음_페이지를_조회한다() {
         givenActiveRequesterAndBatch();
-        RecommendationItem cursorItem = mock(RecommendationItem.class);
-        given(cursorItem.getRankingOrder()).willReturn(3);
-        given(recommendationItemRepository.findByIdAndRecommendationBatchId(101L, 42L))
-            .willReturn(Optional.of(cursorItem));
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, 3, 101L, PageRequest.of(0, 21)))
+            42L, 5L, 101L, PageRequest.of(0, 21)))
             .willReturn(List.of(row(102L, 22L)));
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, 101L);
@@ -141,14 +135,10 @@ class RecommendationItemGetServiceTest {
             .mapToObj(index -> row(101L + index, 41L + index))
             .toList();
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, null, null, PageRequest.of(0, 21)))
+            42L, 5L, null, PageRequest.of(0, 21)))
             .willReturn(firstQueryRows);
-        RecommendationItem cursorItem = mock(RecommendationItem.class);
-        given(cursorItem.getRankingOrder()).willReturn(20);
-        given(recommendationItemRepository.findByIdAndRecommendationBatchId(120L, 42L))
-            .willReturn(Optional.of(cursorItem));
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, 20, 120L, PageRequest.of(0, 21)))
+            42L, 5L, 120L, PageRequest.of(0, 21)))
             .willReturn(List.of(row(121L, 61L)));
 
         RecommendationItemsGetResponse firstPage = service.getRecommendationItems(
@@ -170,7 +160,7 @@ class RecommendationItemGetServiceTest {
     void 남은_적격_후보가_없으면_빈_목록을_반환한다() {
         givenActiveRequesterAndBatch();
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, null, null, PageRequest.of(0, 21)))
+            42L, 5L, null, PageRequest.of(0, 21)))
             .willReturn(List.of());
 
         RecommendationItemsGetResponse response = service.getRecommendationItems(5L, 42L, null);
@@ -185,7 +175,7 @@ class RecommendationItemGetServiceTest {
     void 생일이_지나지_않은_후보는_만_나이에서_일년을_제외한다() {
         givenActiveRequesterAndBatch();
         given(recommendationItemRepository.findEligibleItems(
-            42L, 5L, null, null, PageRequest.of(0, 21)))
+            42L, 5L, null, PageRequest.of(0, 21)))
             .willReturn(List.of(new RecommendationItemCandidateRow(
                 101L, 21L, LocalDate.now().minusYears(30).plusDays(1),
                 "하리", JobCategory.IT_DATA, Mbti.INFP, "서울특별시", "강남구")));
@@ -247,18 +237,6 @@ class RecommendationItemGetServiceTest {
             .isInstanceOf(RequestValidationException.class);
         verifyNoInteractions(userRepository, recommendationBatchRepository,
             recommendationItemRepository);
-    }
-
-    @Test
-    void 다른_배치의_커서는_거부한다() {
-        givenActiveRequesterAndBatch();
-        given(recommendationItemRepository.findByIdAndRecommendationBatchId(101L, 42L))
-            .willReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.getRecommendationItems(5L, 42L, 101L))
-            .isInstanceOf(RequestValidationException.class);
-        verify(recommendationItemRepository, never()).findEligibleItems(
-            42L, 5L, null, 101L, PageRequest.of(0, 21));
     }
 
     private void givenActiveRequesterAndBatch() {
