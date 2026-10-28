@@ -11,21 +11,21 @@ import org.springframework.stereotype.Component;
 public class ChatMessageKafkaPublisher {
 
     private final ChatMessageKafkaEventFactory eventFactory;
-    private final KafkaTemplate<String, ChatMessageCreatedKafkaEvent> kafkaTemplate;
+    private final KafkaTemplate<Long, ChatMessageCreatedKafkaEvent> kafkaTemplate;
     private final String topic;
 
     public ChatMessageKafkaPublisher(
         ChatMessageKafkaEventFactory eventFactory,
-        KafkaTemplate<String, ChatMessageCreatedKafkaEvent> kafkaTemplate,
+        KafkaTemplate<Long, ChatMessageCreatedKafkaEvent> kafkaTemplate,
         @Value("${app.chat.kafka.message-created-topic}") String topic) {
         this.eventFactory = eventFactory;
         this.kafkaTemplate = kafkaTemplate;
         this.topic = topic;
     }
 
-    public CompletableFuture<SendResult<String, ChatMessageCreatedKafkaEvent>> publish(
+    public CompletableFuture<SendResult<Long, ChatMessageCreatedKafkaEvent>> publish(
         Long chatMessageId) {
         ChatMessageCreatedKafkaEvent event = eventFactory.create(chatMessageId);
-        return kafkaTemplate.send(topic, event.chatRoomId().toString(), event);
+        return kafkaTemplate.send(topic, event.chatRoomId(), event);
     }
 }
