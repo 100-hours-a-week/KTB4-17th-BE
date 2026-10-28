@@ -28,6 +28,10 @@ spring:
     listener:
       ack-mode: record
 
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+
   servlet:
     multipart:
       # Accepted uploads remain in memory. The threshold exceeds the entire request limit.
@@ -140,6 +144,10 @@ app:
     runtime-enabled: ${APP_CHAT_RUNTIME_ENABLED:false}
     kafka:
       message-created-topic: ${APP_CHAT_KAFKA_MESSAGE_CREATED_TOPIC:chat.message-created.v1}
+    realtime-relay:
+      enabled: true
+      group-id: chat-realtime-relay-v1
+      redis-channel: chat:message-created:v1
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 
