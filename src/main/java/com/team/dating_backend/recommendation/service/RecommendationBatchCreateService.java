@@ -21,7 +21,9 @@ import com.team.dating_backend.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -41,14 +43,34 @@ public class RecommendationBatchCreateService {
     @Transactional
     public Optional<RecommendationBatchCreateResponse> createRecommendationBatch(
         Long requesterUserId) {
+        User requester = activeRequesterForUpdate(requesterUserId);
+        Optional<RecommendationBatch> existing = recommendationBatchRepository
+            .findByUserIdAndDeletedAtIsNull(requesterUserId);
+        if (existing.isPresent()) {
+            return response(existing.get());
+        }
+        return synchronize(requesterUserId, requester, Optional.empty());
+    }
+
+    @Transactional
+    public Optional<RecommendationBatchCreateResponse> refreshRecommendationBatch(Long requesterUserId) {
+        User requester = activeRequesterForUpdate(requesterUserId);
+        return synchronize(requesterUserId, requester, recommendationBatchRepository
+            .findByUserIdAndDeletedAtIsNull(requesterUserId));
+    }
+
+    private User activeRequesterForUpdate(Long requesterUserId) {
         User requester = userRepository.findByIdForUpdate(requesterUserId)
-            .orElseThrow(
-                () -> new RecommendationBusinessException(
-                    RecommendationErrorCode.REQUESTER_NOT_ACTIVE));
+            .orElseThrow(() -> new RecommendationBusinessException(
+                RecommendationErrorCode.REQUESTER_NOT_ACTIVE));
         if (requester.getStatus() != UserStatus.ACTIVE) {
             throw new RecommendationBusinessException(RecommendationErrorCode.REQUESTER_NOT_ACTIVE);
         }
+        return requester;
+    }
 
+    private Optional<RecommendationBatchCreateResponse> synchronize(
+        Long requesterUserId, User requester, Optional<RecommendationBatch> existing) {
         Optional<RecommendationPreference> preference = recommendationPreferenceRepository
             .findById(requesterUserId);
         Short minAge = preference.map(RecommendationPreference::getMinAge).orElse(null);
@@ -67,19 +89,12 @@ public class RecommendationBatchCreateService {
         LocalDate birthDateAfter = maxAge == null ? null : today.minusYears(maxAge + 1L);
         LocalDate birthDateOnOrBefore = minAge == null ? null : today.minusYears(minAge);
 
-        List<Long> candidateUserIds = new ArrayList<>(findEligibleCandidateIds(
+        List<Long> candidateUserIds = findEligibleCandidateIds(
             requesterUserId, preferredGenders, birthDateAfter, birthDateOnOrBefore,
             minHeight, maxHeight,
             religion.isEmpty(), religion.isEmpty() ? List.of(Religion.values()) : religion,
             drinking.isEmpty(), drinking.isEmpty() ? List.of(Drinking.values()) : drinking,
-            smoking.isEmpty(), smoking.isEmpty() ? List.of(Smoking.values()) : smoking));
-        LocalDateTime now = LocalDateTime.now();
-        if (candidateUserIds.isEmpty()) {
-            recommendationBatchRepository.markActiveBatchesDeleted(requesterUserId, now);
-            return Optional.empty();
-        }
-        Collections.shuffle(candidateUserIds);
-
+            smoking.isEmpty(), smoking.isEmpty() ? List.of(Smoking.values()) : smoking);
         boolean hasPreferenceFilters = minAge != null || maxAge != null
             || minHeight != null || maxHeight != null
             || !religion.isEmpty() || !drinking.isEmpty() || !smoking.isEmpty()
@@ -87,18 +102,43 @@ public class RecommendationBatchCreateService {
         RecommendationGenerationType generationType = hasPreferenceFilters
             ? RecommendationGenerationType.PREFERENCE
             : RecommendationGenerationType.DEFAULT;
-        RecommendationBatch batch = recommendationBatchRepository
-            .save(new RecommendationBatch(requesterUserId, generationType, now));
-        List<RecommendationItem> items = new ArrayList<>(candidateUserIds.size());
-        for (int index = 0; index < candidateUserIds.size(); index++) {
-            items
-                .add(new RecommendationItem(batch.getId(), candidateUserIds.get(index), index + 1));
+        RecommendationBatch batch = existing.orElseGet(() -> recommendationBatchRepository
+            .save(new RecommendationBatch(requesterUserId, generationType, LocalDateTime.now())));
+        batch.updateGenerationType(generationType);
+        List<RecommendationItem> stored = existing.isPresent()
+            ? recommendationItemRepository.findAllByRecommendationBatchId(batch.getId())
+            : List.of();
+        Set<Long> eligible = new LinkedHashSet<>(candidateUserIds);
+        Set<Long> storedCandidates = new HashSet<>();
+        List<Long> removedIds = new ArrayList<>();
+        int lastRanking = 0;
+        for (RecommendationItem item : stored) {
+            storedCandidates.add(item.getCandidateUserId());
+            lastRanking = Math.max(lastRanking, item.getRankingOrder());
+            if (!eligible.contains(item.getCandidateUserId())) {
+                removedIds.add(item.getId());
+            }
         }
-        recommendationItemRepository.saveAll(items);
-        recommendationBatchRepository.markPreviousBatchesDeleted(
-            requesterUserId, batch.getId(), now);
-        return Optional
-            .of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
+        // Bound IN-clause size while keeping each user's entire update atomic.
+        for (int offset = 0; offset < removedIds.size(); offset += 500) {
+            recommendationItemRepository.deleteItems(batch.getId(),
+                removedIds.subList(offset, Math.min(offset + 500, removedIds.size())));
+        }
+        List<RecommendationItem> added = new ArrayList<>();
+        for (Long candidateId : eligible) {
+            if (!storedCandidates.contains(candidateId)) {
+                lastRanking = Math.incrementExact(lastRanking);
+                added.add(new RecommendationItem(batch.getId(), candidateId, lastRanking));
+            }
+        }
+        if (!added.isEmpty()) {
+            recommendationItemRepository.saveAll(added);
+        }
+        return response(batch);
+    }
+
+    private Optional<RecommendationBatchCreateResponse> response(RecommendationBatch batch) {
+        return Optional.of(new RecommendationBatchCreateResponse(batch.getId(), batch.getCreatedAt()));
     }
 
     private List<Long> findEligibleCandidateIds(

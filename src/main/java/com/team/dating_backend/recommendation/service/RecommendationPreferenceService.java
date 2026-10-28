@@ -83,7 +83,7 @@ public class RecommendationPreferenceService {
             return;
         }
 
-        recommendationBatchCreateService.createRecommendationBatch(userId);
+        recommendationBatchCreateService.refreshRecommendationBatch(userId);
     }
 
     private void validateActiveUser(User user) {

@@ -79,7 +79,7 @@ class FlywayJpaIntegrationTest {
         entityManager.persist(new RecommendationItem(batch.getId(), candidateId, 1));
         entityManager.flush();
         assertThat(recommendationItemRepository.findEligibleItems(batch.getId(), viewerId,
-            null, null, PageRequest.of(0, 10)))
+            null, PageRequest.of(0, 10)))
             .singleElement().satisfies(row -> assertThat(row.job()).isEqualTo(JobCategory.IT_DATA));
 
         entityManager.persist(new Like(viewerId, candidateId, LocalDateTime.now()));

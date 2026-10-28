@@ -396,7 +396,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getMaxHeight()).isEqualTo((short) 220);
         assertThat(preference.getCreatedAt()).isNotNull();
         assertThat(preference.getUpdatedAt()).isEqualTo(preference.getCreatedAt());
-        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
+        verify(recommendationBatchCreateService).refreshRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -442,7 +442,7 @@ class RecommendationPreferenceServiceTest {
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isAfter(CREATED_AT);
         verify(recommendationPreferenceRepository, never()).save(any());
-        verify(recommendationBatchCreateService).createRecommendationBatch(USER_ID);
+        verify(recommendationBatchCreateService).refreshRecommendationBatch(USER_ID);
     }
 
     @Test
@@ -493,7 +493,7 @@ class RecommendationPreferenceServiceTest {
         givenActiveUser();
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException(
             "recommendation generation failed");
-        given(recommendationBatchCreateService.createRecommendationBatch(USER_ID)).willThrow(failure);
+        given(recommendationBatchCreateService.refreshRecommendationBatch(USER_ID)).willThrow(failure);
 
         assertThatThrownBy(() -> service.savePreferences(USER_ID, request(25, 30, 160, 180)))
             .isSameAs(failure);

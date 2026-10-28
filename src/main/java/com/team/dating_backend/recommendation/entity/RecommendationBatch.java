@@ -47,4 +47,8 @@ public class RecommendationBatch {
         this.generationType = generationType;
         this.createdAt = createdAt;
     }
+
+    public void updateGenerationType(RecommendationGenerationType generationType) {
+        this.generationType = generationType;
+    }
 }
