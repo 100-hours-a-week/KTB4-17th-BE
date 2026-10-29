@@ -85,19 +85,28 @@ jobs:
                           " | docker login --username AWS --password-stdin " + ($registry | @sh) +
                           " && sed -i " + (("s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=" + $image + "|") | @sh) + " .env" +
                           " && docker compose pull backend" +
-                          " && docker compose up -d --no-deps backend"
+                          " && docker compose up -d --no-deps backend" +
+                          # 새 컨테이너가 healthy가 될 때까지 기다린 뒤에만 이 EC2를 성공으로 보고한다.
+                          # be-1은 8080을 호스트에 publish하지 않으므로 컨테이너 IP로 확인한다.
+                          " && { CID=$(docker compose ps -q backend);" +
+                          " for i in $(seq 1 60); do" +
+                          " IP=$(docker inspect -f \"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\" \"$CID\");" +
+                          " if curl -fsS -m 3 \"http://$IP:8080/actuator/health\" >/dev/null 2>&1; then echo backend healthy; exit 0; fi;" +
+                          " sleep 3; done;" +
+                          " echo backend health check failed; docker compose logs --tail 50 backend; exit 1; }"
                         ) | @sh)
                       )
                     ]}')
 
-                  # Environment=dev 태그가 붙은 모든 SSM 관리 EC2를 대상으로 동시에 실행한다.
-                  # 대상 중 한 대라도 실패하면 전체 명령을 실패 처리한다.
+                  # Environment=dev 태그가 붙은 SSM 관리 EC2에 한 대씩 순서대로 실행한다.
+                  # 앞 서버가 healthy가 된 뒤에 다음 서버를 재시작하므로 배포 중에도 한 대는 요청을 받는다.
+                  # 한 대라도 실패하면 남은 서버에는 배포하지 않고 전체 명령을 실패 처리한다.
                   COMMAND_ID=$(aws ssm send-command \
                     --targets "Key=tag:Environment,Values=dev" \
                     --document-name "AWS-RunShellScript" \
                     --comment "Deploy backend image $IMAGE_TAG to DEV" \
                     --timeout-seconds 600 \
-                    --max-concurrency "100%" \
+                    --max-concurrency "1" \
                     --max-errors "0" \
                     --parameters "$PARAMETERS" \
                     --region "$AWS_REGION" \
@@ -106,8 +115,8 @@ jobs:
 
                   echo "SSM command ID: $COMMAND_ID"
 
-                  # 여러 EC2에 실행된 SSM 명령의 전체 상태가 종료될 때까지 기다린다.
-                  for attempt in $(seq 1 120); do
+                  # 여러 EC2에 순서대로 실행된 SSM 명령의 전체 상태가 종료될 때까지 기다린다(최대 20분).
+                  for attempt in $(seq 1 240); do
                     COMMAND=$(aws ssm list-commands \
                       --command-id "$COMMAND_ID" \
                       --region "$AWS_REGION" \
@@ -138,7 +147,7 @@ jobs:
                   done
 
                   if [ "${STATUS:-}" != "Success" ]; then
-                    echo "SSM command did not complete within 10 minutes. Last status: ${STATUS:-unknown}"
+                    echo "SSM command did not complete within 20 minutes. Last status: ${STATUS:-unknown}"
                     aws ssm list-command-invocations \
                       --command-id "$COMMAND_ID" \
                       --details \
