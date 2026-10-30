@@ -1,79 +1,66 @@
 package com.team.dating_backend.notification.support;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-
-import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
-import com.team.dating_backend.notification.event.NotificationCreateRequestedEventListener;
-import com.team.dating_backend.notification.kafka.NotificationPublishDispatcher;
-import com.team.dating_backend.notification.kafka.NotificationRequestProducer;
+import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
+import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationCreationService;
 import com.team.dating_backend.notification.service.NotificationLookupService;
 import com.team.dating_backend.notification.service.NotificationPersistenceService;
+import com.team.dating_backend.notification.service.NotificationRequestOutboxService;
 import com.team.dating_backend.notification.service.NotificationRequestService;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Sort;
 
 @TestConfiguration(proxyBeanMethods = false)
 @Import(
-    {NotificationRequestService.class, NotificationCreateRequestedValidator.class,
-        NotificationCreateRequestedEventListener.class, NotificationCreationService.class,
-        NotificationPersistenceService.class, NotificationLookupService.class}
+    {NotificationRequestService.class, NotificationRequestOutboxService.class,
+        NotificationRequestOutboxCodec.class, NotificationCreateRequestedValidator.class,
+        NotificationCreationService.class, NotificationPersistenceService.class, NotificationLookupService.class}
 )
 public class NotificationRequestTestConfiguration {
 
     @Bean
-    public PublishedRequests publishedRequests(NotificationCreationService creationService) {
-        return new PublishedRequests(creationService);
+    public StoredRequests storedRequests(NotificationRequestOutboxRepository repository,
+        NotificationRequestOutboxService outboxService, NotificationCreationService creationService) {
+        return new StoredRequests(repository, outboxService, creationService);
     }
 
-    @Bean
-    public NotificationPublishDispatcher notificationPublishDispatcher(PublishedRequests requests) throws Exception {
-        var producer = mock(NotificationRequestProducer.class);
-        doAnswer(invocation -> {
-            requests.record(invocation.getArgument(0));
-            return null;
-        }).when(producer).publishAndAwait(any());
-        return new NotificationPublishDispatcher(Runnable::run, producer, mock(NotificationFailureReporter.class));
-    }
+    public static class StoredRequests {
 
-    public static class PublishedRequests {
-
+        private final NotificationRequestOutboxRepository repository;
+        private final NotificationRequestOutboxService outboxService;
         private final NotificationCreationService creationService;
-        private final List<NotificationCreateRequested> published = new CopyOnWriteArrayList<>();
-        private final ConcurrentLinkedQueue<NotificationCreateRequested> pending = new ConcurrentLinkedQueue<>();
+        private final Set<Long> createdNotificationOutboxIds = ConcurrentHashMap.newKeySet();
 
-        private PublishedRequests(NotificationCreationService creationService) {
+        private StoredRequests(NotificationRequestOutboxRepository repository,
+            NotificationRequestOutboxService outboxService, NotificationCreationService creationService) {
+            this.repository = repository;
+            this.outboxService = outboxService;
             this.creationService = creationService;
         }
 
-        private void record(NotificationCreateRequested request) {
-            pending.add(request);
-            published.add(request);
-        }
-
         public List<NotificationCreateRequested> snapshot() {
-            return List.copyOf(published);
+            return repository.findAll(Sort.by("id")).stream().map(outboxService::restore).toList();
         }
 
-        public void persistPending() {
-            NotificationCreateRequested request;
-            while ((request = pending.peek()) != null) {
-                creationService.createOrLoad(request);
-                pending.remove();
+        public void createNotificationsFromStoredRequests() {
+            for (var outbox : repository.findAll(Sort.by("id"))) {
+                if (!createdNotificationOutboxIds.contains(outbox.getId())) {
+                    creationService.createOrLoad(outboxService.restore(outbox));
+                    createdNotificationOutboxIds.add(outbox.getId());
+                }
             }
         }
 
         public void clear() {
-            pending.clear();
-            published.clear();
+            repository.deleteAllInBatch();
+            createdNotificationOutboxIds.clear();
         }
     }
 }

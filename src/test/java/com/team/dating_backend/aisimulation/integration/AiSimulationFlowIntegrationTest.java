@@ -38,7 +38,7 @@ import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.repository.NotificationRepository;
 import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -117,11 +117,11 @@ class AiSimulationFlowIntegrationTest {
     private Long viewer = 7L;
 
     @Autowired
-    private PublishedRequests publishedRequests;
+    private StoredRequests storedRequests;
 
     @BeforeEach
     void setUp() {
-        publishedRequests.clear();
+        storedRequests.clear();
         reset(client);
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ai_simulation_messages");
@@ -257,10 +257,10 @@ class AiSimulationFlowIntegrationTest {
         }
         waitFor(id, "COMPLETED");
         await().atMost(Duration.ofSeconds(5))
-            .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement()
+            .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement()
                 .satisfies(request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
         assertThat(notificationRepository.count()).isZero();
-        publishedRequests.persistPending();
+        storedRequests.createNotificationsFromStoredRequests();
         assertThat(notificationRepository.findAll()).singleElement().satisfies(notification -> {
             assertThat(notification.getUserId()).isEqualTo(7L);
             assertThat(notification.getType()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
@@ -290,7 +290,7 @@ class AiSimulationFlowIntegrationTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
         assertThat(notificationRepository.count()).isEqualTo(1L);
-        assertThat(publishedRequests.snapshot()).hasSize(1);
+        assertThat(storedRequests.snapshot()).hasSize(1);
         assertThat(count("ai_simulation_messages")).isEqualTo(20);
         verify(client, times(1)).run(any());
         jdbc.update("UPDATE ai_simulation_reports SET deleted_at=NOW(6) WHERE session_id=?", id);
@@ -343,7 +343,7 @@ class AiSimulationFlowIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
             handle.simulationId())).isEqualTo("FAILED");
         assertThat(notificationRepository.count()).isZero();
-        assertThat(publishedRequests.snapshot()).isEmpty();
+        assertThat(storedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -355,7 +355,7 @@ class AiSimulationFlowIntegrationTest {
         waitFor(id, "FAILED");
         assertThat(count("ai_simulation_messages")).isZero();
         assertThat(notificationRepository.count()).isZero();
-        assertThat(publishedRequests.snapshot()).isEmpty();
+        assertThat(storedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -395,9 +395,9 @@ class AiSimulationFlowIntegrationTest {
                 persistence.complete(id, aiResponse());
             }
             await().atMost(Duration.ofSeconds(5))
-                .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement().satisfies(
+                .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement().satisfies(
                     request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
-            assertThatThrownBy(publishedRequests::persistPending)
+            assertThatThrownBy(storedRequests::createNotificationsFromStoredRequests)
                 .isInstanceOf(DataIntegrityViolationException.class);
 
             assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");

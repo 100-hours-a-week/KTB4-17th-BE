@@ -1,8 +1,9 @@
-package com.team.dating_backend.notification.event;
+package com.team.dating_backend.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -14,11 +15,13 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.kafka.NotificationPublishDispatcher;
-import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
-import com.team.dating_backend.notification.service.NotificationRequestService;
+import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
+import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -32,22 +35,25 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.PayloadApplicationEvent;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class NotificationRequestFlowTest {
 
     private static final Instant REQUESTED_AT = Instant.parse("2026-10-20T01:02:03.123456789Z");
     private final Connection connection = mock(Connection.class);
+    private final NotificationRequestOutboxRepository repository = mock(NotificationRequestOutboxRepository.class);
     private final NotificationPublishDispatcher dispatcher = mock(NotificationPublishDispatcher.class);
-    private final List<NotificationCreateRequested> publishedRequests = new ArrayList<>();
+    private final List<NotificationCreateRequested> publishedEvents = new ArrayList<>();
     private AnnotationConfigApplicationContext context;
     private NotificationRequestService service;
     private TransactionTemplate transaction;
@@ -57,18 +63,22 @@ class NotificationRequestFlowTest {
         var dataSource = mock(DataSource.class);
         given(dataSource.getConnection()).willReturn(connection);
         given(connection.getAutoCommit()).willReturn(true);
+        given(repository.save(any(NotificationRequestOutbox.class)))
+            .willAnswer(invocation -> invocation.getArgument(0));
         var manager = new DataSourceTransactionManager(dataSource);
         context = new AnnotationConfigApplicationContext();
         context.addApplicationListener(event -> {
             if (event instanceof PayloadApplicationEvent<?> payload
                 && payload.getPayload() instanceof NotificationCreateRequested request) {
-                publishedRequests.add(request);
+                publishedEvents.add(request);
             }
         });
         context.registerBean(PlatformTransactionManager.class, () -> manager);
+        context.registerBean(NotificationRequestOutboxRepository.class, () -> repository);
         context.registerBean(NotificationPublishDispatcher.class, () -> dispatcher);
         context.register(TransactionConfiguration.class, NotificationRequestService.class,
-            NotificationCreateRequestedValidator.class, NotificationCreateRequestedEventListener.class);
+            NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
+            NotificationCreateRequestedValidator.class);
         context.refresh();
         service = context.getBean(NotificationRequestService.class);
         transaction = new TransactionTemplate(manager);
@@ -80,32 +90,61 @@ class NotificationRequestFlowTest {
     }
 
     @Test
-    void 업무_commit_이후에_원본_요청과_나노초_시각을_그대로_한번_전달한다() throws SQLException {
+    void 업무_commit_전에_원본_요청을_Outbox에_전달하고_기존_이벤트를_발행하지_않는다() throws SQLException {
         var request = request("title", "body", null, null);
+        var codec = context.getBean(NotificationRequestOutboxCodec.class);
 
         transaction.executeWithoutResult(status -> {
             service.requestNotification(request);
+            verify(repository).save(argThat(outbox -> codec.decode(outbox.getPayload()).equals(request)
+                && outbox.getSourceEventId().equals(request.sourceEventId())
+                && outbox.getRecipientUserId().equals(request.recipientUserId())
+                && outbox.getType() == request.type()));
             verifyNoInteractions(dispatcher);
         });
 
-        var order = inOrder(connection, dispatcher);
+        var order = inOrder(repository, connection);
+        order.verify(repository).save(any(NotificationRequestOutbox.class));
         order.verify(connection).commit();
-        order.verify(dispatcher).dispatch(same(request));
-        assertThat(request.requestedAt()).isSameAs(REQUESTED_AT);
-        verifyNoMoreInteractions(dispatcher);
+        assertThat(publishedEvents).isEmpty();
+        verifyNoMoreInteractions(repository, dispatcher);
     }
 
     @Test
-    void transaction_없이_호출하면_조용히_누락시키지_않고_거부한다() {
+    void transaction_없이_호출하면_Outbox_저장_전에_거부한다() {
         assertThatThrownBy(() -> service.requestNotification(request("title", "body", null, null)))
             .isInstanceOf(IllegalTransactionStateException.class);
 
-        verifyNoInteractions(connection, dispatcher);
+        verifyNoInteractions(connection, repository, dispatcher);
+        assertThat(publishedEvents).isEmpty();
+    }
+
+    @Test
+    void 프록시를_통하지_않아도_트랜잭션_없는_호출을_거부한다() {
+        var outboxService = mock(NotificationRequestOutboxService.class);
+        var directService = new NotificationRequestService(outboxService);
+
+        assertThatThrownBy(() -> directService.requestNotification(request("title", "body", null, null)))
+            .isInstanceOf(NotificationBusinessException.class);
+
+        verifyNoInteractions(outboxService);
+    }
+
+    @Test
+    void 트랜잭션_동기화가_없으면_Outbox_저장_전에_거부한다() {
+        context.getBean(DataSourceTransactionManager.class)
+            .setTransactionSynchronization(AbstractPlatformTransactionManager.SYNCHRONIZATION_NEVER);
+
+        assertThatThrownBy(() -> transaction
+            .executeWithoutResult(status -> service.requestNotification(request("title", "body", null, null))))
+            .isInstanceOf(NotificationBusinessException.class);
+
+        verifyNoInteractions(repository, dispatcher);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"rollback-only", "business-exception", "commit-failure"})
-    void 업무_rollback이나_commit_실패이면_전송_작업을_제출하지_않는다(String failure) throws SQLException {
+    void 업무_rollback이나_commit_실패에도_기존_발행_경로를_실행하지_않는다(String failure) throws SQLException {
         var request = request("title", "body", null, null);
         switch (failure) {
             case "rollback-only" -> transaction.executeWithoutResult(status -> {
@@ -124,18 +163,15 @@ class NotificationRequestFlowTest {
             }
         }
 
+        verify(repository).save(any(NotificationRequestOutbox.class));
+        assertThat(publishedEvents).isEmpty();
         verifyNoInteractions(dispatcher);
     }
 
     @Test
-    void 동기_요청_이벤트_등록이_실패하면_업무를_rollback하고_발행하지_않는다() throws SQLException {
-        var failure = new NotificationInvalidCreateRequestException();
-        context.addApplicationListener(event -> {
-            if (event instanceof PayloadApplicationEvent<?> payload
-                && payload.getPayload() instanceof NotificationCreateRequested) {
-                throw failure;
-            }
-        });
+    void Outbox_저장이_실패하면_예외를_전달하고_업무를_rollback한다() throws SQLException {
+        var failure = new DataIntegrityViolationException("outbox insert failed");
+        given(repository.save(any(NotificationRequestOutbox.class))).willThrow(failure);
 
         assertThatThrownBy(() -> transaction
             .executeWithoutResult(status -> service.requestNotification(request("title", "body", null, null))))
@@ -143,52 +179,51 @@ class NotificationRequestFlowTest {
 
         verify(connection).rollback();
         verify(connection, never()).commit();
+        assertThat(publishedEvents).isEmpty();
         verifyNoInteractions(dispatcher);
     }
 
     @ParameterizedTest
     @MethodSource("invalidRequests")
-    void 잘못된_요청은_errorCode로_거부하고_이벤트를_등록하지_않는다(NotificationCreateRequested request) {
+    void 잘못된_요청은_errorCode로_거부하고_Outbox에_저장하지_않는다(NotificationCreateRequested request) {
         assertThatThrownBy(() -> transaction.executeWithoutResult(status -> service.requestNotification(request)))
             .isInstanceOfSatisfying(NotificationInvalidCreateRequestException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
-        assertThat(publishedRequests).isEmpty();
-        verifyNoInteractions(dispatcher);
+        assertThat(publishedEvents).isEmpty();
+        verifyNoInteractions(repository, dispatcher);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"a", "😀"})
-    void 원본_식별자_255자를_보존해_commit_이후_전달한다(String character) {
+    void 원본_식별자_255자를_변경없이_Outbox로_전달한다(String character) {
         String prefix = "Like_SENT:501 ";
         String sourceEventId = prefix + character.repeat(255 - prefix.length());
         var request = new NotificationCreateRequested(1, sourceEventId, 7L, NotificationType.LIKE,
             "title", "body", null, null, REQUESTED_AT);
 
-        transaction.executeWithoutResult(status -> {
-            service.requestNotification(request);
-            assertThat(publishedRequests).containsExactly(request);
-            verifyNoInteractions(dispatcher);
-        });
+        transaction.executeWithoutResult(status -> service.requestNotification(request));
 
-        verify(dispatcher).dispatch(same(request));
-        assertThat(request.sourceEventId()).isEqualTo(sourceEventId);
-        verifyNoMoreInteractions(dispatcher);
+        verify(repository).save(argThat(outbox -> outbox.getSourceEventId().equals(sourceEventId)));
+        assertThat(publishedEvents).isEmpty();
+        verifyNoInteractions(dispatcher);
     }
 
     @Test
     void 기존_알림의_유니코드_길이_경계와_빈_문자열_허용을_유지한다() {
         var boundary = request("😀".repeat(100), "😀".repeat(500), "😀".repeat(50), 1L);
         var blank = request("", " ", null, null);
+        var codec = context.getBean(NotificationRequestOutboxCodec.class);
 
         transaction.executeWithoutResult(status -> {
             service.requestNotification(boundary);
             service.requestNotification(blank);
         });
 
-        verify(dispatcher).dispatch(same(boundary));
-        verify(dispatcher).dispatch(same(blank));
-        verifyNoMoreInteractions(dispatcher);
+        verify(repository).save(argThat(outbox -> codec.decode(outbox.getPayload()).equals(boundary)));
+        verify(repository).save(argThat(outbox -> codec.decode(outbox.getPayload()).equals(blank)));
+        assertThat(publishedEvents).isEmpty();
+        verifyNoMoreInteractions(repository, dispatcher);
     }
 
     private static Stream<NotificationCreateRequested> invalidRequests() {
