@@ -20,8 +20,14 @@ public class ChatOutboxPublisherLockService {
     private final String instanceId = UUID.randomUUID().toString();
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean tryAcquireOrExtend() {
-        return lockRepository.tryAcquireOrExtend(
+    public boolean tryAcquire() {
+        return lockRepository.tryAcquire(
+            LOCK_NAME, instanceId, LOCK_TTL_MICROS) == 1;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean tryRenew() {
+        return lockRepository.tryRenew(
             LOCK_NAME, instanceId, LOCK_TTL_MICROS) == 1;
     }
 }

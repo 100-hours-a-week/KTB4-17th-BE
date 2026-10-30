@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.common.lock.repository.PublisherLockRepository;
@@ -29,30 +28,34 @@ class ChatOutboxPublisherLockServiceTest {
 
     @Test
     void 락을_획득하면_true를_반환한다() {
-        given(lockRepository.tryAcquireOrExtend(
+        given(lockRepository.tryAcquire(
             eq(LOCK_NAME), anyString(), eq(LOCK_TTL_MICROS))).willReturn(1);
 
-        assertThat(service.tryAcquireOrExtend()).isTrue();
+        assertThat(service.tryAcquire()).isTrue();
 
-        verify(lockRepository).tryAcquireOrExtend(
+        verify(lockRepository).tryAcquire(
             eq(LOCK_NAME), anyString(), eq(LOCK_TTL_MICROS));
     }
 
     @Test
     void 락을_획득하지_못하면_false를_반환한다() {
-        given(lockRepository.tryAcquireOrExtend(
+        given(lockRepository.tryAcquire(
             eq(LOCK_NAME), anyString(), eq(LOCK_TTL_MICROS))).willReturn(0);
 
-        assertThat(service.tryAcquireOrExtend()).isFalse();
+        assertThat(service.tryAcquire()).isFalse();
     }
 
     @Test
-    void 락을_연장할_때는_동일한_인스턴스_ID를_사용한다() {
-        service.tryAcquireOrExtend();
-        service.tryAcquireOrExtend();
+    void 락을_갱신할_때는_동일한_인스턴스_ID를_사용한다() {
+        service.tryAcquire();
+        service.tryRenew();
 
         ArgumentCaptor<String> instanceIdCaptor = ArgumentCaptor.forClass(String.class);
-        verify(lockRepository, times(2)).tryAcquireOrExtend(
+        verify(lockRepository).tryAcquire(
+            eq(LOCK_NAME),
+            instanceIdCaptor.capture(),
+            eq(LOCK_TTL_MICROS));
+        verify(lockRepository).tryRenew(
             eq(LOCK_NAME),
             instanceIdCaptor.capture(),
             eq(LOCK_TTL_MICROS));

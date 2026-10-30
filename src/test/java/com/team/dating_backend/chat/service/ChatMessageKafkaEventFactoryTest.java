@@ -14,6 +14,7 @@ import com.team.dating_backend.chat.enums.ChatOutboxFailureCode;
 import com.team.dating_backend.chat.exception.ChatMessageKafkaEventCreationException;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatParticipantRepository;
+import com.team.dating_backend.file.entity.File;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +39,7 @@ class ChatMessageKafkaEventFactoryTest {
     private ChatParticipantRepository chatParticipantRepository;
     private ChatDelegationMessageRepository delegationMessageRepository;
     private ChatMessageKafkaEventFactory eventFactory;
+    private ChatRoom room;
     private ChatMessage message;
     private ChatParticipant sender;
     private ChatParticipant receiver;
@@ -53,7 +55,7 @@ class ChatMessageKafkaEventFactoryTest {
             chatParticipantRepository,
             delegationMessageRepository);
 
-        ChatRoom room = org.mockito.Mockito.mock(ChatRoom.class);
+        room = org.mockito.Mockito.mock(ChatRoom.class);
         given(room.getId()).willReturn(CHAT_ROOM_ID);
         sender = participant(room, SENDER_PARTICIPANT_ID, SENDER_USER_ID);
         receiver = participant(room, RECEIVER_PARTICIPANT_ID, RECEIVER_USER_ID);
@@ -87,6 +89,23 @@ class ChatMessageKafkaEventFactoryTest {
         assertThat(event.imageFileId()).isNull();
         assertThat(event.isUnreadByReceiver()).isTrue();
         assertThat(event.createdAt()).isEqualTo(CREATED_AT);
+    }
+
+    @Test
+    void 이미지_메시지의_파일_ID를_Kafka_이벤트에_포함한다() {
+        File imageFile = org.mockito.Mockito.mock(File.class);
+        given(imageFile.getId()).willReturn(50L);
+        message = ChatMessage.image(
+            room, sender, CLIENT_MESSAGE_ID, imageFile, CREATED_AT);
+        ReflectionTestUtils.setField(message, "id", MESSAGE_ID);
+        given(chatMessageRepository.findByIdWithImageFile(MESSAGE_ID))
+            .willReturn(Optional.of(message));
+
+        ChatMessageCreatedKafkaEvent event = eventFactory.create(MESSAGE_ID);
+
+        assertThat(event.messageType()).isEqualTo(ChatMessageType.IMAGE);
+        assertThat(event.textContent()).isNull();
+        assertThat(event.imageFileId()).isEqualTo(50L);
     }
 
     @Test
