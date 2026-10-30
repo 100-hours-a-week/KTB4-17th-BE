@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public enum CommonErrorCode implements ErrorCode {
     INVALID_REQUEST(HttpStatus.BAD_REQUEST),
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED),
     AUTH_REQUIRED(HttpStatus.UNAUTHORIZED),
     INTERNAL_SERVER_ERROR(
         HttpStatus.INTERNAL_SERVER_ERROR);

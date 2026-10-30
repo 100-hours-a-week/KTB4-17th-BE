@@ -69,7 +69,8 @@ class RecommendationPreferenceServiceIntegrationTest {
         RecommendationPreferenceGetResponse response = service.getPreferences(userId);
         flushAndClear();
 
-        assertThat(response.preference()).isEqualTo(RecommendationPreferenceResponse.unrestricted());
+        assertThat(response.preference())
+            .isEqualTo(RecommendationPreferenceResponse.unrestricted(Gender.MALE));
         assertThat(jdbcTemplate.queryForObject(
             "select count(*) from recommendation_preferences where user_id = ?", Long.class,
             userId)).isZero();
@@ -100,7 +101,7 @@ class RecommendationPreferenceServiceIntegrationTest {
     }
 
     @Test
-    void 최초_초기화_요청도_회원_PK와_빈_JSON_배열로_저장한다() {
+    void 최초_초기화_요청도_회원_PK와_기본_이성_성별을_저장한다() {
         service.savePreferences(userId,
             new RecommendationPreferenceSaveRequest(null, null, null, null, null, null, null));
         flushAndClear();
@@ -112,6 +113,7 @@ class RecommendationPreferenceServiceIntegrationTest {
         assertThat(preference.getMinHeight()).isNull();
         assertThat(preference.getMaxHeight()).isNull();
         assertThat(preference.getUpdatedAt()).isEqualTo(preference.getCreatedAt());
+        assertThat(preference.getPreferredGenders()).containsExactly(Gender.FEMALE);
         assertEmptyJsonArrays();
     }
 
@@ -161,5 +163,9 @@ class RecommendationPreferenceServiceIntegrationTest {
                 "select JSON_LENGTH(" + column + ") from recommendation_preferences where user_id = ?",
                 Integer.class, userId)).isZero();
         }
+        assertThat(jdbcTemplate.queryForObject(
+            "select JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[0]')) "
+                + "from recommendation_preferences where user_id = ?",
+            String.class, userId)).isEqualTo(Gender.FEMALE.name());
     }
 }

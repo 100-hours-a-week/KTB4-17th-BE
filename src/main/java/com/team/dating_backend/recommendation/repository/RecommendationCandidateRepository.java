@@ -16,7 +16,7 @@ public interface RecommendationCandidateRepository extends JpaRepository<User, L
     @Query("""
         SELECT candidate.id FROM User candidate
         JOIN Profile profile ON profile.user = candidate AND profile.deletedAt IS NULL
-        WHERE candidate.gender = :candidateGender
+        WHERE candidate.gender IN :candidateGenders
           AND (:birthDateAfter IS NULL OR candidate.birthDate > :birthDateAfter)
           AND (:birthDateOnOrBefore IS NULL OR candidate.birthDate <= :birthDateOnOrBefore)
           AND (:minHeight IS NULL OR profile.height >= :minHeight)
@@ -28,9 +28,9 @@ public interface RecommendationCandidateRepository extends JpaRepository<User, L
         """ + RecommendationEligibilityQuery.ELIGIBLE_CANDIDATE_PREDICATE + """
         ORDER BY candidate.id ASC
         """)
-    List<Long> findEligibleCandidateIds(
+    List<Long> findEligibleCandidateIdsByGenders(
         @Param("requesterUserId") Long requesterUserId,
-        @Param("candidateGender") Gender candidateGender,
+        @Param("candidateGenders") List<Gender> candidateGenders,
         @Param("birthDateAfter") LocalDate birthDateAfter,
         @Param("birthDateOnOrBefore") LocalDate birthDateOnOrBefore,
         @Param("minHeight") Short minHeight,
@@ -41,4 +41,23 @@ public interface RecommendationCandidateRepository extends JpaRepository<User, L
         @Param("drinking") List<Drinking> drinking,
         @Param("smokingUnrestricted") boolean smokingUnrestricted,
         @Param("smoking") List<Smoking> smoking);
+
+    default List<Long> findEligibleCandidateIds(
+        Long requesterUserId,
+        Gender candidateGender,
+        LocalDate birthDateAfter,
+        LocalDate birthDateOnOrBefore,
+        Short minHeight,
+        Short maxHeight,
+        boolean religionUnrestricted,
+        List<Religion> religion,
+        boolean drinkingUnrestricted,
+        List<Drinking> drinking,
+        boolean smokingUnrestricted,
+        List<Smoking> smoking) {
+        return findEligibleCandidateIdsByGenders(
+            requesterUserId, List.of(candidateGender), birthDateAfter, birthDateOnOrBefore,
+            minHeight, maxHeight, religionUnrestricted, religion,
+            drinkingUnrestricted, drinking, smokingUnrestricted, smoking);
+    }
 }

@@ -44,7 +44,7 @@ class RecommendationPreferenceMappingIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void 회원_ID를_기본키로_사용하고_미선택_조건은_빈_JSON_배열로_저장한다() {
+    void 회원_ID를_기본키로_사용하고_기본_이성_성별을_JSON_배열로_저장한다() {
         User user = persistUser();
         RecommendationPreference preference = new RecommendationPreference(user, CREATED_AT);
 
@@ -58,23 +58,30 @@ class RecommendationPreferenceMappingIntegrationTest {
         assertThat(saved.getReligion()).isEmpty();
         assertThat(saved.getDrinking()).isEmpty();
         assertThat(saved.getSmoking()).isEmpty();
+        assertThat(saved.getPreferredGenders()).containsExactly(Gender.FEMALE);
         assertThat(saved.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(saved.getUpdatedAt()).isEqualTo(CREATED_AT);
         assertThat(jdbcTemplate.queryForMap("""
             SELECT JSON_TYPE(religion) AS religion_type,
                 JSON_TYPE(drinking) AS drinking_type,
                 JSON_TYPE(smoking) AS smoking_type,
+                JSON_TYPE(preferred_genders) AS preferred_genders_type,
                 JSON_LENGTH(religion) AS religion_count,
                 JSON_LENGTH(drinking) AS drinking_count,
-                JSON_LENGTH(smoking) AS smoking_count
+                JSON_LENGTH(smoking) AS smoking_count,
+                JSON_LENGTH(preferred_genders) AS preferred_genders_count,
+                JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[0]')) AS preferred_gender
             FROM recommendation_preferences WHERE user_id = ?
             """, user.getId()))
             .containsEntry("religion_type", "ARRAY")
             .containsEntry("drinking_type", "ARRAY")
             .containsEntry("smoking_type", "ARRAY")
+            .containsEntry("preferred_genders_type", "ARRAY")
             .containsEntry("religion_count", 0L)
             .containsEntry("drinking_count", 0L)
-            .containsEntry("smoking_count", 0L);
+            .containsEntry("smoking_count", 0L)
+            .containsEntry("preferred_genders_count", 1L)
+            .containsEntry("preferred_gender", "FEMALE");
     }
 
     @Test
@@ -83,8 +90,9 @@ class RecommendationPreferenceMappingIntegrationTest {
         List<Religion> religions = List.of(Religion.CATHOLIC, Religion.NONE);
         List<Drinking> drinking = List.of(Drinking.NEVER, Drinking.SOCIAL);
         List<Smoking> smoking = List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL);
-        RecommendationPreference preference = new RecommendationPreference(user, religions, drinking, smoking,
-            CREATED_AT);
+        List<Gender> preferredGenders = List.of(Gender.MALE, Gender.FEMALE);
+        RecommendationPreference preference = new RecommendationPreference(
+            user, null, null, null, null, religions, drinking, smoking, preferredGenders, CREATED_AT);
 
         entityManager.persist(preference);
         entityManager.flush();
@@ -94,15 +102,20 @@ class RecommendationPreferenceMappingIntegrationTest {
         assertThat(saved.getReligion()).containsExactlyElementsOf(religions);
         assertThat(saved.getDrinking()).containsExactlyElementsOf(drinking);
         assertThat(saved.getSmoking()).containsExactlyElementsOf(smoking);
+        assertThat(saved.getPreferredGenders()).containsExactlyElementsOf(preferredGenders);
         assertThat(jdbcTemplate.queryForMap("""
             SELECT JSON_UNQUOTE(JSON_EXTRACT(religion, '$[0]')) AS religion_value,
                 JSON_UNQUOTE(JSON_EXTRACT(drinking, '$[0]')) AS drinking_value,
-                JSON_UNQUOTE(JSON_EXTRACT(smoking, '$[0]')) AS smoking_value
+                JSON_UNQUOTE(JSON_EXTRACT(smoking, '$[0]')) AS smoking_value,
+                JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[0]')) AS first_preferred_gender,
+                JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[1]')) AS second_preferred_gender
             FROM recommendation_preferences WHERE user_id = ?
             """, user.getId()))
             .containsEntry("religion_value", "CATHOLIC")
             .containsEntry("drinking_value", "NEVER")
-            .containsEntry("smoking_value", "NON_SMOKER");
+            .containsEntry("smoking_value", "NON_SMOKER")
+            .containsEntry("first_preferred_gender", "MALE")
+            .containsEntry("second_preferred_gender", "FEMALE");
     }
 
     @Test

@@ -210,7 +210,7 @@ class RecommendationPassFlowIntegrationTest {
         assertThat(itemRepository.existsEligibleCandidateInActiveBatch(targetId, userId)).isTrue();
         assertThat(itemRepository.count()).isEqualTo(3);
 
-        Long newBatchId = batchCreateService.createRecommendationBatch(userId).orElseThrow().batchId();
+        Long newBatchId = batchCreateService.refreshRecommendationBatch(userId).orElseThrow().batchId();
         assertThat(jdbcTemplate.queryForList(
             "select candidate_user_id from recommendation_items where recommendation_batch_id = ?",
             Long.class, newBatchId)).containsExactly(nextId);

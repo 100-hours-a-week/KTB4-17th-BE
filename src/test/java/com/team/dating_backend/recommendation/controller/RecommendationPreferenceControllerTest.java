@@ -29,6 +29,7 @@ import com.team.dating_backend.recommendation.dto.response.RecommendationPrefere
 import com.team.dating_backend.recommendation.enums.RecommendationPreferenceErrorCode;
 import com.team.dating_backend.recommendation.exception.RecommendationPreferenceBusinessException;
 import com.team.dating_backend.recommendation.service.RecommendationPreferenceService;
+import com.team.dating_backend.user.enums.Gender;
 import io.jsonwebtoken.JwtException;
 import java.util.List;
 import java.util.stream.Stream;
@@ -71,7 +72,8 @@ class RecommendationPreferenceControllerTest {
           "maxHeight": 180,
           "religion": ["NONE", "CATHOLIC"],
           "drinking": ["NEVER", "SOCIAL"],
-          "smoking": ["NON_SMOKER", "OCCASIONAL"]
+          "smoking": ["NON_SMOKER", "OCCASIONAL"],
+          "preferredGenders": ["MALE", "FEMALE"]
         }
         """;
 
@@ -107,15 +109,17 @@ class RecommendationPreferenceControllerTest {
     }
 
     @Test
-    void 조회는_200과_일곱_조건이_있는_기본_응답을_반환한다() throws Exception {
+    void 조회는_200과_기본_이성_성별을_포함한_응답을_반환한다() throws Exception {
         given(recommendationPreferenceService.getPreferences(USER_ID))
-            .willReturn(new RecommendationPreferenceGetResponse(RecommendationPreferenceResponse.unrestricted()));
+            .willReturn(new RecommendationPreferenceGetResponse(
+                RecommendationPreferenceResponse.unrestricted(Gender.MALE)));
 
         mockMvc.perform(authenticatedGet())
             .andExpect(status().isOk())
             .andExpect(content().string("{\"message\":\"preference_get_success\",\"data\":{"
                 + "\"preference\":{\"minAge\":null,\"maxAge\":null,\"minHeight\":null,"
-                + "\"maxHeight\":null,\"religion\":[],\"drinking\":[],\"smoking\":[]}}}"));
+                + "\"maxHeight\":null,\"religion\":[],\"drinking\":[],\"smoking\":[],"
+                + "\"preferredGenders\":[\"FEMALE\"]}}}"));
 
         verify(recommendationPreferenceService).getPreferences(USER_ID);
     }
@@ -132,7 +136,8 @@ class RecommendationPreferenceControllerTest {
             new RecommendationPreferenceSaveRequest(25, 30, 160, 180,
                 List.of(Religion.NONE, Religion.CATHOLIC),
                 List.of(Drinking.NEVER, Drinking.SOCIAL),
-                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL)));
+                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL),
+                List.of(Gender.MALE, Gender.FEMALE)));
     }
 
     @Test
@@ -151,14 +156,15 @@ class RecommendationPreferenceControllerTest {
             new RecommendationPreferenceSaveRequest(25, 30, 160, 180,
                 List.of(Religion.CATHOLIC),
                 List.of(Drinking.NEVER),
-                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL)));
+                List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL),
+                List.of(Gender.MALE, Gender.FEMALE)));
     }
 
     @Test
     void 초기화는_전체_필드를_null로_전달해서_204로_처리한다() throws Exception {
         ObjectNode body = (ObjectNode) objectMapper.readTree(VALID_REQUEST);
         for (String field : List.of("minAge", "maxAge", "minHeight", "maxHeight",
-            "religion", "drinking", "smoking")) {
+            "religion", "drinking", "smoking", "preferredGenders")) {
             body.putNull(field);
         }
 
@@ -288,7 +294,7 @@ class RecommendationPreferenceControllerTest {
         Stream<Arguments> numbers = Stream.of("minAge", "maxAge", "minHeight", "maxHeight")
             .flatMap(field -> Stream.of("true", "[]", "{}", "2147483648")
                 .map(value -> Arguments.of(field, value)));
-        Stream<Arguments> selections = Stream.of("religion", "drinking", "smoking")
+        Stream<Arguments> selections = Stream.of("religion", "drinking", "smoking", "preferredGenders")
             .flatMap(field -> Stream.of("[true]", "[{}]", "[\"UNKNOWN\"]",
                 "[99]", "\"NONE\"", "\"\"", "{}")
                 .map(value -> Arguments.of(field, value)));

@@ -7,6 +7,7 @@ import com.team.dating_backend.file.enums.FileErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +30,15 @@ public class GlobalExceptionHandler {
         }
 
         return error(errorCode);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotAllowed(
+        HttpRequestMethodNotSupportedException exception) {
+        return ResponseEntity
+            .status(CommonErrorCode.METHOD_NOT_ALLOWED.status())
+            .headers(exception.getHeaders())
+            .body(ErrorResponse.of(CommonErrorCode.METHOD_NOT_ALLOWED));
     }
 
     @ExceptionHandler(
