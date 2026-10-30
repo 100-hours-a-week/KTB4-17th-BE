@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -38,11 +39,13 @@ import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.controller.ChatMessageReadController;
 import com.team.dating_backend.chat.service.ChatMessageListService;
+import com.team.dating_backend.chat.service.ChatMessageKafkaPublisher;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
 import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageRateLimiter;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
+import com.team.dating_backend.chat.service.ChatOutboxPublisherLockService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
 import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
@@ -62,6 +65,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
@@ -157,6 +161,12 @@ class ChatMessageFlowIntegrationTest {
     private ChatMessageRateLimiter rateLimiter;
 
     @MockitoBean
+    private ChatOutboxPublisherLockService outboxPublisherLockService;
+
+    @MockitoBean
+    private ChatMessageKafkaPublisher kafkaPublisher;
+
+    @MockitoBean
     private ChatDelegationParticipantService delegationParticipantService;
 
     @MockitoBean
@@ -184,6 +194,9 @@ class ChatMessageFlowIntegrationTest {
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
         given(rateLimiter.tryAcquire(anyLong())).willReturn(true);
+        given(outboxPublisherLockService.tryAcquire()).willReturn(true);
+        given(kafkaPublisher.publish(anyLong()))
+            .willReturn(CompletableFuture.completedFuture(null));
         completedPresenceRequests.clear();
         doAnswer(invocation -> {
             try {
@@ -226,7 +239,7 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void HTTP_전송부터_DB_저장_Outbox_WebSocket_전달_이력_조회까지_연결한다() throws Exception {
+    void 텍스트_메시지를_DB에_저장하고_Kafka로_발행한_뒤_채팅_내역에서_조회한다() throws Exception {
         UUID clientMessageId = UUID.randomUUID();
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
@@ -284,22 +297,7 @@ class ChatMessageFlowIntegrationTest {
             assertEquals(1, countOutboxes());
 
             outboxPublishJob.publishDueMessages();
-
-            ChatMessageCreatedEvent senderEvent = senderEvents.poll(5, TimeUnit.SECONDS);
-            ChatMessageCreatedEvent receiverEvent = receiverEvents.poll(5, TimeUnit.SECONDS);
-            assertNotNull(senderEvent);
-            assertNotNull(receiverEvent);
-            assertThat(senderEvent.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
-            assertThat(senderEvent.messageId()).isEqualTo(messageId);
-            assertThat(senderEvent.clientMessageId()).isEqualTo(clientMessageId);
-            assertThat(senderEvent.mine()).isTrue();
-            assertThat(senderEvent.textContent()).isEqualTo(MESSAGE_TEXT);
-            assertThat(senderEvent.unreadCount()).isEqualTo(1);
-            assertThat(receiverEvent.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
-            assertThat(receiverEvent.messageId()).isEqualTo(messageId);
-            assertThat(receiverEvent.mine()).isFalse();
-            assertThat(receiverEvent.textContent()).isEqualTo(MESSAGE_TEXT);
-            assertThat(receiverEvent.unreadCount()).isZero();
+            verify(kafkaPublisher).publish(messageId);
             assertEquals(1, countPublishedOutboxes());
 
             HttpResponse<String> senderHistoryBeforeRead = getMessageHistory(senderToken);
@@ -350,53 +348,36 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void 이미지_메시지는_소유한_파일만_연결하고_WebSocket과_이력에_fileId를_전달한다()
+    void 이미지_메시지를_보내면_Kafka_Publisher를_호출한다()
         throws Exception {
         Long fileId = 83031L;
         insertImageFile(fileId);
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
-        BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
-        WebSocketStompClient stompClient = new WebSocketStompClient(
-            new StandardWebSocketClient());
-        stompClient.setMessageConverter(new JacksonJsonMessageConverter());
-        StompSession receiverSession = null;
 
-        try {
-            receiverSession = connectAndSubscribe(stompClient, receiverToken, receiverEvents);
-            assertTrue(awaitUserSubscription(RECEIVER_USER_ID.toString(), MESSAGE_DESTINATION));
+        HttpResponse<String> sent = postImageMessage(
+            senderToken, UUID.randomUUID(), fileId);
+        assertEquals(201, sent.statusCode(), sent.body());
+        Long messageId = jdbcTemplate.queryForObject(
+            "select id from chat_messages where chat_room_id = ? and file_id = ?",
+            Long.class, CHAT_ROOM_ID, fileId);
+        assertNotNull(messageId);
+        assertEquals("IMAGE", jdbcTemplate.queryForObject(
+            "select message_type from chat_messages where id = ?", String.class, messageId));
+        publishedRequests.persistPending();
+        assertEquals(1, countChatNotifications());
+        assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
+            "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
+            String.class, RECEIVER_USER_ID));
 
-            HttpResponse<String> sent = postImageMessage(
-                senderToken, UUID.randomUUID(), fileId);
-            assertEquals(201, sent.statusCode(), sent.body());
-            Long messageId = jdbcTemplate.queryForObject(
-                "select id from chat_messages where chat_room_id = ? and file_id = ?",
-                Long.class, CHAT_ROOM_ID, fileId);
-            assertNotNull(messageId);
-            assertEquals("IMAGE", jdbcTemplate.queryForObject(
-                "select message_type from chat_messages where id = ?", String.class, messageId));
-            publishedRequests.persistPending();
-            assertEquals(1, countChatNotifications());
-            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
-                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
-                String.class, RECEIVER_USER_ID));
+        outboxPublishJob.publishDueMessages();
+        verify(kafkaPublisher).publish(messageId);
 
-            outboxPublishJob.publishDueMessages();
-            ChatMessageCreatedEvent event = receiverEvents.poll(5, TimeUnit.SECONDS);
-            assertNotNull(event);
-            assertThat(event.messageType()).isEqualTo(ChatMessageType.IMAGE);
-            assertThat(event.imageFileId()).isEqualTo(fileId);
-            assertThat(event.unreadCount()).isZero();
-
-            HttpResponse<String> history = getMessageHistory(receiverToken);
-            assertEquals(200, history.statusCode());
-            assertThat(history.body())
-                .contains("\"messageType\":\"IMAGE\"")
-                .contains("\"imageFileId\":" + fileId);
-        } finally {
-            disconnect(receiverSession);
-            stompClient.stop();
-        }
+        HttpResponse<String> history = getMessageHistory(receiverToken);
+        assertEquals(200, history.statusCode());
+        assertThat(history.body())
+            .contains("\"messageType\":\"IMAGE\"")
+            .contains("\"imageFileId\":" + fileId);
     }
 
     @Test

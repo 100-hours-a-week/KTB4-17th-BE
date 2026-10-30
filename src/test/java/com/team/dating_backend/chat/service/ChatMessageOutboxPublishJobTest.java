@@ -2,160 +2,137 @@ package com.team.dating_backend.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
-import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
-import com.team.dating_backend.chat.entity.ChatMessage;
+import com.team.dating_backend.chat.dto.event.ChatMessageCreatedKafkaEvent;
 import com.team.dating_backend.chat.entity.ChatMessageOutbox;
-import com.team.dating_backend.chat.entity.ChatParticipant;
-import com.team.dating_backend.chat.entity.ChatRoom;
 import com.team.dating_backend.chat.enums.ChatOutboxFailureCode;
-import com.team.dating_backend.chat.enums.ChatParticipantStatus;
+import com.team.dating_backend.chat.exception.ChatMessageKafkaEventCreationException;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
-import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.apache.kafka.common.KafkaException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.Pageable;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class ChatMessageOutboxPublishJobTest {
 
-    private static final Long CHAT_ROOM_ID = 30L;
-    private static final Long SENDER_PARTICIPANT_ID = 10L;
-    private static final Long RECEIVER_PARTICIPANT_ID = 20L;
-    private static final String MESSAGE_DESTINATION = "/queue/chat-messages";
+    private static final Long MESSAGE_ID = 100L;
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 26, 14, 30);
 
     private ChatMessageOutboxRepository outboxRepository;
-    private ChatMessageRepository chatMessageRepository;
-    private ChatParticipantRepository chatParticipantRepository;
-    private ChatDelegationMessageRepository delegationMessageRepository;
-    private SimpMessagingTemplate messagingTemplate;
+    private ChatOutboxPublisherLockService lockService;
+    private ChatMessageKafkaPublisher kafkaPublisher;
     private ChatMessageOutboxPublishJob job;
     private ChatMessageOutbox outbox;
-    private ChatRoom room;
-    private ChatMessage message;
-    private ChatParticipant sender;
-    private ChatParticipant receiver;
 
     @BeforeEach
     void setUp() {
         outboxRepository = org.mockito.Mockito.mock(ChatMessageOutboxRepository.class);
-        chatMessageRepository = org.mockito.Mockito.mock(ChatMessageRepository.class);
-        chatParticipantRepository = org.mockito.Mockito.mock(ChatParticipantRepository.class);
-        delegationMessageRepository = org.mockito.Mockito.mock(
-            ChatDelegationMessageRepository.class);
-        messagingTemplate = org.mockito.Mockito.mock(SimpMessagingTemplate.class);
-        job = new ChatMessageOutboxPublishJob(
-            outboxRepository,
-            chatMessageRepository,
-            chatParticipantRepository,
-            delegationMessageRepository,
-            messagingTemplate);
+        lockService = org.mockito.Mockito.mock(ChatOutboxPublisherLockService.class);
+        kafkaPublisher = org.mockito.Mockito.mock(ChatMessageKafkaPublisher.class);
+        job = new ChatMessageOutboxPublishJob(outboxRepository, lockService, kafkaPublisher);
 
-        outbox = new ChatMessageOutbox(100L, CREATED_AT);
-        room = org.mockito.Mockito.mock(ChatRoom.class);
-        given(room.getId()).willReturn(CHAT_ROOM_ID);
-        sender = participant(SENDER_PARTICIPANT_ID, 1L, ChatParticipantStatus.ACTIVE);
-        receiver = participant(RECEIVER_PARTICIPANT_ID, 2L, ChatParticipantStatus.ACTIVE);
-        message = new ChatMessage(
-            room, sender, UUID.randomUUID(), "안녕하세요", CREATED_AT);
-        ReflectionTestUtils.setField(message, "id", 100L);
-
+        outbox = new ChatMessageOutbox(MESSAGE_ID, CREATED_AT);
+        given(lockService.tryAcquire()).willReturn(true);
+        given(lockService.tryRenew()).willReturn(true);
         given(outboxRepository
             .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
                 any(LocalDateTime.class), any(Pageable.class)))
             .willReturn(List.of(outbox));
-        given(chatMessageRepository.findByIdWithImageFile(100L))
-            .willReturn(Optional.of(message));
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
-            .willReturn(List.of(sender, receiver));
+        given(kafkaPublisher.publish(MESSAGE_ID))
+            .willReturn(CompletableFuture.completedFuture(null));
     }
 
     @Test
-    void 정상_발행하면_두_활성_참여자에게_개별_이벤트를_보내고_Outbox를_완료한다() {
-        ArgumentCaptor<String> userIdCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+    void DB_분산_락을_획득한_경우에만_Outbox를_조회한다() {
+        given(lockService.tryAcquire()).willReturn(false);
 
+        job.publishDueMessages();
+
+        verifyNoInteractions(outboxRepository, kafkaPublisher);
+    }
+
+    @Test
+    void Kafka_발행에_성공하면_Outbox를_완료한다() {
         job.publishDueMessages();
 
         assertThat(outbox.getPublishedAt()).isNotNull();
         assertThat(outbox.getFailedAt()).isNull();
         assertThat(outbox.getFailureCount()).isZero();
-        verify(messagingTemplate, times(2)).convertAndSendToUser(
-            userIdCaptor.capture(), eq(MESSAGE_DESTINATION), eventCaptor.capture());
-        assertThat(userIdCaptor.getAllValues()).containsExactly("1", "2");
-        assertThat(eventCaptor.getAllValues())
-            .allSatisfy(event -> assertThat(event).isInstanceOf(ChatMessageCreatedEvent.class));
-        assertThat(eventCaptor.getAllValues())
-            .extracting(event -> ((ChatMessageCreatedEvent) event).mine())
-            .containsExactly(true, false);
+        verify(lockService).tryAcquire();
+        verify(kafkaPublisher).publish(MESSAGE_ID);
         verify(outboxRepository).save(outbox);
     }
 
     @Test
-    void 위임_답장은_요청자에게_보내지_않는다() {
-        given(delegationMessageRepository
-            .findRequesterParticipantIdByChatMessageId(100L))
-            .willReturn(Optional.of(SENDER_PARTICIPANT_ID));
+    void Kafka_발행_결과를_받기_전에는_Outbox를_완료하지_않는다() throws Exception {
+        CompletableFuture<SendResult<Long, ChatMessageCreatedKafkaEvent>> sendResult = new CompletableFuture<>();
+        given(kafkaPublisher.publish(MESSAGE_ID)).willReturn(sendResult);
 
-        job.publishDueMessages();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var execution = executor.submit(job::publishDueMessages);
+            verify(kafkaPublisher, timeout(1_000)).publish(MESSAGE_ID);
 
-        verify(messagingTemplate).convertAndSendToUser(
-            eq("2"), eq(MESSAGE_DESTINATION), any(ChatMessageCreatedEvent.class));
-        verify(messagingTemplate, never()).convertAndSendToUser(
-            eq("1"), eq(MESSAGE_DESTINATION), any());
+            assertThat(outbox.getPublishedAt()).isNull();
+            verify(outboxRepository, never()).save(outbox);
+
+            sendResult.complete(null);
+            execution.get(1, TimeUnit.SECONDS);
+        }
+
         assertThat(outbox.getPublishedAt()).isNotNull();
+        verify(outboxRepository).save(outbox);
     }
 
     @Test
-    void 원본_메시지가_없으면_재시도하지_않고_Outbox를_실패_격리한다() {
-        given(chatMessageRepository.findByIdWithImageFile(100L)).willReturn(Optional.empty());
+    void Kafka_발행을_기다리는_동안_DB_분산_락을_갱신하지_못하면_처리를_중단한다() throws Exception {
+        CompletableFuture<SendResult<Long, ChatMessageCreatedKafkaEvent>> sendResult = new CompletableFuture<>();
+        given(kafkaPublisher.publish(MESSAGE_ID)).willReturn(sendResult);
+        given(lockService.tryRenew()).willReturn(false);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var execution = executor.submit(job::publishDueMessages);
+            execution.get(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(outbox.getPublishedAt()).isNull();
+        verify(lockService).tryAcquire();
+        verify(lockService).tryRenew();
+        verify(kafkaPublisher).publish(MESSAGE_ID);
+        verify(outboxRepository, never()).save(outbox);
+    }
+
+    @Test
+    void Kafka_이벤트를_생성하지_못하면_Outbox를_실패_상태로_변경한다() {
+        given(kafkaPublisher.publish(MESSAGE_ID))
+            .willThrow(new ChatMessageKafkaEventCreationException(
+                ChatOutboxFailureCode.MESSAGE_NOT_FOUND));
 
         job.publishDueMessages();
 
         assertThat(outbox.getFailedAt()).isNotNull();
-        assertThat(outbox.getFailureCount()).isEqualTo(1);
         assertThat(outbox.getLastFailureType())
             .isEqualTo(ChatOutboxFailureCode.MESSAGE_NOT_FOUND.name());
         verify(outboxRepository).save(outbox);
-        verifyNoInteractions(chatParticipantRepository, messagingTemplate);
     }
 
     @Test
-    void 참여자_데이터가_유효하지_않으면_발행하지_않고_실패_격리한다() {
-        given(chatParticipantRepository.findAllByChatRoomId(CHAT_ROOM_ID))
-            .willReturn(List.of(sender));
-
-        job.publishDueMessages();
-
-        assertThat(outbox.getFailedAt()).isNotNull();
-        assertThat(outbox.getLastFailureType())
-            .isEqualTo(ChatOutboxFailureCode.PARTICIPANTS_INVALID.name());
-        verifyNoInteractions(messagingTemplate);
-    }
-
-    @Test
-    void 브로커_실패는_실패_횟수를_기록하고_다음_시각으로_재예약한다() {
+    void Kafka_발행에_실패한_Outbox는_다시_처리하도록_예약한다() {
         ReflectionTestUtils.setField(job, "maxFailures", 3);
-        doThrow(new IllegalStateException()).when(messagingTemplate)
-            .convertAndSendToUser(anyString(), eq(MESSAGE_DESTINATION), any());
+        given(kafkaPublisher.publish(MESSAGE_ID)).willReturn(CompletableFuture.failedFuture(
+            new KafkaException(ChatOutboxFailureCode.BROKER_PUBLISH_FAILED.name())));
 
         job.publishDueMessages();
 
@@ -169,10 +146,10 @@ class ChatMessageOutboxPublishJobTest {
     }
 
     @Test
-    void 브로커_실패가_설정된_한도에_도달하면_Outbox를_실패_격리한다() {
+    void Outbox_발행_실패_횟수가_한도에_도달하면_실패_상태로_변경한다() {
         ReflectionTestUtils.setField(job, "maxFailures", 1);
-        doThrow(new IllegalStateException()).when(messagingTemplate)
-            .convertAndSendToUser(anyString(), eq(MESSAGE_DESTINATION), any());
+        given(kafkaPublisher.publish(MESSAGE_ID)).willReturn(CompletableFuture.failedFuture(
+            new KafkaException(ChatOutboxFailureCode.BROKER_PUBLISH_FAILED.name())));
 
         job.publishDueMessages();
 
@@ -184,7 +161,7 @@ class ChatMessageOutboxPublishJobTest {
     }
 
     @Test
-    void DB_조회_장애는_메시지별_실패로_기록하지_않고_작업_재시도에_백오프를_적용한다() {
+    void DB에서_Outbox를_조회하지_못하면_다음_실행까지_대기한다() {
         given(outboxRepository
             .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
                 any(LocalDateTime.class), any(Pageable.class)))
@@ -194,20 +171,11 @@ class ChatMessageOutboxPublishJobTest {
         job.publishDueMessages();
         job.publishDueMessages();
 
-        assertThat(outbox.getFailureCount()).isZero();
-        assertThat(outbox.getFailedAt()).isNull();
-        verify(outboxRepository, times(1))
+        verify(lockService).tryAcquire();
+        verify(outboxRepository)
             .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
                 any(LocalDateTime.class), any(Pageable.class));
         verify(outboxRepository, never()).save(any(ChatMessageOutbox.class));
-        verifyNoInteractions(chatMessageRepository, chatParticipantRepository, messagingTemplate);
-    }
-
-    private ChatParticipant participant(
-        Long participantId, Long userId, ChatParticipantStatus status) {
-        ChatParticipant participant = new ChatParticipant(room, userId);
-        ReflectionTestUtils.setField(participant, "id", participantId);
-        ReflectionTestUtils.setField(participant, "status", status);
-        return participant;
+        verifyNoInteractions(kafkaPublisher);
     }
 }

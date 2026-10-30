@@ -27,7 +27,26 @@ public interface PublisherLockRepository extends JpaRepository<PublisherLock, St
             """,
         nativeQuery = true
     )
-    int tryAcquireOrExtend(
+    int tryAcquire(
+        @Param("lockName") String lockName,
+        @Param("ownerId") String ownerId,
+        @Param("lockTtlMicros") long lockTtlMicros);
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        value = """
+            UPDATE publisher_locks
+            SET locked_until = TIMESTAMPADD(
+                    MICROSECOND, :lockTtlMicros, CURRENT_TIMESTAMP(6)),
+                updated_at = CURRENT_TIMESTAMP(6)
+            WHERE lock_name = :lockName
+              AND owner_id = :ownerId
+              AND locked_until > CURRENT_TIMESTAMP(6)
+            """,
+        nativeQuery = true
+    )
+    int tryRenew(
         @Param("lockName") String lockName,
         @Param("ownerId") String ownerId,
         @Param("lockTtlMicros") long lockTtlMicros);

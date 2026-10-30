@@ -1,25 +1,27 @@
 package com.team.dating_backend.chat.service;
 
-import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
-import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
-import com.team.dating_backend.chat.entity.ChatMessage;
+import com.team.dating_backend.chat.dto.event.ChatMessageCreatedKafkaEvent;
 import com.team.dating_backend.chat.entity.ChatMessageOutbox;
-import com.team.dating_backend.chat.entity.ChatParticipant;
 import com.team.dating_backend.chat.enums.ChatOutboxFailureCode;
-import com.team.dating_backend.chat.enums.ChatParticipantStatus;
+import com.team.dating_backend.chat.exception.ChatMessageKafkaEventCreationException;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
-import com.team.dating_backend.chat.repository.ChatMessageRepository;
-import com.team.dating_backend.chat.repository.ChatParticipantRepository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -29,16 +31,14 @@ import org.springframework.stereotype.Component;
 public class ChatMessageOutboxPublishJob {
 
     private static final int BATCH_SIZE = 100;
-    private static final String MESSAGE_DESTINATION = "/queue/chat-messages";
     private static final int MAX_RETRY_BACKOFF_EXPONENT = 8;
     private static final int MAX_DATABASE_BACKOFF_EXPONENT = 6;
     private static final long MAX_DATABASE_BACKOFF_SECONDS = 60;
+    private static final long LOCK_RENEW_INTERVAL_SECONDS = 3;
 
     private final ChatMessageOutboxRepository outboxRepository;
-    private final ChatMessageRepository chatMessageRepository;
-    private final ChatParticipantRepository chatParticipantRepository;
-    private final ChatDelegationMessageRepository delegationMessageRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ChatOutboxPublisherLockService lockService;
+    private final ChatMessageKafkaPublisher kafkaPublisher;
 
     @Value("${app.chat.outbox.max-failures:10}")
     private int maxFailures = 10;
@@ -48,15 +48,11 @@ public class ChatMessageOutboxPublishJob {
 
     public ChatMessageOutboxPublishJob(
         ChatMessageOutboxRepository outboxRepository,
-        ChatMessageRepository chatMessageRepository,
-        ChatParticipantRepository chatParticipantRepository,
-        ChatDelegationMessageRepository delegationMessageRepository,
-        SimpMessagingTemplate messagingTemplate) {
+        ChatOutboxPublisherLockService lockService,
+        ChatMessageKafkaPublisher kafkaPublisher) {
         this.outboxRepository = outboxRepository;
-        this.chatMessageRepository = chatMessageRepository;
-        this.chatParticipantRepository = chatParticipantRepository;
-        this.delegationMessageRepository = delegationMessageRepository;
-        this.messagingTemplate = messagingTemplate;
+        this.lockService = lockService;
+        this.kafkaPublisher = kafkaPublisher;
     }
 
     @Scheduled(fixedDelayString = "${app.chat.outbox-publish-delay-ms:1000}")
@@ -66,82 +62,81 @@ public class ChatMessageOutboxPublishJob {
         }
 
         try {
-            List<ChatMessageOutbox> outboxes = outboxRepository
-                .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                    LocalDateTime.now(), PageRequest.of(0, BATCH_SIZE));
-
-            for (ChatMessageOutbox outbox : outboxes) {
-                publish(outbox);
+            if (!lockService.tryAcquire()) {
+                return;
             }
 
-            consecutiveDatabaseFailures = 0;
-            nextDatabaseAttemptAt = Instant.MIN;
+            AtomicBoolean isLockOwned = new AtomicBoolean(true);
+            try (ScheduledExecutorService lockRenewalExecutor = Executors.newSingleThreadScheduledExecutor(
+                Thread.ofVirtual().name("chat-outbox-lock-renewal").factory())) {
+                lockRenewalExecutor.scheduleAtFixedRate(
+                    () -> renewLock(isLockOwned),
+                    LOCK_RENEW_INTERVAL_SECONDS,
+                    LOCK_RENEW_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
+                List<ChatMessageOutbox> outboxes = outboxRepository
+                    .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
+                        LocalDateTime.now(), PageRequest.of(0, BATCH_SIZE));
+
+                for (ChatMessageOutbox outbox : outboxes) {
+                    if (!isLockOwned.get() || !publish(outbox, isLockOwned)) {
+                        return;
+                    }
+                }
+
+                consecutiveDatabaseFailures = 0;
+                nextDatabaseAttemptAt = Instant.MIN;
+            }
         } catch (DataAccessException ignored) {
             scheduleDatabaseRetry();
         }
     }
 
-    private void publish(ChatMessageOutbox outbox) {
-        ChatMessage message = chatMessageRepository.findByIdWithImageFile(outbox.getChatMessageId())
-            .orElse(null);
-        if (message == null) {
-            markFailed(outbox, ChatOutboxFailureCode.MESSAGE_NOT_FOUND);
+    private void renewLock(AtomicBoolean isLockOwned) {
+        if (!isLockOwned.get()) {
             return;
         }
 
-        List<ChatParticipant> participants = chatParticipantRepository
-            .findAllByChatRoomId(message.getChatRoomId());
-        boolean senderIsParticipant = participants.stream()
-            .anyMatch(participant -> participant.getId().equals(message.getSenderParticipantId()));
-        if (participants.size() != 2 || !senderIsParticipant) {
-            markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
-            return;
+        try {
+            isLockOwned.compareAndSet(true, lockService.tryRenew());
+        } catch (RuntimeException ignored) {
+            isLockOwned.set(false);
         }
+    }
 
-        ChatParticipant otherParticipant = participants.stream()
-            .filter(participant -> !participant.getId().equals(message.getSenderParticipantId()))
-            .findFirst()
-            .orElse(null);
-        if (otherParticipant == null) {
-            markFailed(outbox, ChatOutboxFailureCode.PARTICIPANTS_INVALID);
-            return;
-        }
-
-        Long hiddenParticipantId = delegationMessageRepository
-            .findRequesterParticipantIdByChatMessageId(message.getId())
-            .orElse(null);
-
-        for (ChatParticipant participant : participants) {
-            if (participant.getStatus() != ChatParticipantStatus.ACTIVE
-                || participant.getId().equals(hiddenParticipantId)) {
-                continue;
+    private boolean publish(ChatMessageOutbox outbox, AtomicBoolean isLockOwned) {
+        try {
+            CompletableFuture<SendResult<Long, ChatMessageCreatedKafkaEvent>> publishResult = kafkaPublisher
+                .publish(outbox.getChatMessageId());
+            while (true) {
+                try {
+                    publishResult.get(1, TimeUnit.SECONDS);
+                    break;
+                } catch (TimeoutException ignored) {
+                    if (!isLockOwned.get()) {
+                        return false;
+                    }
+                }
             }
-
-            boolean mine = participant.getId().equals(message.getSenderParticipantId());
-            boolean unreadByOther = otherParticipant.getLastReadMessageId() == null
-                || message.getId() > otherParticipant.getLastReadMessageId();
-            ChatMessageCreatedEvent event = new ChatMessageCreatedEvent(
-                message.getChatRoomId(),
-                message.getId(),
-                message.getClientMessageId(),
-                mine,
-                message.getMessageType(),
-                message.getTextContent(),
-                message.getImageFileId(),
-                mine && unreadByOther ? 1 : 0,
-                message.getCreatedAt());
-
-            try {
-                messagingTemplate.convertAndSendToUser(
-                    participant.getUserId().toString(), MESSAGE_DESTINATION, event);
-            } catch (RuntimeException ignored) {
-                retryOrFail(outbox, ChatOutboxFailureCode.BROKER_PUBLISH_FAILED);
-                return;
+            if (!isLockOwned.get()) {
+                return false;
             }
+        } catch (ChatMessageKafkaEventCreationException exception) {
+            markFailed(outbox, exception.getFailureCode());
+            return true;
+        } catch (DataAccessException exception) {
+            throw exception;
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException | RuntimeException ignored) {
+            retryOrFail(outbox, ChatOutboxFailureCode.BROKER_PUBLISH_FAILED);
+            return true;
         }
 
         outbox.markPublished(LocalDateTime.now());
         outboxRepository.save(outbox);
+        return true;
     }
 
     private void retryOrFail(
