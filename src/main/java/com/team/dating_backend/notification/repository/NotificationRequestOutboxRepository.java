@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,4 +21,16 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         @Param("status") NotificationOutboxStatus status,
         @Param("now") LocalDateTime now,
         Pageable pageable);
+
+    @Modifying
+    @Query("""
+        UPDATE NotificationRequestOutbox outbox
+        SET outbox.status = :publishedStatus, outbox.publishedAt = :publishedAt
+        WHERE outbox.id = :id AND outbox.status = :pendingStatus
+        """)
+    int markPublished(
+        @Param("id") Long id,
+        @Param("publishedAt") LocalDateTime publishedAt,
+        @Param("pendingStatus") NotificationOutboxStatus pendingStatus,
+        @Param("publishedStatus") NotificationOutboxStatus publishedStatus);
 }

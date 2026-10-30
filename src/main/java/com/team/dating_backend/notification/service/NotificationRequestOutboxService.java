@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,29 @@ public class NotificationRequestOutboxService {
         }
         return repository.findDue(NotificationOutboxStatus.PENDING, now.truncatedTo(ChronoUnit.MICROS),
             PageRequest.of(0, limit));
+    }
+
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
+    public Optional<NotificationRequestOutbox> findDueById(Long id, LocalDateTime now) {
+        if (id == null || id <= 0 || now == null) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+        LocalDateTime cutoff = now.truncatedTo(ChronoUnit.MICROS);
+        return repository.findById(id)
+            .filter(outbox -> outbox.getStatus() == NotificationOutboxStatus.PENDING
+                && !outbox.getNextAttemptAt().isAfter(cutoff));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markPublished(Long id, LocalDateTime publishedAt) {
+        if (id == null || id <= 0 || publishedAt == null) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
+        int updated = repository.markPublished(id, publishedAt.truncatedTo(ChronoUnit.MICROS),
+            NotificationOutboxStatus.PENDING, NotificationOutboxStatus.PUBLISHED);
+        if (updated != 1) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        }
     }
 
     public NotificationCreateRequested restore(NotificationRequestOutbox outbox) {
