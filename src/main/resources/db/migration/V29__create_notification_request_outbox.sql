@@ -1,0 +1,20 @@
+CREATE TABLE `notification_request_outbox` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `source_event_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL,
+  `recipient_user_id` bigint NOT NULL,
+  `type` varchar(30) NOT NULL,
+  `payload` longtext NOT NULL,
+  `status` varchar(16) COLLATE utf8mb4_0900_bin NOT NULL DEFAULT 'PENDING',
+  `failure_count` int NOT NULL DEFAULT 0,
+  `last_failure_type` varchar(100) DEFAULT NULL,
+  `next_attempt_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `published_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_notification_outbox_source_recipient_type` (`source_event_id`, `recipient_user_id`, `type`),
+  KEY `idx_notification_outbox_due` (`status`, `next_attempt_at`, `id`),
+  CONSTRAINT `chk_notification_outbox_status` CHECK (`status` IN ('PENDING', 'PUBLISHED', 'FAILED')),
+  CONSTRAINT `chk_notification_outbox_failure_count` CHECK (`failure_count` >= 0),
+  CONSTRAINT `chk_notification_outbox_recipient` CHECK (`recipient_user_id` > 0),
+  CONSTRAINT `chk_notification_outbox_payload` CHECK (JSON_VALID(`payload`))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
