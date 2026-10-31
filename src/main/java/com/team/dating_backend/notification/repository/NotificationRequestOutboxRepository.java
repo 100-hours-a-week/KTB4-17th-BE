@@ -33,4 +33,20 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         @Param("publishedAt") LocalDateTime publishedAt,
         @Param("pendingStatus") NotificationOutboxStatus pendingStatus,
         @Param("publishedStatus") NotificationOutboxStatus publishedStatus);
+
+    @Modifying
+    @Query("""
+        UPDATE NotificationRequestOutbox outbox
+        SET outbox.failureCount = :failureCount, outbox.lastFailureType = :failureType,
+            outbox.nextAttemptAt = :nextAttemptAt, outbox.status = :status
+        WHERE outbox.id = :id AND outbox.status = :pendingStatus AND outbox.failureCount = :previousCount
+        """)
+    int recordFailure(
+        @Param("id") Long id,
+        @Param("previousCount") int previousCount,
+        @Param("failureCount") int failureCount,
+        @Param("failureType") String failureType,
+        @Param("nextAttemptAt") LocalDateTime nextAttemptAt,
+        @Param("pendingStatus") NotificationOutboxStatus pendingStatus,
+        @Param("status") NotificationOutboxStatus status);
 }
