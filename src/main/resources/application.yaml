@@ -100,6 +100,11 @@ app:
     allowed-origins: ${AUTH_ALLOWED_ORIGINS}
 
   notification:
+    outbox:
+      retry:
+        max-failures: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_FAILURES:5}
+        initial-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_INITIAL_DELAY_MS:1000}
+        max-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_DELAY_MS:60000}
     kafka:
       create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
       delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
