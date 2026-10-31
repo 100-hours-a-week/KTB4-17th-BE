@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -11,7 +12,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.enums.NotificationErrorCode;
+import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
+import com.team.dating_backend.notification.service.NotificationOutboxFailureService.FailureResult;
+import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
@@ -20,6 +27,7 @@ import com.team.dating_backend.notification.kafka.NotificationRequestProducer;
 import com.team.dating_backend.notification.service.NotificationRequestOutboxService;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -31,8 +39,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -52,7 +62,15 @@ class NotificationOutboxRelayTest {
     @Mock
     private NotificationRequestProducer producer;
     @Mock
-    private NotificationRequestOutbox outbox;
+    private NotificationOutboxFailureService failureService;
+    @Mock
+    private NotificationFailureReporter failureReporter;
+    @Spy
+    private NotificationOutboxFailureClassifier failureClassifier = new NotificationOutboxFailureClassifier();
+    private final NotificationRequestOutbox outbox = new NotificationRequestOutbox(REQUEST.sourceEventId(),
+        REQUEST.recipientUserId(), REQUEST.type(),
+        new NotificationRequestOutboxCodec(new NotificationCreateRequestedValidator()).encode(REQUEST),
+        LocalDateTime.now(ZoneOffset.UTC));
     @InjectMocks
     private NotificationOutboxRelay relay;
 
@@ -90,16 +108,31 @@ class NotificationOutboxRelayTest {
 
     @ParameterizedTest
     @MethodSource("publishFailures")
-    void 발행_예외는_그대로_전달하고_완료_기록이나_즉시_재시도를_하지_않는다(Exception failure) throws Exception {
+    void 발행_실패는_에러코드와_원인으로_전달하고_즉시_재시도하지_않는다(Exception failure,
+        NotificationFailureCode code) throws Exception {
         givenPendingRequest();
+        if (!(failure instanceof InterruptedException)) {
+            givenFailureRecorded(code, 1, false);
+        }
         given(producer.publishAndAwait(REQUEST)).willThrow(failure);
 
-        assertThatThrownBy(() -> relay.publish(OUTBOX_ID)).isSameAs(failure);
+        assertCodedFailure(code == NotificationFailureCode.PUBLISH_INTERRUPTED
+            ? NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED
+            : NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
 
         verify(outboxService).findDueById(eq(OUTBOX_ID), any(LocalDateTime.class));
         verify(outboxService).restore(outbox);
         verify(producer).publishAndAwait(REQUEST);
         verifyNoMoreInteractions(outboxService, producer);
+        verify(failureReporter).report(argThat(context -> context.errorCode() == code
+            && context.sourceEventId().equals(REQUEST.sourceEventId())
+            && context.recipientUserId().equals(REQUEST.recipientUserId())));
+        if (failure instanceof InterruptedException) {
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verifyNoInteractions(failureService);
+        } else {
+            verify(failureService).recordFailure(eq(OUTBOX_ID), eq(code), any(LocalDateTime.class));
+        }
     }
 
     @Test
@@ -107,20 +140,30 @@ class NotificationOutboxRelayTest {
         given(outboxService.findDueById(eq(OUTBOX_ID), any(LocalDateTime.class))).willReturn(Optional.of(outbox));
         var failure = new NotificationInvalidCreateRequestException();
         given(outboxService.restore(outbox)).willThrow(failure);
+        givenFailureRecorded(NotificationFailureCode.OUTBOX_RESTORE_FAILED, 1, false);
 
-        assertThatThrownBy(() -> relay.publish(OUTBOX_ID)).isSameAs(failure);
+        assertCodedFailure(NotificationErrorCode.OUTBOX_RESTORE_FAILED, failure);
 
         verify(outboxService).findDueById(eq(OUTBOX_ID), any(LocalDateTime.class));
         verify(outboxService).restore(outbox);
         verifyNoMoreInteractions(outboxService);
         verifyNoInteractions(producer);
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RESTORE_FAILED
+                && context.sourceEventId().equals(REQUEST.sourceEventId()) && context.requestedAt() == null));
     }
 
     @Test
     void 성공_결과가_없으면_완료를_기록하지_않는다() throws Exception {
         givenPendingRequest();
+        givenFailureRecorded(NotificationFailureCode.PUBLISH_CALL_FAILED, 1, false);
 
-        assertThatThrownBy(() -> relay.publish(OUTBOX_ID)).isInstanceOf(NotificationBusinessException.class);
+        assertThatThrownBy(() -> relay.publish(OUTBOX_ID))
+            .isInstanceOfSatisfying(NotificationBusinessException.class, failure -> {
+                assertThat(failure.getErrorCode()).isEqualTo(NotificationErrorCode.OUTBOX_PUBLISH_FAILED);
+                assertThat(failure.getMessage()).isNull();
+            })
+            .hasCauseInstanceOf(NotificationBusinessException.class);
 
         verify(outboxService).findDueById(eq(OUTBOX_ID), any(LocalDateTime.class));
         verify(outboxService).restore(outbox);
@@ -135,11 +178,15 @@ class NotificationOutboxRelayTest {
         var failure = new DataAccessResourceFailureException("database unavailable");
         doThrow(failure).when(outboxService).markPublished(eq(OUTBOX_ID), any(LocalDateTime.class));
 
-        assertThatThrownBy(() -> relay.publish(OUTBOX_ID)).isSameAs(failure);
+        assertCodedFailure(NotificationErrorCode.OUTBOX_STATE_UPDATE_FAILED, failure);
 
         verify(producer).publishAndAwait(REQUEST);
         verify(outboxService).markPublished(eq(OUTBOX_ID), any(LocalDateTime.class));
         verifyNoMoreInteractions(producer);
+        verifyNoInteractions(failureService);
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
+                && context.kafkaDetails().attempt() == null));
     }
 
     @Test
@@ -156,8 +203,99 @@ class NotificationOutboxRelayTest {
         given(outboxService.restore(outbox)).willReturn(REQUEST);
     }
 
-    private static Stream<Exception> publishFailures() {
-        return Stream.of(new ExecutionException(new IllegalStateException()), new TimeoutException(),
-            new InterruptedException(), new IllegalStateException());
+    @Test
+    void 이미_중단된_스레드는_DB_조회와_발행을_시작하지_않는다() {
+        Thread.currentThread().interrupt();
+
+        assertCodedFailure(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED, null);
+
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        verifyNoInteractions(outboxService, producer, failureService, failureReporter);
+    }
+
+    private void givenFailureRecorded(NotificationFailureCode code, int count, boolean exhausted) {
+        given(failureService.recordFailure(eq(OUTBOX_ID), eq(code), any(LocalDateTime.class)))
+            .willReturn(new FailureResult(count, exhausted));
+    }
+
+    @Test
+    void 한도_소진은_원래_실패와_소진_원인을_보고하고_추가_발행을_하지_않는다() throws Exception {
+        givenPendingRequest();
+        var failure = new TimeoutException();
+        given(producer.publishAndAwait(REQUEST)).willThrow(failure);
+        givenFailureRecorded(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, 5, true);
+
+        assertCodedFailure(NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
+
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_RESULT_TIMEOUT
+                && context.kafkaDetails().attempt() == 5 && Boolean.FALSE.equals(context.kafkaDetails().retryable())));
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED));
+        verify(producer).publishAndAwait(REQUEST);
+        verifyNoMoreInteractions(producer);
+    }
+
+    @Test
+    void 실패_기록의_DB_오류도_보고하고_원래_발행_예외를_보존한다() throws Exception {
+        givenPendingRequest();
+        var failure = new TimeoutException();
+        var recordingFailure = new DataAccessResourceFailureException("database unavailable");
+        given(producer.publishAndAwait(REQUEST)).willThrow(failure);
+        given(failureService.recordFailure(eq(OUTBOX_ID), eq(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT),
+            any(LocalDateTime.class)))
+            .willThrow(recordingFailure);
+
+        assertCodedFailure(NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
+
+        assertThat(failure.getSuppressed()).containsExactly(recordingFailure);
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_RESULT_TIMEOUT
+                && context.kafkaDetails().retryable() == null));
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED));
+    }
+
+    @Test
+    void 실패_보고_예외가_원래_발행_예외를_덮어쓰지_않는다() throws Exception {
+        givenPendingRequest();
+        var failure = new TimeoutException();
+        var reportingFailure = new IllegalStateException("report unavailable");
+        given(producer.publishAndAwait(REQUEST)).willThrow(failure);
+        givenFailureRecorded(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, 1, false);
+        doThrow(reportingFailure).when(failureReporter)
+            .report(any(com.team.dating_backend.notification.alert.NotificationFailureContext.class));
+
+        assertCodedFailure(NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
+
+        assertThat(failure.getSuppressed()).containsExactly(reportingFailure);
+    }
+
+    @Test
+    void 조회_DB_오류도_에러코드와_원인으로_전달한다() {
+        var failure = new DataAccessResourceFailureException("database unavailable");
+        given(outboxService.findDueById(eq(OUTBOX_ID), any(LocalDateTime.class))).willThrow(failure);
+
+        assertCodedFailure(NotificationErrorCode.OUTBOX_LOOKUP_FAILED, failure);
+
+        verifyNoInteractions(producer, failureService, failureReporter);
+    }
+
+    private void assertCodedFailure(NotificationErrorCode code, Throwable cause) {
+        assertThatThrownBy(() -> relay.publish(OUTBOX_ID))
+            .isInstanceOfSatisfying(NotificationBusinessException.class, failure -> {
+                assertThat(failure.getErrorCode()).isEqualTo(code);
+                assertThat(failure.getMessage()).isNull();
+                assertThat(failure.getCause()).isSameAs(cause);
+            });
+    }
+
+    private static Stream<Arguments> publishFailures() {
+        return Stream.of(
+            Arguments.of(new ExecutionException(new IllegalStateException()),
+                NotificationFailureCode.PUBLISH_RESULT_FAILED),
+            Arguments.of(new TimeoutException(), NotificationFailureCode.PUBLISH_RESULT_TIMEOUT),
+            Arguments.of(new InterruptedException(), NotificationFailureCode.PUBLISH_INTERRUPTED),
+            Arguments.of(new IllegalStateException(), NotificationFailureCode.PUBLISH_CALL_FAILED));
     }
 }

@@ -15,6 +15,7 @@ import com.team.dating_backend.notification.config.NotificationAlertProperties;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import io.micrometer.core.instrument.MockClock;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -46,6 +48,33 @@ class NotificationFailureReporterTest {
     @AfterEach
     void tearDown() {
         registry.close();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        {"OUTBOX_RESTORE_FAILED,OUTBOX_RESTORE", "OUTBOX_PUBLISH_REQUIRES_ATTENTION,PUBLISH",
+            "OUTBOX_STATE_UPDATE_FAILED,OUTBOX_STATE_UPDATE", "OUTBOX_RETRY_LIMIT_EXCEEDED,OUTBOX_RETRY"}
+    )
+    void Outbox의_복원_실패도_식별정보와_단계를_유지하고_payload를_노출하지_않는다(
+        NotificationFailureCode code, String stage, CapturedOutput output) {
+        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE,
+            "{\"secret\":\"private-payload\"}", LocalDateTime.of(2026, 10, 30, 12, 0));
+        var context = NotificationFailureContext.fromOutbox(code, outbox, null,
+            new TimeoutException("private-exception"), Instant.now(),
+            code == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED ? null : 2,
+            code == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
+                ? null
+                : code != NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED);
+
+        reporter.report(context);
+
+        verify(dispatcher).dispatch(context);
+        assertThat(output.getAll()).contains("errorCode=" + code, "failureStage=" + stage,
+            "sourceEventId=outbox-source", "recipientUserId=7", "requestedAt=null")
+            .doesNotContain("private-payload", "private-exception");
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count()).isEqualTo(1);
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().getId().getTags())
+            .hasSize(1);
     }
 
     @Test

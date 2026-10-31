@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.alert;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
@@ -109,6 +110,10 @@ public record NotificationFailureContext(
         return switch (errorCode) {
             case PUBLISH_SUBMISSION_REJECTED -> FailureStage.PUBLISH_SUBMISSION;
             case PUBLISH_CALL_FAILED -> FailureStage.PUBLISH;
+            case OUTBOX_PUBLISH_REQUIRES_ATTENTION -> FailureStage.PUBLISH;
+            case OUTBOX_RESTORE_FAILED -> FailureStage.OUTBOX_RESTORE;
+            case OUTBOX_STATE_UPDATE_FAILED -> FailureStage.OUTBOX_STATE_UPDATE;
+            case OUTBOX_RETRY_LIMIT_EXCEEDED -> FailureStage.OUTBOX_RETRY;
             case PUBLISH_RESULT_FAILED, PUBLISH_RESULT_TIMEOUT, PUBLISH_INTERRUPTED -> FailureStage.PUBLISH_RESULT;
             case RETRY_PUBLISH_FAILED -> FailureStage.RETRY_PUBLISH;
             case DLT_PUBLISH_FAILED -> FailureStage.DLT_PUBLISH;
@@ -118,6 +123,15 @@ public record NotificationFailureContext(
             case ALERT_SUBMISSION_REJECTED -> FailureStage.ALERT_SUBMISSION;
             case ALERT_WEBHOOK_FAILED -> FailureStage.ALERT_WEBHOOK;
         };
+    }
+
+    public static NotificationFailureContext fromOutbox(NotificationFailureCode errorCode,
+        NotificationRequestOutbox outbox, NotificationCreateRequested request, Throwable exception,
+        Instant occurredAt, Integer failureCount, Boolean retryable) {
+        var details = KafkaFailureDetails.from(null, null, null, null, failureCount, retryable, exception);
+        return new NotificationFailureContext(errorCode, outbox.getSourceEventId(), outbox.getRecipientUserId(),
+            outbox.getType(), request == null ? null : request.requestedAt(), occurredAt,
+            exceptionType(exception), causeType(exception), details);
     }
 
     private static NotificationType notificationType(String type) {
@@ -140,6 +154,9 @@ public record NotificationFailureContext(
     }
 
     public enum FailureStage {
+        OUTBOX_RESTORE,
+        OUTBOX_STATE_UPDATE,
+        OUTBOX_RETRY,
         PUBLISH_SUBMISSION,
         PUBLISH,
         PUBLISH_RESULT,
