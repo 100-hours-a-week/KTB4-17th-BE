@@ -98,9 +98,11 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(
     classes = ChatMessageFlowIntegrationTest.TestApplication.class,
@@ -128,13 +130,20 @@ class ChatMessageFlowIntegrationTest {
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
 
     @DynamicPropertySource
-    static void registerJwtSecret(DynamicPropertyRegistry registry) {
+    static void registerTestProperties(DynamicPropertyRegistry registry) {
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+        registry.add("spring.data.redis.url", () -> "redis://" + REDIS.getHost()
+            + ":" + REDIS.getMappedPort(6379));
     }
 
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+
+    @Container
+    static final GenericContainer<?> REDIS = new GenericContainer<>(
+        DockerImageName.parse("redis:7.4-alpine"))
+        .withExposedPorts(6379);
 
     @LocalServerPort
     private int port;
