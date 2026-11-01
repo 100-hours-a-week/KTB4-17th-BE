@@ -221,5 +221,3 @@ jobs:
             #         sed -i 's|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE_URL|' .env && \
             #         docker compose pull backend && \
             #         docker compose up -d --no-deps backend"
-
-
