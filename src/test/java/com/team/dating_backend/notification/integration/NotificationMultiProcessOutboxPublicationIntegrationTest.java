@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.support.NotificationDatabaseProbe;
+import com.team.dating_backend.notification.support.NotificationDatabaseProbe.StoredNotification;
 import com.team.dating_backend.notification.support.NotificationDatabaseProbe.StoredOutbox;
 import com.team.dating_backend.notification.support.NotificationIntegrationEnvironment;
 import com.team.dating_backend.notification.support.NotificationIntegrationEnvironment.Mode;
@@ -234,6 +236,111 @@ class NotificationMultiProcessOutboxPublicationIntegrationTest extends Notificat
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void Kafka_재발행을_소비해도_기존_알림_ID와_읽음_삭제_상태를_보존한다(boolean deleted) throws Exception {
+        var expected = likeNotification(first, activeUser(), activeUser());
+        var originalOutbox = outbox(expected);
+        var originalRequest = JSON.readValue(originalOutbox.payload(), NotificationCreateRequested.class);
+        assertPendingUnclaimed(originalOutbox);
+        var connection = subscribe(second, expected.recipientUserId());
+        environment.killFirst();
+        environment.kafkaFaultProxy().setEnabled(Channel.PRODUCER, false);
+
+        try (var claimGate = database.lockOutbox(originalOutbox.id())) {
+            restartRelay(true);
+            evidence.put("claimWaits", claimGate.awaitWaitingTransactions(1));
+        }
+        var owner = awaitClaimed(expected);
+        evidence.put("firstOwner", owner);
+        evidence.put("firstOwnerPid", environment.first().pid());
+
+        StoredOutbox beforeKill;
+        StoredNotification expectedState;
+        try (var resultGate = database.lockOutbox(originalOutbox.id())) {
+            environment.kafkaFaultProxy().setEnabled(Channel.PRODUCER, true);
+            await().atMost(Duration.ofSeconds(12))
+                .untilAsserted(() -> assertRequests(originalOutbox, records(expected), 1));
+            evidence.put("resultWaits", resultGate.awaitWaitingTransactions(1));
+            awaitCreationCommitted();
+            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                assertThat(deliveryRecords(expected)).hasSize(1);
+                connection.assertHealthy();
+                assertThat(connection.notifications()).hasSize(1);
+            });
+
+            var initialNotification = database.notifications(originalRequest).getFirst();
+            assertThat(initialNotification.readAt()).isNull();
+            assertThat(initialNotification.deletedAt()).isNull();
+            assertThat(connection.notifications().getFirst().notificationId()).isEqualTo(initialNotification.id());
+            evidence.put("initialNotification", initialNotification);
+            evidence.put("initialDelivery", deliveryRecords(expected));
+
+            var read = request(second, "PUT", NOTIFICATIONS + "/" + initialNotification.id() + "/read-receipt",
+                token(expected.recipientUserId()), null);
+            assertThat(read.statusCode()).isEqualTo(204);
+            assertThat(read.body()).isEmpty();
+            if (deleted) {
+                var deletion = request(second, "DELETE", NOTIFICATIONS + "/" + initialNotification.id(),
+                    token(expected.recipientUserId()), null);
+                assertThat(deletion.statusCode()).isEqualTo(204);
+                assertThat(deletion.body()).isEmpty();
+            }
+            expectedState = database.notifications(originalRequest).getFirst();
+            assertThat(expectedState.id()).isEqualTo(initialNotification.id());
+            assertThat(expectedState.readAt()).isNotNull();
+            assertThat(expectedState.deletedAt() != null).isEqualTo(deleted);
+            evidence.put("notificationStateBeforeReplay", expectedState);
+
+            environment.killFirst();
+            beforeKill = outbox(expected);
+            assertThat(beforeKill.status()).isEqualTo("PENDING");
+            assertThat(beforeKill.processingToken()).isEqualTo(owner.processingToken());
+            assertThat(beforeKill.failureCount()).isZero();
+            assertThat(beforeKill.publishedAt()).isNull();
+            evidence.put("outboxBeforeRestart", beforeKill);
+            evidence.put("killedPid", environment.first().history().getLast().pid());
+        }
+
+        restartRelay(true);
+        var published = awaitPublished(expected);
+        assertOriginal(originalOutbox, published);
+        assertThat(published.failureCount()).isZero();
+        assertThat(published.publishedAt()).isAfterOrEqualTo(beforeKill.processingUntil());
+        assertRequests(originalOutbox, records(expected), 2);
+        awaitCreationCommitted();
+
+        var storedRows = database.notifications(originalRequest);
+        assertThat(storedRows).containsExactly(expectedState);
+        var deliveries = deliveryRecords(expected);
+        assertThat(deliveries).hasSize(deleted ? 1 : 2);
+        var deliveryEvents = deliveries.stream().map(this::decodeDelivery).toList();
+        for (var delivery : deliveryEvents) {
+            assertThat(delivery.sourceEventId()).isEqualTo(expected.sourceEventId());
+            assertThat(delivery.recipientUserId()).isEqualTo(expected.recipientUserId());
+            assertThat(delivery.notification().notificationId()).isEqualTo(expectedState.id());
+        }
+        assertThat(deliveryEvents.getFirst().notification().readAt()).isNull();
+        if (!deleted) {
+            assertThat(deliveryEvents.getLast().notification().readAt()).isEqualTo(expectedState.readAt());
+        }
+        int expectedSseCount = deleted ? 1 : 2;
+        await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            connection.assertHealthy();
+            assertThat(connection.notifications()).hasSize(expectedSseCount)
+                .allSatisfy(notification -> assertThat(notification.notificationId()).isEqualTo(expectedState.id()));
+            if (!deleted) {
+                assertThat(connection.notifications().getLast().readAt()).isEqualTo(expectedState.readAt());
+            }
+        });
+        evidence.put("publishedOutbox", published);
+        evidence.put("replayedCreationRecords", records(expected));
+        evidence.put("storedNotificationsAfterReplay", storedRows);
+        evidence.put("deliveryRecordsAfterReplay", deliveries);
+        evidence.put("sseNotificationsAfterReplay", connection.notifications());
+        evidence.put("completed", true);
+    }
+
     private void awaitCreationCommitted() {
         await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> {
             var progress = kafka.progress(environment.creationGroup(), environment.creationTopic());
@@ -253,6 +360,18 @@ class NotificationMultiProcessOutboxPublicationIntegrationTest extends Notificat
         var rows = database.outboxes(expected.sourceEventId(), expected.recipientUserId(), expected.type());
         assertThat(rows).hasSize(1);
         return rows.getFirst();
+    }
+
+    private StoredOutbox awaitClaimed(Expected expected) {
+        var result = new AtomicReference<StoredOutbox>();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            var current = outbox(expected);
+            assertThat(current.status()).isEqualTo("PENDING");
+            assertThat(current.processingToken()).isNotNull().isNotBlank();
+            assertThat(current.processingUntil()).isAfter(dbNow());
+            result.set(current);
+        });
+        return result.get();
     }
 
     private StoredOutbox awaitPublished(Expected expected) {
@@ -279,6 +398,19 @@ class NotificationMultiProcessOutboxPublicationIntegrationTest extends Notificat
 
     private NotificationCreateRequested decode(ObservedRecord record) {
         return JSON.readValue(record.value(), NotificationCreateRequested.class);
+    }
+
+    private NotificationDeliveryEvent decodeDelivery(ObservedRecord record) {
+        return JSON.readValue(record.value(), NotificationDeliveryEvent.class);
+    }
+
+    private List<ObservedRecord> deliveryRecords(Expected expected) throws Exception {
+        return kafka.snapshot(environment.deliveryTopic()).records().stream()
+            .filter(record -> record.key() != null && record.key() == expected.recipientUserId())
+            .filter(record -> {
+                var event = decodeDelivery(record);
+                return event.sourceEventId().equals(expected.sourceEventId());
+            }).toList();
     }
 
     private void assertRequests(StoredOutbox original, List<ObservedRecord> records, int count) {
