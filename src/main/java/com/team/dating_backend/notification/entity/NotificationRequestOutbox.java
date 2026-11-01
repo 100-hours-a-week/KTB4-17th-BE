@@ -79,6 +79,12 @@ public class NotificationRequestOutbox {
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
+    @Column(name = "processing_token", length = 36)
+    private String processingToken;
+
+    @Column(name = "processing_until")
+    private LocalDateTime processingUntil;
+
     public NotificationRequestOutbox(String sourceEventId, Long recipientUserId, NotificationType type,
         String payload, LocalDateTime createdAt) {
         if (sourceEventId == null || sourceEventId.isBlank()
