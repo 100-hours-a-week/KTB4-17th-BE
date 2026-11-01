@@ -18,6 +18,7 @@ import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
+import com.team.dating_backend.chat.config.ChatRealtimeRedisConfiguration;
 import com.team.dating_backend.chat.controller.ChatExceptionHandler;
 import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
@@ -42,6 +43,8 @@ import com.team.dating_backend.chat.service.ChatMessageListService;
 import com.team.dating_backend.chat.service.ChatMessageKafkaPublisher;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
+import com.team.dating_backend.chat.service.ChatMessageReadReceiptRedisSubscriber;
+import com.team.dating_backend.chat.service.ChatMessageRedisSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageRateLimiter;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
@@ -111,6 +114,9 @@ import org.testcontainers.utility.DockerImageName;
         "spring.config.name=chat-message-flow-test",
         "server.address=127.0.0.1",
         "app.chat.runtime-enabled=true",
+        "app.chat.realtime-relay.enabled=true",
+        "app.chat.realtime-relay.redis-channel=chat-message-flow:message-created",
+        "app.chat.realtime-relay.read-receipt-redis-channel=chat-message-flow:read-receipt",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
@@ -729,6 +735,7 @@ class ChatMessageFlowIntegrationTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRealtimeRedisConfiguration.class,
             ChatRoomPresenceController.class,
             ChatRoomPresenceService.class,
             ChatRoomPresenceRegistry.class,
@@ -743,6 +750,8 @@ class ChatMessageFlowIntegrationTest {
             ChatMessageListService.class,
             ChatMessageReadService.class,
             ChatMessageReadReceiptPublisher.class,
+            ChatMessageReadReceiptRedisSubscriber.class,
+            ChatMessageRedisSubscriber.class,
             ChatRoomParticipantDisplayService.class,
             JpaFileRepositoryAdapter.class,
             ChatMessageRateLimiter.class,

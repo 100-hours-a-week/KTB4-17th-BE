@@ -156,6 +156,7 @@ app:
       enabled: true
       group-id: chat-realtime-relay-v1
       redis-channel: chat:message-created:v1
+      read-receipt-redis-channel: chat:read-receipt:v1
     outbox:
       max-failures: ${APP_CHAT_OUTBOX_MAX_FAILURES:10}
 

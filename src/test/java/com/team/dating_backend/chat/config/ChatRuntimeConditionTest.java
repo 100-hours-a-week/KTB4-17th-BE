@@ -49,6 +49,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 class ChatRuntimeConditionTest {
 
@@ -81,6 +83,8 @@ class ChatRuntimeConditionTest {
         .withBean(ChatDelegationMessageRepository.class,
             () -> mock(ChatDelegationMessageRepository.class))
         .withBean(SimpMessagingTemplate.class, () -> mock(SimpMessagingTemplate.class))
+        .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+        .withBean(JsonMapper.class, () -> mock(JsonMapper.class))
         .withBean(AiPracticeOutboxRepository.class,
             () -> mock(AiPracticeOutboxRepository.class))
         .withBean(AiPracticeSessionRepository.class,
@@ -111,7 +115,10 @@ class ChatRuntimeConditionTest {
     @Test
     void 런타임이_활성화되면_채팅_실행_컴포넌트를_등록한다() {
         contextRunner
-            .withPropertyValues("app.chat.runtime-enabled=true")
+            .withPropertyValues(
+                "app.chat.runtime-enabled=true",
+                "app.chat.realtime-relay.enabled=true",
+                "app.chat.realtime-relay.read-receipt-redis-channel=chat:read-receipt:v1")
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 assertThat(context).hasSingleBean(ChatDelegationController.class);
