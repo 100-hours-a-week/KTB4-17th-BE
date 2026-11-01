@@ -3,9 +3,11 @@ package com.team.dating_backend.notification.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -34,6 +36,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -126,7 +129,7 @@ class NotificationOutboxRelayTest {
         verifyNoMoreInteractions(outboxService, producer);
         verify(failureReporter).report(argThat(context -> context.errorCode() == code
             && context.sourceEventId().equals(REQUEST.sourceEventId())
-            && context.recipientUserId().equals(REQUEST.recipientUserId())));
+            && context.recipientUserId().equals(REQUEST.recipientUserId())), eq(false));
         if (failure instanceof InterruptedException) {
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
             verifyNoInteractions(failureService);
@@ -150,7 +153,8 @@ class NotificationOutboxRelayTest {
         verifyNoInteractions(producer);
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RESTORE_FAILED
-                && context.sourceEventId().equals(REQUEST.sourceEventId()) && context.requestedAt() == null));
+                && context.sourceEventId().equals(REQUEST.sourceEventId()) && context.requestedAt() == null),
+                eq(false));
     }
 
     @Test
@@ -186,7 +190,7 @@ class NotificationOutboxRelayTest {
         verifyNoInteractions(failureService);
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
-                && context.kafkaDetails().attempt() == null));
+                && context.kafkaDetails().attempt() == null), eq(true));
     }
 
     @Test
@@ -213,6 +217,35 @@ class NotificationOutboxRelayTest {
         verifyNoInteractions(outboxService, producer, failureService, failureReporter);
     }
 
+    @Test
+    void Kafka_호출_중의_중단도_실패_횟수에_포함하지_않고_보고_후_플래그를_복원한다() throws Exception {
+        givenPendingRequest();
+        doAnswer(invocation -> {
+            throw new InterruptException(new InterruptedException());
+        }).when(producer).publishAndAwait(REQUEST);
+        var reportingFailure = new IllegalStateException();
+        doAnswer(invocation -> {
+            Thread.interrupted();
+            throw reportingFailure;
+        }).when(failureReporter).report(any(), anyBoolean());
+
+        assertThatThrownBy(() -> relay.publish(OUTBOX_ID))
+            .isInstanceOfSatisfying(NotificationBusinessException.class, failure -> {
+                assertThat(failure.getErrorCode()).isEqualTo(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED);
+                assertThat(failure.getCause()).isInstanceOf(InterruptException.class);
+                assertThat(failure.getCause().getSuppressed()).containsExactly(reportingFailure);
+            });
+
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        verifyNoInteractions(failureService, failureClassifier);
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_INTERRUPTED
+                && context.kafkaDetails().attempt() == null), eq(false));
+        verify(outboxService).findDueById(eq(OUTBOX_ID), any());
+        verify(outboxService).restore(outbox);
+        verifyNoMoreInteractions(outboxService);
+    }
+
     private void givenFailureRecorded(NotificationFailureCode code, int count, boolean exhausted) {
         given(failureService.recordFailure(eq(OUTBOX_ID), eq(code), any(LocalDateTime.class)))
             .willReturn(new FailureResult(count, exhausted));
@@ -229,9 +262,11 @@ class NotificationOutboxRelayTest {
 
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_RESULT_TIMEOUT
-                && context.kafkaDetails().attempt() == 5 && Boolean.FALSE.equals(context.kafkaDetails().retryable())));
+                && context.kafkaDetails().attempt() == 5 && Boolean.FALSE.equals(context.kafkaDetails().retryable())),
+                eq(false));
         verify(failureReporter)
-            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED));
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED),
+                eq(true));
         verify(producer).publishAndAwait(REQUEST);
         verifyNoMoreInteractions(producer);
     }
@@ -251,9 +286,10 @@ class NotificationOutboxRelayTest {
         assertThat(failure.getSuppressed()).containsExactly(recordingFailure);
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_RESULT_TIMEOUT
-                && context.kafkaDetails().retryable() == null));
+                && context.kafkaDetails().retryable() == null), eq(false));
         verify(failureReporter)
-            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED));
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED),
+                eq(true));
     }
 
     @Test
@@ -264,7 +300,7 @@ class NotificationOutboxRelayTest {
         given(producer.publishAndAwait(REQUEST)).willThrow(failure);
         givenFailureRecorded(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, 1, false);
         doThrow(reportingFailure).when(failureReporter)
-            .report(any(com.team.dating_backend.notification.alert.NotificationFailureContext.class));
+            .report(any(com.team.dating_backend.notification.alert.NotificationFailureContext.class), anyBoolean());
 
         assertCodedFailure(NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
 

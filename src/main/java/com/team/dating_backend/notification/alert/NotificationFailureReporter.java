@@ -32,6 +32,10 @@ public class NotificationFailureReporter {
     }
 
     public void report(NotificationFailureContext context) {
+        report(context, true);
+    }
+
+    public void report(NotificationFailureContext context, boolean alertRequested) {
         if (context == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
@@ -40,7 +44,7 @@ public class NotificationFailureReporter {
         safely("METRIC", context.errorCode(), () -> meterRegistry
             .counter("notification.failures", "error_code", context.errorCode().name()).increment());
 
-        if (shouldAlert(context.errorCode())) {
+        if (alertRequested && shouldAlert(context.errorCode())) {
             safely("ALERT_DISPATCH", context.errorCode(), () -> alertDispatcher.dispatch(context));
         }
     }
@@ -108,10 +112,18 @@ public class NotificationFailureReporter {
                 valueForLog(exception.getClass().getSimpleName(), 128),
                 valueForLog(exception.getCause() == null ? null : exception.getCause().getClass().getSimpleName(),
                     128));
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (exception != loggingFailure) {
+                exception.addSuppressed(loggingFailure);
+            }
+        }
         try {
             meterRegistry.counter("notification.reporting.failures", "operation", operation).increment();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException metricFailure) {
+            if (exception != metricFailure) {
+                exception.addSuppressed(metricFailure);
+            }
+        }
     }
 
     private String locationForLog(KafkaLocation location) {

@@ -19,7 +19,7 @@ import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
-import com.team.dating_backend.notification.kafka.NotificationPublishDispatcher;
+import com.team.dating_backend.notification.kafka.NotificationRequestProducer;
 import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import java.sql.Connection;
@@ -52,7 +52,7 @@ class NotificationRequestFlowTest {
     private static final Instant REQUESTED_AT = Instant.parse("2026-10-20T01:02:03.123456789Z");
     private final Connection connection = mock(Connection.class);
     private final NotificationRequestOutboxRepository repository = mock(NotificationRequestOutboxRepository.class);
-    private final NotificationPublishDispatcher dispatcher = mock(NotificationPublishDispatcher.class);
+    private final NotificationRequestProducer producer = mock(NotificationRequestProducer.class);
     private final List<NotificationCreateRequested> publishedEvents = new ArrayList<>();
     private AnnotationConfigApplicationContext context;
     private NotificationRequestService service;
@@ -75,7 +75,7 @@ class NotificationRequestFlowTest {
         });
         context.registerBean(PlatformTransactionManager.class, () -> manager);
         context.registerBean(NotificationRequestOutboxRepository.class, () -> repository);
-        context.registerBean(NotificationPublishDispatcher.class, () -> dispatcher);
+        context.registerBean(NotificationRequestProducer.class, () -> producer);
         context.register(TransactionConfiguration.class, NotificationRequestService.class,
             NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
             NotificationCreateRequestedValidator.class);
@@ -100,14 +100,14 @@ class NotificationRequestFlowTest {
                 && outbox.getSourceEventId().equals(request.sourceEventId())
                 && outbox.getRecipientUserId().equals(request.recipientUserId())
                 && outbox.getType() == request.type()));
-            verifyNoInteractions(dispatcher);
+            verifyNoInteractions(producer);
         });
 
         var order = inOrder(repository, connection);
         order.verify(repository).save(any(NotificationRequestOutbox.class));
         order.verify(connection).commit();
         assertThat(publishedEvents).isEmpty();
-        verifyNoMoreInteractions(repository, dispatcher);
+        verifyNoMoreInteractions(repository, producer);
     }
 
     @Test
@@ -115,7 +115,7 @@ class NotificationRequestFlowTest {
         assertThatThrownBy(() -> service.requestNotification(request("title", "body", null, null)))
             .isInstanceOf(IllegalTransactionStateException.class);
 
-        verifyNoInteractions(connection, repository, dispatcher);
+        verifyNoInteractions(connection, repository, producer);
         assertThat(publishedEvents).isEmpty();
     }
 
@@ -139,7 +139,7 @@ class NotificationRequestFlowTest {
             .executeWithoutResult(status -> service.requestNotification(request("title", "body", null, null))))
             .isInstanceOf(NotificationBusinessException.class);
 
-        verifyNoInteractions(repository, dispatcher);
+        verifyNoInteractions(repository, producer);
     }
 
     @ParameterizedTest
@@ -165,7 +165,7 @@ class NotificationRequestFlowTest {
 
         verify(repository).save(any(NotificationRequestOutbox.class));
         assertThat(publishedEvents).isEmpty();
-        verifyNoInteractions(dispatcher);
+        verifyNoInteractions(producer);
     }
 
     @Test
@@ -180,7 +180,7 @@ class NotificationRequestFlowTest {
         verify(connection).rollback();
         verify(connection, never()).commit();
         assertThat(publishedEvents).isEmpty();
-        verifyNoInteractions(dispatcher);
+        verifyNoInteractions(producer);
     }
 
     @ParameterizedTest
@@ -191,7 +191,7 @@ class NotificationRequestFlowTest {
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
         assertThat(publishedEvents).isEmpty();
-        verifyNoInteractions(repository, dispatcher);
+        verifyNoInteractions(repository, producer);
     }
 
     @ParameterizedTest
@@ -206,7 +206,7 @@ class NotificationRequestFlowTest {
 
         verify(repository).save(argThat(outbox -> outbox.getSourceEventId().equals(sourceEventId)));
         assertThat(publishedEvents).isEmpty();
-        verifyNoInteractions(dispatcher);
+        verifyNoInteractions(producer);
     }
 
     @Test
@@ -223,7 +223,7 @@ class NotificationRequestFlowTest {
         verify(repository).save(argThat(outbox -> codec.decode(outbox.getPayload()).equals(boundary)));
         verify(repository).save(argThat(outbox -> codec.decode(outbox.getPayload()).equals(blank)));
         assertThat(publishedEvents).isEmpty();
-        verifyNoMoreInteractions(repository, dispatcher);
+        verifyNoMoreInteractions(repository, producer);
     }
 
     private static Stream<NotificationCreateRequested> invalidRequests() {

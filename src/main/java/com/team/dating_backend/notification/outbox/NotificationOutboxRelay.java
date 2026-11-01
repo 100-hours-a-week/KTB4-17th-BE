@@ -65,13 +65,11 @@ public class NotificationOutboxRelay {
                 throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
             }
         } catch (InterruptedException failure) {
-            try {
-                report(NotificationFailureCode.PUBLISH_INTERRUPTED, outbox, request, failure, null, true);
-            } finally {
-                Thread.currentThread().interrupt();
-            }
-            throw new NotificationBusinessException(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED, failure);
+            throw interruptedFailure(outbox, request, failure);
         } catch (ExecutionException | TimeoutException | RuntimeException failure) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw interruptedFailure(outbox, request, failure);
+            }
             recordAndReportFailure(outboxId, outbox, request, failureClassifier.classify(failure), failure);
             throw new NotificationBusinessException(NotificationErrorCode.OUTBOX_PUBLISH_FAILED, failure);
         }
@@ -82,6 +80,16 @@ public class NotificationOutboxRelay {
             throw new NotificationBusinessException(NotificationErrorCode.OUTBOX_STATE_UPDATE_FAILED, failure);
         }
         return true;
+    }
+
+    private NotificationBusinessException interruptedFailure(NotificationRequestOutbox outbox,
+        NotificationCreateRequested request, Exception failure) {
+        try {
+            report(NotificationFailureCode.PUBLISH_INTERRUPTED, outbox, request, failure, null, true);
+        } finally {
+            Thread.currentThread().interrupt();
+        }
+        return new NotificationBusinessException(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED, failure);
     }
 
     private void recordAndReportFailure(Long outboxId, NotificationRequestOutbox outbox,
@@ -105,8 +113,10 @@ public class NotificationOutboxRelay {
     private void report(NotificationFailureCode errorCode, NotificationRequestOutbox outbox,
         NotificationCreateRequested request, Exception failure, Integer failureCount, Boolean retryable) {
         try {
+            boolean alertRequested = errorCode == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED
+                || errorCode == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED;
             failureReporter.report(NotificationFailureContext.fromOutbox(errorCode, outbox, request, failure,
-                Instant.now(), failureCount, retryable));
+                Instant.now(), failureCount, retryable), alertRequested);
         } catch (RuntimeException reportingFailure) {
             suppress(failure, reportingFailure);
         }
