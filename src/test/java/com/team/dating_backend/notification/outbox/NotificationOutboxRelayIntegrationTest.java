@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.outbox;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
@@ -275,7 +276,7 @@ class NotificationOutboxRelayIntegrationTest {
             assertRecords(request, 1);
             verify(failureReporter)
                 .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
-                    && context.kafkaDetails().attempt() == null));
+                    && context.kafkaDetails().attempt() == null), eq(true));
         } finally {
             jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_outbox_published");
         }
@@ -305,6 +306,13 @@ class NotificationOutboxRelayIntegrationTest {
         Long id = save(request);
         retryProperties.setMaxFailures(2);
         jdbc.update("UPDATE notification_request_outbox SET payload = '{}' WHERE id = ?", id);
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var stored = outboxes.findById(id).orElseThrow();
+            assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.FAILED);
+            assertThat(stored.getFailureCount()).isEqualTo(2);
+            return null;
+        }).when(failureReporter).report(any(), eq(true));
 
         assertThatThrownBy(() -> relay.publish(id))
             .isInstanceOfSatisfying(NotificationBusinessException.class,
@@ -319,7 +327,7 @@ class NotificationOutboxRelayIntegrationTest {
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RESTORE_FAILED
                 && context.sourceEventId().equals(request.sourceEventId()) && context.recipientUserId().equals(userId)
-                && context.requestedAt() == null && context.kafkaDetails().attempt() == 1));
+                && context.requestedAt() == null && context.kafkaDetails().attempt() == 1), eq(false));
         jdbc.update("UPDATE notification_request_outbox SET next_attempt_at = ? WHERE id = ?",
             LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1), id);
 
@@ -332,7 +340,8 @@ class NotificationOutboxRelayIntegrationTest {
         assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(2);
         assertThat(relay.publish(id)).isFalse();
         verify(failureReporter)
-            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED));
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED),
+                eq(true));
         verifyNoInteractions(producer);
     }
 
@@ -358,7 +367,7 @@ class NotificationOutboxRelayIntegrationTest {
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_PUBLISH_REQUIRES_ATTENTION
                 && context.causeType().equals("AuthorizationException")
-                && Boolean.TRUE.equals(context.kafkaDetails().retryable())));
+                && Boolean.TRUE.equals(context.kafkaDetails().retryable())), eq(false));
     }
 
     @Test
@@ -381,7 +390,7 @@ class NotificationOutboxRelayIntegrationTest {
         assertThat(row(id)).isEqualTo(before);
         verify(failureReporter)
             .report(argThat(context -> context.errorCode() == NotificationFailureCode.PUBLISH_INTERRUPTED
-                && context.kafkaDetails().attempt() == null));
+                && context.kafkaDetails().attempt() == null), eq(false));
     }
 
     private Long save(NotificationCreateRequested request) {
