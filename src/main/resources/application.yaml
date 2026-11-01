@@ -101,6 +101,8 @@ app:
 
   notification:
     outbox:
+      claim:
+        duration-ms: ${APP_NOTIFICATION_OUTBOX_CLAIM_DURATION_MS:60000}
       relay:
         enabled: ${APP_NOTIFICATION_OUTBOX_RELAY_ENABLED:false}
         fixed-delay-ms: ${APP_NOTIFICATION_OUTBOX_RELAY_FIXED_DELAY_MS:1000}
