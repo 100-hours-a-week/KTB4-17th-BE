@@ -42,10 +42,8 @@ public class ChatRealtimeRedisConfiguration {
         AiPracticeRedisEventSubscriber aiPracticeSubscriber,
         @Qualifier("chatRedisMessageExecutor") ThreadPoolTaskExecutor messageExecutor,
         @Value("${app.chat.realtime-relay.redis-channel}") String messageChannel,
-        @Value("${app.chat.realtime-relay.read-receipt-redis-channel}")
-        String readReceiptChannel,
-        @Value("${app.chat.realtime-relay.ai-practice-redis-channel}")
-        String aiPracticeChannel) {
+        @Value("${app.chat.realtime-relay.read-receipt-redis-channel}") String readReceiptChannel,
+        @Value("${app.chat.realtime-relay.ai-practice-redis-channel}") String aiPracticeChannel) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.setTaskExecutor(messageExecutor);
