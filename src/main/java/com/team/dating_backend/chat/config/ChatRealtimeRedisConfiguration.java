@@ -1,5 +1,6 @@
 package com.team.dating_backend.chat.config;
 
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageRedisSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptRedisSubscriber;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -38,15 +39,19 @@ public class ChatRealtimeRedisConfiguration {
         RedisConnectionFactory connectionFactory,
         ChatMessageRedisSubscriber messageSubscriber,
         ChatMessageReadReceiptRedisSubscriber readReceiptSubscriber,
+        AiPracticeRedisEventSubscriber aiPracticeSubscriber,
         @Qualifier("chatRedisMessageExecutor") ThreadPoolTaskExecutor messageExecutor,
         @Value("${app.chat.realtime-relay.redis-channel}") String messageChannel,
         @Value("${app.chat.realtime-relay.read-receipt-redis-channel}")
-        String readReceiptChannel) {
+        String readReceiptChannel,
+        @Value("${app.chat.realtime-relay.ai-practice-redis-channel}")
+        String aiPracticeChannel) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.setTaskExecutor(messageExecutor);
         container.addMessageListener(messageSubscriber, new ChannelTopic(messageChannel));
         container.addMessageListener(readReceiptSubscriber, new ChannelTopic(readReceiptChannel));
+        container.addMessageListener(aiPracticeSubscriber, new ChannelTopic(aiPracticeChannel));
         return container;
     }
 }

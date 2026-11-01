@@ -2,6 +2,7 @@ package com.team.dating_backend.chat.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageRedisSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptRedisSubscriber;
 import org.junit.jupiter.api.Test;
@@ -22,15 +23,19 @@ class ChatRealtimeRedisConfigurationTest {
             ChatMessageRedisSubscriber.class);
         ChatMessageReadReceiptRedisSubscriber readReceiptSubscriber = org.mockito.Mockito.mock(
             ChatMessageReadReceiptRedisSubscriber.class);
+        AiPracticeRedisEventSubscriber aiPracticeSubscriber = org.mockito.Mockito.mock(
+            AiPracticeRedisEventSubscriber.class);
         ThreadPoolTaskExecutor messageExecutor = configuration.chatRedisMessageExecutor();
 
         RedisMessageListenerContainer container = configuration.chatRedisMessageListenerContainer(
             connectionFactory,
             subscriber,
             readReceiptSubscriber,
+            aiPracticeSubscriber,
             messageExecutor,
             "chat:message-created:v1",
-            "chat:read-receipt:v1");
+            "chat:read-receipt:v1",
+            "chat:ai-practice-updated:v1");
 
         assertThat(container.getConnectionFactory()).isSameAs(connectionFactory);
         assertThat(ReflectionTestUtils.getField(container, "taskExecutor"))

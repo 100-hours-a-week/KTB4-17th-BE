@@ -13,7 +13,7 @@ import com.team.dating_backend.aipractice.service.AiPracticeCallbackSecretVerifi
 import com.team.dating_backend.aipractice.service.AiPracticeGenerationCallbackService;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxPublishJob;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxResultService;
-import com.team.dating_backend.aipractice.service.AiPracticeWebSocketEventPublisher;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventPublisher;
 import com.team.dating_backend.chat.delegation.controller.ChatDelegationController;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.controller.ChatMessageImageAccessController;
@@ -118,7 +118,9 @@ class ChatRuntimeConditionTest {
             .withPropertyValues(
                 "app.chat.runtime-enabled=true",
                 "app.chat.realtime-relay.enabled=true",
-                "app.chat.realtime-relay.read-receipt-redis-channel=chat:read-receipt:v1")
+                "app.chat.realtime-relay.read-receipt-redis-channel=chat:read-receipt:v1",
+                "app.chat.realtime-relay.ai-practice-redis-channel="
+                    + "chat:ai-practice-updated:v1")
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 assertThat(context).hasSingleBean(ChatDelegationController.class);
@@ -133,7 +135,7 @@ class ChatRuntimeConditionTest {
                 assertThat(context).hasSingleBean(ChatOutboxPublisherLockService.class);
                 assertThat(context).hasSingleBean(ChatMessageReadReceiptPublisher.class);
                 assertThat(context).hasSingleBean(AiPracticeOutboxPublishJob.class);
-                assertThat(context).hasSingleBean(AiPracticeWebSocketEventPublisher.class);
+                assertThat(context).hasSingleBean(AiPracticeRedisEventPublisher.class);
                 assertThat(context).hasSingleBean(AiPracticeGenerationCallbackController.class);
             });
     }
@@ -151,7 +153,7 @@ class ChatRuntimeConditionTest {
         assertThat(context.getBeansOfType(ChatOutboxPublisherLockService.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMessageReadReceiptPublisher.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeOutboxPublishJob.class)).isEmpty();
-        assertThat(context.getBeansOfType(AiPracticeWebSocketEventPublisher.class)).isEmpty();
+        assertThat(context.getBeansOfType(AiPracticeRedisEventPublisher.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeGenerationCallbackController.class)).isEmpty();
     }
 
@@ -170,7 +172,7 @@ class ChatRuntimeConditionTest {
             ChatOutboxPublisherLockService.class,
             ChatMessageReadReceiptPublisher.class,
             AiPracticeOutboxPublishJob.class,
-            AiPracticeWebSocketEventPublisher.class,
+            AiPracticeRedisEventPublisher.class,
             AiPracticeGenerationCallbackController.class
         }
     )

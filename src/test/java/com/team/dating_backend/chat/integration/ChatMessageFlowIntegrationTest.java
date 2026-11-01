@@ -15,6 +15,10 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.TestJwtSecret;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
+import com.team.dating_backend.aipractice.enums.AiPracticeChatStatus;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventPublisher;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventSubscriber;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
@@ -117,6 +121,8 @@ import org.testcontainers.utility.DockerImageName;
         "app.chat.realtime-relay.enabled=true",
         "app.chat.realtime-relay.redis-channel=chat-message-flow:message-created",
         "app.chat.realtime-relay.read-receipt-redis-channel=chat-message-flow:read-receipt",
+        "app.chat.realtime-relay.ai-practice-redis-channel="
+            + "chat-message-flow:ai-practice-updated",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
@@ -132,6 +138,7 @@ class ChatMessageFlowIntegrationTest {
     private static final Long RECEIVER_USER_ID = 83012L;
     private static final String MESSAGE_DESTINATION = "/user/queue/chat-messages";
     private static final String READ_RECEIPT_DESTINATION = "/user/queue/chat-read-receipts";
+    private static final String AI_PRACTICE_DESTINATION = "/user/queue/ai-practice";
     private static final String MESSAGE_TEXT = "실제 DB 통합 테스트 메시지";
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
 
@@ -162,6 +169,9 @@ class ChatMessageFlowIntegrationTest {
 
     @Autowired
     private ChatMessageOutboxPublishJob outboxPublishJob;
+
+    @Autowired
+    private AiPracticeRedisEventPublisher aiPracticeRedisEventPublisher;
 
     @Autowired
     private SimpUserRegistry simpUserRegistry;
@@ -358,6 +368,39 @@ class ChatMessageFlowIntegrationTest {
         } finally {
             disconnect(senderSession);
             disconnect(receiverSession);
+            stompClient.stop();
+        }
+    }
+
+    @Test
+    void AI_연습_결과를_Redis를_통해_사용자에게_전달한다() throws Exception {
+        String accessToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
+        BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents = new LinkedBlockingQueue<>();
+        WebSocketStompClient stompClient = new WebSocketStompClient(
+            new StandardWebSocketClient());
+        stompClient.setMessageConverter(new JacksonJsonMessageConverter());
+        StompSession session = null;
+
+        try {
+            session = connectAndSubscribe(
+                stompClient, accessToken, new LinkedBlockingQueue<>());
+            subscribeToAiPracticeUpdates(session, receivedEvents);
+            assertTrue(awaitUserSubscription(
+                SENDER_USER_ID.toString(), AI_PRACTICE_DESTINATION));
+            AiPracticeChatUpdatedEvent event = new AiPracticeChatUpdatedEvent(
+                SENDER_USER_ID,
+                83041L,
+                83051L,
+                AiPracticeChatStatus.COMPLETED,
+                "AI 연습 응답",
+                null,
+                BASE_TIME);
+
+            aiPracticeRedisEventPublisher.publish(event);
+
+            assertThat(receivedEvents.poll(5, TimeUnit.SECONDS)).isEqualTo(event);
+        } finally {
+            disconnect(session);
             stompClient.stop();
         }
     }
@@ -603,6 +646,22 @@ class ChatMessageFlowIntegrationTest {
         });
     }
 
+    private void subscribeToAiPracticeUpdates(
+        StompSession session,
+        BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents) {
+        session.subscribe(AI_PRACTICE_DESTINATION, new StompFrameHandler() {
+            @Override
+            public java.lang.reflect.Type getPayloadType(StompHeaders stompHeaders) {
+                return AiPracticeChatUpdatedEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders stompHeaders, Object payload) {
+                receivedEvents.add((AiPracticeChatUpdatedEvent) payload);
+            }
+        });
+    }
+
     private HttpResponse<String> postMessage(
         String accessToken, UUID clientMessageId, String textContent) throws Exception {
         String body = "{\"clientMessageId\":\"" + clientMessageId
@@ -752,6 +811,8 @@ class ChatMessageFlowIntegrationTest {
             ChatMessageReadReceiptPublisher.class,
             ChatMessageReadReceiptRedisSubscriber.class,
             ChatMessageRedisSubscriber.class,
+            AiPracticeRedisEventPublisher.class,
+            AiPracticeRedisEventSubscriber.class,
             ChatRoomParticipantDisplayService.class,
             JpaFileRepositoryAdapter.class,
             ChatMessageRateLimiter.class,
