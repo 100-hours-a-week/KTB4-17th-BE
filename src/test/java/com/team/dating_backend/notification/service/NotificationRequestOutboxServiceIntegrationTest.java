@@ -26,8 +26,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -216,96 +214,39 @@ class NotificationRequestOutboxServiceIntegrationTest {
     }
 
     @Test
-    void ID로_다시_조회할_때도_대기_상태와_시도_가능_시각을_확인한다() {
-        List<Long> ids = transaction.execute(tx -> {
-            var due = save("DUE_BY_ID", NOW);
-            var future = save("FUTURE_BY_ID", NOW.plusNanos(1000));
-            var published = save("PUBLISHED_BY_ID", NOW);
-            var failed = save("FAILED_BY_ID", NOW);
-            jdbc.update("UPDATE notification_request_outbox SET status = 'PUBLISHED', published_at = ? WHERE id = ?",
-                NOW, published.getId());
-            jdbc.update("UPDATE notification_request_outbox SET status = 'FAILED' WHERE id = ?", failed.getId());
-            return List.of(due.getId(), future.getId(), published.getId(), failed.getId());
+    void 발행_후보는_DB_시각으로_미담당과_만료된_요청만_순서대로_조회한다() {
+        var now = jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", LocalDateTime.class);
+        var ids = transaction.execute(tx -> {
+            var due = save("AVAILABLE", now.minusMinutes(1));
+            var active = save("ACTIVE", now.minusMinutes(1));
+            var expired = save("EXPIRED", now.minusMinutes(1));
+            var future = save("FUTURE", now.plusHours(1));
+            var published = save("PUBLISHED", now.minusMinutes(1));
+            var failed = save("FAILED", now.minusMinutes(1));
+            jdbc.update(
+                "UPDATE notification_request_outbox SET processing_token = ?, processing_until = ? WHERE id = ?",
+                java.util.UUID.randomUUID().toString(), now.plusHours(1), active.getId());
+            jdbc.update(
+                "UPDATE notification_request_outbox SET processing_token = ?, processing_until = ? WHERE id = ?",
+                java.util.UUID.randomUUID().toString(), now.minusSeconds(1), expired.getId());
+            jdbc.update("UPDATE notification_request_outbox SET status = 'PUBLISHED' WHERE id = ?", published.getId());
+            jdbc.update("UPDATE notification_request_outbox SET status = 'FAILED', failure_count = 5 WHERE id = ?",
+                failed.getId());
+            return List.of(due.getId(), active.getId(), expired.getId(), future.getId(), published.getId(),
+                failed.getId());
         });
+        var before = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
 
-        assertThat(service.findDueById(ids.getFirst(), NOW.plusNanos(999)))
-            .hasValueSatisfying(outbox -> assertThat(outbox.getId()).isEqualTo(ids.getFirst()));
-        for (Long id : ids.subList(1, ids.size())) {
-            assertThat(service.findDueById(id, NOW.plusNanos(999))).isEmpty();
-        }
-        assertThat(service.findDueById(Long.MAX_VALUE, NOW)).isEmpty();
+        assertThat(service.findAvailable(1)).extracting(NotificationRequestOutbox::getId).containsExactly(ids.get(0));
+        assertThat(service.findAvailable(10)).extracting(NotificationRequestOutbox::getId).containsExactly(ids.get(0),
+            ids.get(2));
+        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id")).isEqualTo(before);
     }
 
     @ParameterizedTest
-    @NullSource
-    @ValueSource(longs = {0, -1})
-    void 개별_조회와_성공_기록은_유효하지_않은_ID를_거부한다(Long id) {
-        assertThatThrownBy(() -> service.findDueById(id, NOW)).isInstanceOf(NotificationBusinessException.class);
-        assertThatThrownBy(() -> service.markPublished(id, NOW)).isInstanceOf(NotificationBusinessException.class);
-    }
-
-    @Test
-    void 개별_조회와_성공_기록은_시각이_없으면_거부한다() {
-        assertThatThrownBy(() -> service.findDueById(1L, null)).isInstanceOf(NotificationBusinessException.class);
-        assertThatThrownBy(() -> service.markPublished(1L, null)).isInstanceOf(NotificationBusinessException.class);
-    }
-
-    @Test
-    void 성공_기록은_상태와_발행시각만_바꾸고_원본_요청과_실패_이력을_보존한다() {
-        Long id = transaction.execute(tx -> service.append(request("SUCCESS_UPDATE")).getId());
-        jdbc.update(
-            "UPDATE notification_request_outbox SET failure_count = 2, last_failure_type = 'TIMEOUT' WHERE id = ?", id);
-        var before = repository.findById(id).orElseThrow();
-
-        service.markPublished(id, NOW.plusNanos(999));
-
-        var after = repository.findById(id).orElseThrow();
-        assertThat(after.getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
-        assertThat(after.getPublishedAt()).isEqualTo(NOW);
-        assertThat(after.getSourceEventId()).isEqualTo(before.getSourceEventId());
-        assertThat(after.getRecipientUserId()).isEqualTo(before.getRecipientUserId());
-        assertThat(after.getType()).isEqualTo(before.getType());
-        assertThat(after.getPayload()).isEqualTo(before.getPayload());
-        assertThat(after.getCreatedAt()).isEqualTo(before.getCreatedAt());
-        assertThat(after.getNextAttemptAt()).isEqualTo(before.getNextAttemptAt());
-        assertThat(after.getFailureCount()).isEqualTo(2);
-        assertThat(after.getLastFailureType()).isEqualTo("TIMEOUT");
-        assertThat(service.restore(after)).isEqualTo(request("SUCCESS_UPDATE"));
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED"})
-    void 성공_기록은_대기_상태가_아닌_행을_덮어쓰지_않는다(NotificationOutboxStatus status) {
-        Long id = transaction.execute(tx -> service.append(request("TERMINAL_UPDATE")).getId());
-        jdbc.update("UPDATE notification_request_outbox SET status = ?, published_at = ? WHERE id = ?",
-            status.name(), status == NotificationOutboxStatus.PUBLISHED ? NOW : null, id);
-        var before = jdbc.queryForMap("SELECT * FROM notification_request_outbox WHERE id = ?", id);
-
-        assertThatThrownBy(() -> service.markPublished(id, NOW.plusSeconds(1)))
-            .isInstanceOf(NotificationBusinessException.class);
-
-        assertThat(jdbc.queryForMap("SELECT * FROM notification_request_outbox WHERE id = ?", id)).isEqualTo(before);
-    }
-
-    @Test
-    void 성공_기록은_존재하지_않는_행을_성공으로_취급하지_않는다() {
-        assertThatThrownBy(() -> service.markPublished(Long.MAX_VALUE, NOW))
-            .isInstanceOf(NotificationBusinessException.class);
-        assertThat(repository.count()).isZero();
-    }
-
-    @Test
-    void 성공_기록은_호출한_트랜잭션과_분리된_트랜잭션에서_커밋한다() {
-        Long id = transaction.execute(tx -> service.append(request("INDEPENDENT_UPDATE")).getId());
-
-        transaction.executeWithoutResult(tx -> {
-            service.markPublished(id, NOW);
-            tx.setRollbackOnly();
-        });
-
-        var stored = repository.findById(id).orElseThrow();
-        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
-        assertThat(stored.getPublishedAt()).isEqualTo(NOW);
+    @ValueSource(ints = {0, -1})
+    void 발행_후보의_조회_한도는_양수여야_한다(int limit) {
+        assertThatThrownBy(() -> service.findAvailable(limit)).isInstanceOf(NotificationBusinessException.class);
     }
 
     private NotificationRequestOutbox save(String sourceEventId, LocalDateTime dueAt) {

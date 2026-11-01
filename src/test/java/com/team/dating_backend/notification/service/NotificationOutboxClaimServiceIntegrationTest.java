@@ -13,7 +13,6 @@ import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.outbox.NotificationOutboxRetryPolicy;
-import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -54,8 +53,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
     {NotificationOutboxClaimService.class, NotificationOutboxFailureService.class,
-        NotificationOutboxRetryPolicy.class, NotificationRequestOutboxService.class,
-        NotificationRequestOutboxCodec.class, NotificationCreateRequestedValidator.class}
+        NotificationOutboxRetryPolicy.class}
 )
 @Testcontainers
 class NotificationOutboxClaimServiceIntegrationTest {
@@ -70,8 +68,6 @@ class NotificationOutboxClaimServiceIntegrationTest {
     private NotificationOutboxClaimService service;
     @Autowired
     private NotificationOutboxFailureService failures;
-    @Autowired
-    private NotificationRequestOutboxService legacy;
     @Autowired
     private NotificationRequestOutboxRepository repository;
     @Autowired
@@ -358,20 +354,6 @@ class NotificationOutboxClaimServiceIntegrationTest {
 
         assertThat(updated).isZero();
         assertThat(row()).isEqualTo(before);
-    }
-
-    @Test
-    void 기존_토큰_없는_결과_기록은_담당이_있는_행을_우회_변경하지_못한다() {
-        claim();
-        for (int step = 0; step < 2; step++) {
-            var before = row();
-            assertThatThrownBy(() -> legacy.markPublished(id, dbNow()))
-                .isInstanceOf(NotificationBusinessException.class);
-            assertThatThrownBy(() -> failures.recordFailure(id, FAILURE, dbNow()))
-                .isInstanceOf(NotificationBusinessException.class);
-            assertThat(row()).isEqualTo(before);
-            expire();
-        }
     }
 
     @Test

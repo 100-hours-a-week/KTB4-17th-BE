@@ -115,6 +115,8 @@ public record NotificationFailureContext(
             case OUTBOX_STATE_UPDATE_FAILED -> FailureStage.OUTBOX_STATE_UPDATE;
             case OUTBOX_RETRY_LIMIT_EXCEEDED -> FailureStage.OUTBOX_RETRY;
             case OUTBOX_LOOKUP_FAILED -> FailureStage.OUTBOX_LOOKUP;
+            case OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST -> FailureStage.OUTBOX_CLAIM;
+            case OUTBOX_RELEASE_FAILED -> FailureStage.OUTBOX_RELEASE;
             case OUTBOX_RELAY_FAILED -> FailureStage.OUTBOX_RELAY;
             case PUBLISH_RESULT_FAILED, PUBLISH_RESULT_TIMEOUT, PUBLISH_INTERRUPTED -> FailureStage.PUBLISH_RESULT;
             case RETRY_PUBLISH_FAILED -> FailureStage.RETRY_PUBLISH;
@@ -157,6 +159,8 @@ public record NotificationFailureContext(
 
     public enum FailureStage {
         OUTBOX_LOOKUP,
+        OUTBOX_CLAIM,
+        OUTBOX_RELEASE,
         OUTBOX_RELAY,
         OUTBOX_RESTORE,
         OUTBOX_STATE_UPDATE,

@@ -66,6 +66,14 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         """, nativeQuery = true)
     int releaseByToken(@Param("id") Long id, @Param("token") String token);
 
+    @Query(value = """
+        SELECT * FROM notification_request_outbox
+        WHERE status = 'PENDING' AND next_attempt_at <= UTC_TIMESTAMP(6)
+            AND (processing_token IS NULL OR processing_until <= UTC_TIMESTAMP(6))
+        ORDER BY next_attempt_at ASC, id ASC
+        """, nativeQuery = true)
+    List<NotificationRequestOutbox> findAvailable(Pageable pageable);
+
     @Query("""
         SELECT outbox FROM NotificationRequestOutbox outbox
         WHERE outbox.status = :status AND outbox.nextAttemptAt <= :now
@@ -76,33 +84,4 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         @Param("now") LocalDateTime now,
         Pageable pageable);
 
-    @Modifying
-    @Query("""
-        UPDATE NotificationRequestOutbox outbox
-        SET outbox.status = :publishedStatus, outbox.publishedAt = :publishedAt
-        WHERE outbox.id = :id AND outbox.status = :pendingStatus
-            AND outbox.processingToken IS NULL AND outbox.processingUntil IS NULL
-        """)
-    int markPublished(
-        @Param("id") Long id,
-        @Param("publishedAt") LocalDateTime publishedAt,
-        @Param("pendingStatus") NotificationOutboxStatus pendingStatus,
-        @Param("publishedStatus") NotificationOutboxStatus publishedStatus);
-
-    @Modifying
-    @Query("""
-        UPDATE NotificationRequestOutbox outbox
-        SET outbox.failureCount = :failureCount, outbox.lastFailureType = :failureType,
-            outbox.nextAttemptAt = :nextAttemptAt, outbox.status = :status
-        WHERE outbox.id = :id AND outbox.status = :pendingStatus AND outbox.failureCount = :previousCount
-            AND outbox.processingToken IS NULL AND outbox.processingUntil IS NULL
-        """)
-    int recordFailure(
-        @Param("id") Long id,
-        @Param("previousCount") int previousCount,
-        @Param("failureCount") int failureCount,
-        @Param("failureType") String failureType,
-        @Param("nextAttemptAt") LocalDateTime nextAttemptAt,
-        @Param("pendingStatus") NotificationOutboxStatus pendingStatus,
-        @Param("status") NotificationOutboxStatus status);
 }
