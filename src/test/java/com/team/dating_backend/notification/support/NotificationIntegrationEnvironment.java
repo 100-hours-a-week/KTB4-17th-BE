@@ -203,12 +203,15 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             ? bootstrap
             : kafkaFaultProxy.bootstrapServers(Channel.CONSUMER));
         settings.putAll(settingsOverrides);
+        boolean secondProducerUsesProxy = Boolean.parseBoolean(settings.remove("SECOND_PRODUCER_USES_PROXY"));
         first.start(settings);
         second = resource(new NotificationBackendProcess("b", directory));
         settings.put("PROCESS", "b");
         settings.put("DELIVERY_PREFIX", runId + "-sse-b");
         settings.put("CREATION_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
-        settings.put("PRODUCER_BOOTSTRAP_SERVERS", bootstrap);
+        settings.put("PRODUCER_BOOTSTRAP_SERVERS", secondProducerUsesProxy && kafkaFaultProxy != null
+            ? kafkaFaultProxy.bootstrapServers(Channel.PRODUCER)
+            : bootstrap);
         settings.put("CONSUMER_BOOTSTRAP_SERVERS", bootstrap);
         settings.put("ALERT_ENABLED", "false");
         settings.remove("HTTPS_PROXY_PORT");
