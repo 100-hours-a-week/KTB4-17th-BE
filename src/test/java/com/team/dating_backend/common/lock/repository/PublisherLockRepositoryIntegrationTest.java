@@ -54,14 +54,14 @@ class PublisherLockRepositoryIntegrationTest {
     }
 
     @Test
-    void 락을_획득한_서버만_락을_연장할_수_있다() {
-        assertThat(repository.tryAcquireOrExtend(
+    void 락을_획득한_서버만_락을_갱신할_수_있다() {
+        assertThat(repository.tryAcquire(
             LOCK_NAME, FIRST_OWNER, LOCK_TTL_MICROS)).isEqualTo(1);
         PublisherLock acquired = lock();
 
-        assertThat(repository.tryAcquireOrExtend(
+        assertThat(repository.tryAcquire(
             LOCK_NAME, SECOND_OWNER, LOCK_TTL_MICROS)).isZero();
-        assertThat(repository.tryAcquireOrExtend(
+        assertThat(repository.tryRenew(
             LOCK_NAME, FIRST_OWNER, LOCK_TTL_MICROS)).isEqualTo(1);
         PublisherLock extended = lock();
 
@@ -73,10 +73,12 @@ class PublisherLockRepositoryIntegrationTest {
 
     @Test
     void 락이_만료되면_다른_서버가_획득할_수_있다() {
-        repository.tryAcquireOrExtend(LOCK_NAME, FIRST_OWNER, LOCK_TTL_MICROS);
+        repository.tryAcquire(LOCK_NAME, FIRST_OWNER, LOCK_TTL_MICROS);
         expireLock();
 
-        assertThat(repository.tryAcquireOrExtend(
+        assertThat(repository.tryRenew(
+            LOCK_NAME, FIRST_OWNER, LOCK_TTL_MICROS)).isZero();
+        assertThat(repository.tryAcquire(
             LOCK_NAME, SECOND_OWNER, LOCK_TTL_MICROS)).isEqualTo(1);
 
         PublisherLock lock = lock();
@@ -105,7 +107,7 @@ class PublisherLockRepositoryIntegrationTest {
 
     private int acquireAfter(CountDownLatch start, String ownerId) throws InterruptedException {
         start.await();
-        return repository.tryAcquireOrExtend(LOCK_NAME, ownerId, LOCK_TTL_MICROS);
+        return repository.tryAcquire(LOCK_NAME, ownerId, LOCK_TTL_MICROS);
     }
 
     private PublisherLock lock() {
