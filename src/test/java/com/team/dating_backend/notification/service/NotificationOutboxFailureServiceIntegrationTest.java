@@ -19,7 +19,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -33,7 +32,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessException;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -46,14 +46,12 @@ import org.testcontainers.mysql.MySQLContainer;
 @DataJpaTest(properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate"})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
-    {NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
+    {NotificationOutboxClaimService.class, NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
         NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
         NotificationCreateRequestedValidator.class}
 )
 @Testcontainers
 class NotificationOutboxFailureServiceIntegrationTest {
-
-    private static final LocalDateTime FAILED_AT = LocalDateTime.of(2026, 10, 30, 12, 0, 0, 123456789);
 
     @Container
     @ServiceConnection
@@ -61,6 +59,8 @@ class NotificationOutboxFailureServiceIntegrationTest {
 
     @Autowired
     private NotificationOutboxFailureService service;
+    @Autowired
+    private NotificationOutboxClaimService claims;
     @Autowired
     private NotificationRequestOutboxService outboxService;
     @Autowired
@@ -101,48 +101,48 @@ class NotificationOutboxFailureServiceIntegrationTest {
     }
 
     @Test
-    void 첫_실패는_원본을_보존하며_횟수와_원인과_다음_시각만_기록한다() {
+    void 첫_실패는_원본을_보존하며_DB_시각으로_재시도를_기록한다() {
+        String token = claim();
         var before = new LinkedHashMap<>(row());
+        var started = dbNow();
 
-        var result = service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, FAILED_AT);
+        var result = service.recordFailure(id, token, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT).orElseThrow();
 
+        var stored = repository.findById(id).orElseThrow();
         assertThat(result.failureCount()).isEqualTo(1);
         assertThat(result.exhausted()).isFalse();
-        var stored = repository.findById(id).orElseThrow();
-        LocalDateTime next = FAILED_AT.plusSeconds(1).truncatedTo(ChronoUnit.MICROS);
         assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PENDING);
-        assertThat(stored.getFailureCount()).isEqualTo(1);
+        assertThat(stored.getNextAttemptAt()).isBetween(started.plusSeconds(1), dbNow().plusSeconds(1));
         assertThat(stored.getLastFailureType()).isEqualTo("PUBLISH_RESULT_TIMEOUT");
-        assertThat(stored.getNextAttemptAt()).isEqualTo(next);
         assertThat(outboxService.restore(stored)).isEqualTo(request);
-        before.remove("failure_count");
-        before.remove("last_failure_type");
-        before.remove("next_attempt_at");
+        for (String field : java.util.List.of("failure_count", "last_failure_type", "next_attempt_at",
+            "processing_token", "processing_until")) {
+            before.remove(field);
+        }
         assertThat(row()).containsAllEntriesOf(before);
-        assertThat(outboxService.findDue(next.minusNanos(1), 10)).isEmpty();
-        assertThat(outboxService.findDue(next, 10)).extracting(outbox -> outbox.getId()).containsExactly(id);
+        assertThat(outboxService.findAvailable(10)).isEmpty();
     }
 
     @Test
-    void 실패_한도를_소진한_요청만_FAILED로_전환하고_추가_조회에서_제외한다() {
+    void 실패_한도를_소진한_요청만_FAILED로_전환하고_추가_기록을_거절한다() {
+        String lastToken = null;
         for (int count = 1; count <= 5; count++) {
-            var result = service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_FAILED, FAILED_AT);
+            lastToken = claim();
+            var started = dbNow();
+            var result = service.recordFailure(id, lastToken, NotificationFailureCode.PUBLISH_RESULT_FAILED)
+                .orElseThrow();
             var stored = repository.findById(id).orElseThrow();
             assertThat(result.failureCount()).isEqualTo(count);
             assertThat(result.exhausted()).isEqualTo(count == 5);
             assertThat(stored.getStatus())
                 .isEqualTo(count == 5 ? NotificationOutboxStatus.FAILED : NotificationOutboxStatus.PENDING);
-            assertThat(stored.getNextAttemptAt())
-                .isEqualTo((count == 5 ? FAILED_AT : FAILED_AT.plusSeconds(1L << (count - 1)))
-                    .truncatedTo(ChronoUnit.MICROS));
+            long seconds = count == 5 ? 0 : 1L << (count - 1);
+            assertThat(stored.getNextAttemptAt()).isBetween(started.plusSeconds(seconds), dbNow().plusSeconds(seconds));
             assertThat(outboxService.restore(stored)).isEqualTo(request);
         }
-        assertThat(outboxService.findDue(FAILED_AT.plusYears(1), 10)).isEmpty();
         var before = row();
-
-        assertThatThrownBy(() -> service.recordFailure(id, NotificationFailureCode.PUBLISH_CALL_FAILED, FAILED_AT))
-            .isInstanceOf(NotificationBusinessException.class);
-
+        assertThat(outboxService.findAvailable(10)).isEmpty();
+        assertThat(service.recordFailure(id, lastToken, NotificationFailureCode.PUBLISH_CALL_FAILED)).isEmpty();
         assertThat(row()).isEqualTo(before);
     }
 
@@ -150,23 +150,18 @@ class NotificationOutboxFailureServiceIntegrationTest {
     @EnumSource(
         value = NotificationFailureCode.class, names = {"OUTBOX_RESTORE_FAILED", "OUTBOX_PUBLISH_REQUIRES_ATTENTION"}
     )
-    void 확인이_필요한_오류도_동일_한도까지_기록한_뒤_종료한다(NotificationFailureCode code) {
+    void 확인이_필요한_오류도_동일_한도까지_기록한다(NotificationFailureCode code) {
         properties.setMaxFailures(2);
-
-        assertThat(service.recordFailure(id, code, FAILED_AT).exhausted()).isFalse();
-        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.PENDING);
-        assertThat(service.recordFailure(id, code, FAILED_AT).exhausted()).isTrue();
+        assertThat(service.recordFailure(id, claim(), code).orElseThrow().exhausted()).isFalse();
+        assertThat(service.recordFailure(id, claim(), code).orElseThrow().exhausted()).isTrue();
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.FAILED);
     }
 
     @Test
     void 성공_전환은_누적_실패_이력과_원본을_보존한다() {
-        service.recordFailure(id, NotificationFailureCode.PUBLISH_CALL_FAILED, FAILED_AT);
-
-        outboxService.markPublished(id, FAILED_AT.plusSeconds(1));
-
+        service.recordFailure(id, claim(), NotificationFailureCode.PUBLISH_CALL_FAILED).orElseThrow();
+        assertThat(claims.markPublished(id, claim())).isTrue();
         var stored = repository.findById(id).orElseThrow();
-        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
         assertThat(stored.getFailureCount()).isEqualTo(1);
         assertThat(stored.getLastFailureType()).isEqualTo("PUBLISH_CALL_FAILED");
         assertThat(outboxService.restore(stored)).isEqualTo(request);
@@ -174,47 +169,34 @@ class NotificationOutboxFailureServiceIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED"})
-    void 대기_상태가_아닌_행은_실패_기록으로_덮어쓰지_않는다(NotificationOutboxStatus status) {
+    void 종료된_행은_실패_기록으로_덮어쓰지_않는다(NotificationOutboxStatus status) {
         jdbc.update("UPDATE notification_request_outbox SET status = ? WHERE id = ?", status.name(), id);
         var before = row();
-
-        assertThatThrownBy(() -> service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, FAILED_AT))
-            .isInstanceOf(NotificationBusinessException.class);
-
-        assertThat(row()).isEqualTo(before);
-    }
-
-    @Test
-    void 이전_실패_횟수가_다르면_조건부_갱신은_아무것도_변경하지_않는다() {
-        service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, FAILED_AT);
-        var before = row();
-
-        int updated = transaction.execute(tx -> repository.recordFailure(id, 0, 1, "PUBLISH_CALL_FAILED", FAILED_AT,
-            NotificationOutboxStatus.PENDING, NotificationOutboxStatus.PENDING));
-
-        assertThat(updated).isZero();
+        assertThat(
+            service.recordFailure(id, UUID.randomUUID().toString(), NotificationFailureCode.PUBLISH_RESULT_TIMEOUT))
+            .isEmpty();
         assertThat(row()).isEqualTo(before);
     }
 
     @Test
     void 실패_기록은_별도_트랜잭션에서_커밋한다() {
+        String token = claim();
         transaction.executeWithoutResult(tx -> {
-            service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, FAILED_AT);
+            assertThat(service.recordFailure(id, token, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT)).isPresent();
             tx.setRollbackOnly();
         });
-
         assertThat(repository.findById(id).orElseThrow().getFailureCount()).isEqualTo(1);
     }
 
     @Test
-    void 실제_DB_갱신_실패시_실패_횟수까지_함께_롤백한다() {
+    void 실제_DB_오류에서는_담당과_실패_횟수를_함께_보존한다() {
+        String token = claim();
         var before = row();
         jdbc.execute(
             "ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_retry_count CHECK (failure_count = 0)");
         try {
-            assertThatThrownBy(
-                () -> service.recordFailure(id, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, FAILED_AT))
-                .isInstanceOf(DataIntegrityViolationException.class).hasMessageContaining("test_reject_retry_count");
+            assertThatThrownBy(() -> service.recordFailure(id, token, NotificationFailureCode.PUBLISH_RESULT_TIMEOUT))
+                .isInstanceOf(DataAccessException.class).hasStackTraceContaining("test_reject_retry_count");
             assertThat(row()).isEqualTo(before);
         } finally {
             jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_retry_count");
@@ -224,35 +206,44 @@ class NotificationOutboxFailureServiceIntegrationTest {
     @ParameterizedTest
     @NullSource
     @ValueSource(longs = {0, -1})
-    void 유효하지_않은_ID를_거부한다(Long invalidId) {
-        assertThatThrownBy(
-            () -> service.recordFailure(invalidId, NotificationFailureCode.PUBLISH_CALL_FAILED, FAILED_AT))
+    void 잘못된_ID를_거부한다(Long invalidId) {
+        assertThatThrownBy(() -> service.recordFailure(invalidId, UUID.randomUUID().toString(),
+            NotificationFailureCode.PUBLISH_CALL_FAILED))
             .isInstanceOf(NotificationBusinessException.class);
     }
 
     @ParameterizedTest
     @EnumSource(
-        value = NotificationFailureCode.class,
-        names = {"PUBLISH_INTERRUPTED", "OUTBOX_STATE_UPDATE_FAILED", "OUTBOX_RETRY_LIMIT_EXCEEDED"}
+        value = NotificationFailureCode.class, names = {"PUBLISH_INTERRUPTED", "OUTBOX_STATE_UPDATE_FAILED",
+            "OUTBOX_RETRY_LIMIT_EXCEEDED", "OUTBOX_CLAIM_LOST", "OUTBOX_RELEASE_FAILED"}
     )
-    void 중단과_DB_기록_오류와_소진_보고를_발행_실패로_중복_계산하지_않는다(NotificationFailureCode code) {
+    void 중단과_담당_상실과_DB_오류는_발행_실패로_계산하지_않는다(NotificationFailureCode code) {
+        String token = claim();
         var before = row();
-
-        assertThatThrownBy(() -> service.recordFailure(id, code, FAILED_AT))
+        assertThatThrownBy(() -> service.recordFailure(id, token, code))
             .isInstanceOf(NotificationBusinessException.class);
-
         assertThat(row()).isEqualTo(before);
     }
 
     @Test
-    void 원인과_시각이_없거나_행이_없으면_거부한다() {
-        assertThatThrownBy(() -> service.recordFailure(id, null, FAILED_AT))
+    void 원인이나_토큰이_없으면_거부하고_없는_행은_빈_결과를_반환한다() {
+        assertThatThrownBy(() -> service.recordFailure(id, UUID.randomUUID().toString(), null))
             .isInstanceOf(NotificationBusinessException.class);
-        assertThatThrownBy(() -> service.recordFailure(id, NotificationFailureCode.PUBLISH_CALL_FAILED, null))
+        assertThatThrownBy(() -> service.recordFailure(id, null, NotificationFailureCode.PUBLISH_CALL_FAILED))
             .isInstanceOf(NotificationBusinessException.class);
-        assertThatThrownBy(
-            () -> service.recordFailure(Long.MAX_VALUE, NotificationFailureCode.PUBLISH_CALL_FAILED, FAILED_AT))
-            .isInstanceOf(NotificationBusinessException.class);
+        assertThat(service.recordFailure(Long.MAX_VALUE, UUID.randomUUID().toString(),
+            NotificationFailureCode.PUBLISH_CALL_FAILED)).isEmpty();
+    }
+
+    private String claim() {
+        jdbc.update(
+            "UPDATE notification_request_outbox SET next_attempt_at = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE id = ?",
+            id);
+        return claims.tryClaim(id).orElseThrow().getProcessingToken();
+    }
+
+    private LocalDateTime dbNow() {
+        return jdbc.queryForObject("SELECT UTC_TIMESTAMP(6)", LocalDateTime.class);
     }
 
     private Map<String, Object> row() {

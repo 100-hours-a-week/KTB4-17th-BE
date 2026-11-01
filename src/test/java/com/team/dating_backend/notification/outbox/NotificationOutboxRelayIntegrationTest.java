@@ -11,6 +11,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.alert.NotificationFailureReporter;
@@ -19,6 +20,7 @@ import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
+import com.team.dating_backend.notification.service.NotificationOutboxClaimService;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.config.NotificationPublishProperties;
@@ -34,6 +36,13 @@ import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import com.team.dating_backend.notification.config.NotificationOutboxRelayProperties;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -95,7 +104,8 @@ import tools.jackson.databind.json.JsonMapper;
 @Import(
     {NotificationOutboxRelay.class, NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
         NotificationCreateRequestedValidator.class, NotificationRequestProducer.class,
-        NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
+        NotificationOutboxClaimService.class, NotificationOutboxFailureService.class,
+        NotificationOutboxRetryPolicy.class,
         NotificationOutboxFailureClassifier.class,
         NotificationOutboxRelayIntegrationTest.KafkaConfiguration.class}
 )
@@ -114,6 +124,10 @@ class NotificationOutboxRelayIntegrationTest {
 
     @Autowired
     private NotificationOutboxRelay relay;
+    @Autowired
+    private NotificationOutboxClaimService claims;
+    @Autowired
+    private NotificationOutboxFailureService failures;
     @Autowired
     private NotificationRequestOutboxService outboxService;
     @Autowired
@@ -180,9 +194,10 @@ class NotificationOutboxRelayIntegrationTest {
             .extracting(outbox -> outbox.getId()).contains(id);
         doAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            assertThat(row(id)).isEqualTo(before);
+            assertThat(row(id).get("processing_token")).isNotNull();
+            assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(2);
             Object result = invocation.callRealMethod();
-            assertThat(row(id)).isEqualTo(before);
+            assertThat(row(id).get("processing_token")).isNotNull();
             return result;
         }).when(producer).publishAndAwait(request);
         LocalDateTime startedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
@@ -276,7 +291,7 @@ class NotificationOutboxRelayIntegrationTest {
             assertRecords(request, 1);
             verify(failureReporter)
                 .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
-                    && context.kafkaDetails().attempt() == null), eq(true));
+                    && context.kafkaDetails().attempt() == null), eq(false));
         } finally {
             jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_outbox_published");
         }
@@ -393,6 +408,250 @@ class NotificationOutboxRelayIntegrationTest {
                 && context.kafkaDetails().attempt() == null), eq(false));
     }
 
+    @Test
+    void 독립된_두_Job은_처리_직전에만_확보하고_유효한_담당의_중복_발행을_막는다() throws Exception {
+        var first = request();
+        var second = request();
+        Long firstId = save(first);
+        Long secondId = save(second);
+        var entered = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            entered.countDown();
+            if (!finish.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+            }
+            return invocation.callRealMethod();
+        }).when(producer).publishAndAwait(first);
+        var firstRelay = independentRelay();
+        var secondRelay = independentRelay();
+        var firstJob = independentJob(firstRelay);
+        var secondJob = independentJob(secondRelay);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var running = executor.submit(firstJob::publishDueRequests);
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(row(firstId).get("processing_token")).isNotNull();
+                assertThat(row(secondId).get("processing_token")).isNull();
+                assertThat(secondRelay.publish(firstId)).isFalse();
+                secondJob.publishDueRequests();
+                assertThat(outboxes.findById(secondId).orElseThrow().getStatus())
+                    .isEqualTo(NotificationOutboxStatus.PUBLISHED);
+            } finally {
+                finish.countDown();
+            }
+            running.get(10, TimeUnit.SECONDS);
+        }
+        assertThat(outboxes.findById(firstId).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
+        verify(producer).publishAndAwait(first);
+        verify(producer).publishAndAwait(second);
+        assertRecords(List.of(first, second));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"success", "timeout"})
+    void 만료_후_재확보한_서버의_성공을_이전_서버의_늦은_결과가_덮어쓰지_못한다(String outcome) throws Exception {
+        var request = request();
+        Long id = save(request);
+        jdbc.update("UPDATE notification_request_outbox SET failure_count = 4 WHERE id = ?", id);
+        var entered = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                if (!finish.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+                }
+                if (outcome.equals("timeout")) {
+                    throw new TimeoutException();
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(producer).publishAndAwait(request);
+        var first = independentRelay();
+        var second = independentRelay();
+        Map<String, Object> completed;
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var running = executor.submit(() -> outcome(first, id));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                String old = (String) row(id).get("processing_token");
+                expire(id);
+                assertThat(second.publish(id)).isTrue();
+                completed = row(id);
+                assertThat(completed.get("processing_token")).isNull();
+                assertThat(old).isNotNull();
+            } finally {
+                finish.countDown();
+            }
+            assertThat(running.get(10, TimeUnit.SECONDS)).isEqualTo(NotificationErrorCode.OUTBOX_CLAIM_LOST);
+        }
+        assertThat(row(id)).isEqualTo(completed);
+        assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(4);
+        verify(failureReporter)
+            .report(argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_CLAIM_LOST), eq(false));
+        verify(failureReporter, never()).report(any(), eq(true));
+        assertRecords(request, outcome.equals("success") ? 2 : 1);
+    }
+
+    @Test
+    void 새_담당이_FAILED로_기록한_결과를_이전_담당의_늦은_성공이_덮어쓰지_못한다() throws Exception {
+        var request = request();
+        Long id = save(request);
+        retryProperties.setMaxFailures(1);
+        var entered = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                if (!finish.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+                }
+                return invocation.callRealMethod();
+            }
+            throw new TimeoutException();
+        }).when(producer).publishAndAwait(request);
+        var first = independentRelay();
+        var second = independentRelay();
+        Map<String, Object> failed;
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var running = executor.submit(() -> outcome(first, id));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                expire(id);
+                assertThat(outcome(second, id)).isEqualTo(NotificationErrorCode.OUTBOX_PUBLISH_FAILED);
+                failed = row(id);
+            } finally {
+                finish.countDown();
+            }
+            assertThat(running.get(10, TimeUnit.SECONDS)).isEqualTo(NotificationErrorCode.OUTBOX_CLAIM_LOST);
+        }
+        assertThat(row(id)).isEqualTo(failed);
+        assertThat(outboxes.findById(id).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.FAILED);
+        assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(1);
+        verify(failureReporter).report(
+            argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED), eq(true));
+        assertRecords(request, 1);
+    }
+
+    @Test
+    void 해제_DB_오류로_담당이_남아도_만료_후_다른_서버가_실패횟수_증가없이_복구한다() throws Exception {
+        var request = request();
+        Long id = save(request);
+        jdbc.update("UPDATE notification_request_outbox SET failure_count = 4 WHERE id = ?", id);
+        doAnswer(invocation -> {
+            jdbc.execute(
+                "ALTER TABLE notification_request_outbox ADD CONSTRAINT test_keep_processing_token CHECK (processing_token IS NOT NULL)");
+            throw new InterruptedException();
+        }).when(producer).publishAndAwait(request);
+        try {
+            assertThat(outcome(independentRelay(), id)).isEqualTo(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            Thread.interrupted();
+            assertThat(row(id).get("processing_token")).isNotNull();
+            assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(4);
+            verify(failureReporter).report(
+                argThat(context -> context.errorCode() == NotificationFailureCode.OUTBOX_RELEASE_FAILED), eq(false));
+        } finally {
+            Thread.interrupted();
+            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_keep_processing_token");
+        }
+        doCallRealMethod().when(producer).publishAndAwait(request);
+        var second = independentRelay();
+        assertThat(second.publish(id)).isFalse();
+        expire(id);
+        independentJob(second).publishDueRequests();
+        var stored = outboxes.findById(id).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
+        assertThat(stored.getFailureCount()).isEqualTo(4);
+        assertThat(stored.getProcessingToken()).isNull();
+        assertRecords(request, 1);
+    }
+
+    @Test
+    void 이전_실행의_중단_정리가_새_실행의_유효한_담당을_해제하지_못한다() throws Exception {
+        var request = request();
+        Long id = save(request);
+        jdbc.update("UPDATE notification_request_outbox SET failure_count = 4 WHERE id = ?", id);
+        var firstEntered = new CountDownLatch(1);
+        var secondEntered = new CountDownLatch(1);
+        var finishFirst = new CountDownLatch(1);
+        var finishSecond = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                firstEntered.countDown();
+                if (!finishFirst.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+                }
+                throw new InterruptedException();
+            }
+            secondEntered.countDown();
+            if (!finishSecond.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+            }
+            return invocation.callRealMethod();
+        }).when(producer).publishAndAwait(request);
+        var first = independentRelay();
+        var second = independentRelay();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var old = executor.submit(() -> {
+                var result = outcome(first, id);
+                assertThat(Thread.currentThread().isInterrupted()).isTrue();
+                return result;
+            });
+            try {
+                assertThat(firstEntered.await(5, TimeUnit.SECONDS)).isTrue();
+                String oldToken = (String) row(id).get("processing_token");
+                expire(id);
+                var current = executor.submit(() -> second.publish(id));
+                assertThat(secondEntered.await(5, TimeUnit.SECONDS)).isTrue();
+                var claimed = row(id);
+                assertThat(claimed.get("processing_token")).isNotEqualTo(oldToken);
+                finishFirst.countDown();
+                assertThat(old.get(5, TimeUnit.SECONDS)).isEqualTo(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED);
+                assertThat(row(id)).isEqualTo(claimed);
+                finishSecond.countDown();
+                assertThat(current.get(10, TimeUnit.SECONDS)).isTrue();
+            } finally {
+                finishFirst.countDown();
+                finishSecond.countDown();
+            }
+        }
+        assertThat(outboxes.findById(id).orElseThrow().getFailureCount()).isEqualTo(4);
+        verify(failureReporter, never()).report(any(), eq(true));
+        assertRecords(request, 1);
+    }
+
+    private NotificationOutboxRelay independentRelay() {
+        return new NotificationOutboxRelay(outboxService, claims, producer, failures,
+            new NotificationOutboxFailureClassifier(), failureReporter);
+    }
+
+    private NotificationOutboxPublishJob independentJob(NotificationOutboxRelay instance) {
+        var properties = new NotificationOutboxRelayProperties();
+        properties.setEnabled(true);
+        return new NotificationOutboxPublishJob(outboxService, instance, properties, failureReporter);
+    }
+
+    private NotificationErrorCode outcome(NotificationOutboxRelay instance, Long id) {
+        try {
+            instance.publish(id);
+            return null;
+        } catch (NotificationBusinessException failure) {
+            return (NotificationErrorCode) failure.getErrorCode();
+        }
+    }
+
+    private void expire(Long id) {
+        jdbc.update(
+            "UPDATE notification_request_outbox SET processing_until = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE id = ?",
+            id);
+    }
+
     private Long save(NotificationCreateRequested request) {
         return transaction.execute(tx -> outboxService.append(request).getId());
     }
@@ -412,6 +671,11 @@ class NotificationOutboxRelayIntegrationTest {
     }
 
     private void assertRecords(NotificationCreateRequested request, int expectedCount) {
+        assertRecords(java.util.Collections.nCopies(expectedCount, request));
+    }
+
+    private void assertRecords(List<NotificationCreateRequested> expected) {
+        int expectedCount = expected.size();
         Map<String, Object> properties = Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
             ConsumerConfig.GROUP_ID_CONFIG, "outbox-relay-" + UUID.randomUUID(),
@@ -425,12 +689,14 @@ class NotificationOutboxRelayIntegrationTest {
             consumer.seekToBeginning(partitions);
             var records = KafkaTestUtils.getRecords(consumer, Duration.ofSeconds(20), expectedCount);
             assertThat(records.count()).isEqualTo(expectedCount);
+            var actual = new ArrayList<NotificationCreateRequested>();
             for (var record : records) {
                 assertThat(record.topic()).isEqualTo(topic);
                 assertThat(record.key()).isEqualTo(userId);
                 assertThat(record.headers().lastHeader("__TypeId__")).isNull();
-                assertThat(jsonMapper.readValue(record.value(), NotificationCreateRequested.class)).isEqualTo(request);
+                actual.add(jsonMapper.readValue(record.value(), NotificationCreateRequested.class));
             }
+            assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
             assertThat(consumer.endOffsets(partitions, Duration.ofSeconds(20)).values().stream()
                 .mapToLong(Long::longValue).sum()).isEqualTo(expectedCount);
         }

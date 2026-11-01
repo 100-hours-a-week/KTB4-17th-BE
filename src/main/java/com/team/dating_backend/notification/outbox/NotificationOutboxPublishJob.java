@@ -10,9 +10,9 @@ import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationRequestOutboxService;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,6 +30,7 @@ public class NotificationOutboxPublishJob {
     private final NotificationOutboxRelay relay;
     private final NotificationOutboxRelayProperties properties;
     private final NotificationFailureReporter failureReporter;
+    private final AtomicBoolean running = new AtomicBoolean();
 
     @Transactional(propagation = Propagation.NEVER)
     @Scheduled(
@@ -41,21 +42,33 @@ public class NotificationOutboxPublishJob {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
-        if (!properties.isEnabled() || Thread.currentThread().isInterrupted()) {
+        if (!properties.isEnabled() || Thread.currentThread().isInterrupted() || !running.compareAndSet(false, true)) {
             return;
         }
+        try {
+            publishBatch();
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private void publishBatch() {
         List<NotificationRequestOutbox> candidates;
         try {
-            candidates = outboxService.findDue(LocalDateTime.now(ZoneOffset.UTC), properties.getBatchSize());
+            candidates = outboxService.findAvailable(properties.getBatchSize());
         } catch (RuntimeException failure) {
             if (!Thread.currentThread().isInterrupted()) {
                 reportFailure(NotificationFailureCode.OUTBOX_LOOKUP_FAILED, null, failure);
             }
             return;
         }
+        var submitted = new HashSet<Long>();
         for (var outbox : candidates) {
             if (Thread.currentThread().isInterrupted()) {
                 return;
+            }
+            if (!submitted.add(outbox.getId())) {
+                continue;
             }
             try {
                 relay.publish(outbox.getId());
@@ -77,7 +90,12 @@ public class NotificationOutboxPublishJob {
             var code = businessFailure.getErrorCode();
             if (code == NotificationErrorCode.OUTBOX_RESTORE_FAILED
                 || code == NotificationErrorCode.OUTBOX_PUBLISH_FAILED
-                || code == NotificationErrorCode.OUTBOX_STATE_UPDATE_FAILED) {
+                || code == NotificationErrorCode.OUTBOX_STATE_UPDATE_FAILED
+                || code == NotificationErrorCode.OUTBOX_CLAIM_LOST) {
+                return;
+            }
+            if (code == NotificationErrorCode.OUTBOX_CLAIM_FAILED) {
+                reportFailure(NotificationFailureCode.OUTBOX_CLAIM_FAILED, outbox, failure);
                 return;
             }
             if (code == NotificationErrorCode.OUTBOX_LOOKUP_FAILED) {
@@ -94,7 +112,7 @@ public class NotificationOutboxPublishJob {
             var context = outbox == null
                 ? NotificationFailureContext.from(code, null, failure, Instant.now())
                 : NotificationFailureContext.fromOutbox(code, outbox, null, failure, Instant.now(), null, null);
-            failureReporter.report(context);
+            failureReporter.report(context, false);
         } catch (RuntimeException reportingFailure) {
             if (failure != reportingFailure) {
                 failure.addSuppressed(reportingFailure);

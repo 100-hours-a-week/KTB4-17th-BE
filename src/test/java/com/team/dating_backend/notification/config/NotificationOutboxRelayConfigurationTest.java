@@ -1,8 +1,6 @@
 package com.team.dating_backend.notification.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -72,7 +70,7 @@ class NotificationOutboxRelayConfigurationTest {
         var started = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var thread = new AtomicReference<String>();
-        given(outboxService.findDue(any(), eq(2))).willReturn(List.of(outbox(1L)));
+        given(outboxService.findAvailable(2)).willReturn(List.of(outbox(1L)));
         doAnswer(invocation -> {
             thread.set(Thread.currentThread().getName());
             started.countDown();
@@ -102,7 +100,7 @@ class NotificationOutboxRelayConfigurationTest {
         var dependenciesOpen = new AtomicBoolean();
         var kafka = new AtomicReference<CloseProbe>();
         var alert = new AtomicReference<CloseProbe>();
-        given(outboxService.findDue(any(), eq(2))).willReturn(List.of(outbox(1L), outbox(2L)));
+        given(outboxService.findAvailable(2)).willReturn(List.of(outbox(1L), outbox(2L)));
         doAnswer(invocation -> {
             started.countDown();
             try {

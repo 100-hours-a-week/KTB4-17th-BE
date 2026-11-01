@@ -25,6 +25,7 @@ import com.team.dating_backend.notification.kafka.NotificationRequestProducer;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
+import com.team.dating_backend.notification.service.NotificationOutboxClaimService;
 import com.team.dating_backend.notification.service.NotificationRequestOutboxService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
@@ -97,7 +98,8 @@ import tools.jackson.databind.json.JsonMapper;
     {NotificationOutboxPublishJob.class, NotificationOutboxRelayConfiguration.class,
         NotificationOutboxRelay.class, NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
         NotificationCreateRequestedValidator.class, NotificationRequestProducer.class,
-        NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
+        NotificationOutboxClaimService.class, NotificationOutboxFailureService.class,
+        NotificationOutboxRetryPolicy.class,
         NotificationOutboxFailureClassifier.class, NotificationOutboxPublishJobIntegrationTest.KafkaConfiguration.class}
 )
 @Testcontainers

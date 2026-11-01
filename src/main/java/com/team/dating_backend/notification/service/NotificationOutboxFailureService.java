@@ -6,8 +6,6 @@ import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.outbox.NotificationOutboxRetryPolicy;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -57,33 +55,6 @@ public class NotificationOutboxFailureService {
             failureType.name(), delayMicros,
             exhausted ? NotificationOutboxStatus.FAILED.name() : NotificationOutboxStatus.PENDING.name());
         return updated == 1 ? Optional.of(new FailureResult(failures, exhausted)) : Optional.empty();
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public FailureResult recordFailure(Long id, NotificationFailureCode failureType, LocalDateTime failedAt) {
-        if (id == null || id <= 0 || failedAt == null || failureType == null
-            || !RECORDABLE_FAILURES.contains(failureType)) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-        }
-        var outbox = repository.findById(id)
-            .orElseThrow(() -> new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR));
-        if (outbox.getStatus() != NotificationOutboxStatus.PENDING) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-        }
-        int failures = Math.addExact(outbox.getFailureCount(), 1);
-        boolean exhausted = retryPolicy.isExhausted(failures);
-        LocalDateTime nextAttemptAt = (exhausted
-            ? failedAt
-            : failedAt.plus(retryPolicy.delayMillis(failures), ChronoUnit.MILLIS))
-            .truncatedTo(ChronoUnit.MICROS);
-        int updated = repository.recordFailure(id, outbox.getFailureCount(), failures, failureType.name(),
-            nextAttemptAt,
-            NotificationOutboxStatus.PENDING,
-            exhausted ? NotificationOutboxStatus.FAILED : NotificationOutboxStatus.PENDING);
-        if (updated != 1) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-        }
-        return new FailureResult(failures, exhausted);
     }
 
     public record FailureResult(int failureCount, boolean exhausted) {}
