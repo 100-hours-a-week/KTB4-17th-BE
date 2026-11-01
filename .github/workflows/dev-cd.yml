@@ -78,7 +78,7 @@ jobs:
                     '{commands: [
                       "set -eu",
                       (
-                        "sudo -iu ubuntu bash -lc " +
+                        "sudo -H -u ubuntu bash -lc " +
                         ((
                           "cd /home/ubuntu/app && " +
                           "aws ecr get-login-password --region " + ($region | @sh) +
