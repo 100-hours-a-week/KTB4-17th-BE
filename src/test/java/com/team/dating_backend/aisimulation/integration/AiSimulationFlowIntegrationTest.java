@@ -35,10 +35,11 @@ import com.team.dating_backend.aisimulation.service.AiSimulationTargetValidator;
 import com.team.dating_backend.aisimulation.service.AiSimulationWorker;
 import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.repository.NotificationRepository;
 import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -117,11 +118,11 @@ class AiSimulationFlowIntegrationTest {
     private Long viewer = 7L;
 
     @Autowired
-    private PublishedRequests publishedRequests;
+    private StoredRequests storedRequests;
 
     @BeforeEach
     void setUp() {
-        publishedRequests.clear();
+        storedRequests.clear();
         reset(client);
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ai_simulation_messages");
@@ -257,10 +258,20 @@ class AiSimulationFlowIntegrationTest {
         }
         waitFor(id, "COMPLETED");
         await().atMost(Duration.ofSeconds(5))
-            .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement()
+            .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement()
                 .satisfies(request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
         assertThat(notificationRepository.count()).isZero();
-        publishedRequests.persistPending();
+        var completedRequest = storedRequests.snapshot().getFirst();
+        assertThat(completedRequest.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
+        assertThat(completedRequest.recipientUserId()).isEqualTo(7L);
+        assertThat(completedRequest.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
+        assertThat(completedRequest.title()).isEqualTo("시뮬레이션 완료");
+        assertThat(completedRequest.body()).isEqualTo("두 사람의 대화 시뮬레이션과 분석 보고서가 준비됐어요.");
+        assertThat(completedRequest.targetType()).isEqualTo("AI_SIMULATION");
+        assertThat(completedRequest.targetId()).isEqualTo(id);
+        assertThat(completedRequest.requestedAt()).isNotNull();
+        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+        storedRequests.createNotificationsFromStoredRequests();
         assertThat(notificationRepository.findAll()).singleElement().satisfies(notification -> {
             assertThat(notification.getUserId()).isEqualTo(7L);
             assertThat(notification.getType()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
@@ -290,7 +301,9 @@ class AiSimulationFlowIntegrationTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
         assertThat(notificationRepository.count()).isEqualTo(1L);
-        assertThat(publishedRequests.snapshot()).hasSize(1);
+        assertThat(storedRequests.snapshot()).containsExactly(completedRequest);
+        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+            .isEqualTo(outboxesBefore);
         assertThat(count("ai_simulation_messages")).isEqualTo(20);
         verify(client, times(1)).run(any());
         jdbc.update("UPDATE ai_simulation_reports SET deleted_at=NOW(6) WHERE session_id=?", id);
@@ -343,7 +356,7 @@ class AiSimulationFlowIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
             handle.simulationId())).isEqualTo("FAILED");
         assertThat(notificationRepository.count()).isZero();
-        assertThat(publishedRequests.snapshot()).isEmpty();
+        assertThat(storedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -355,7 +368,7 @@ class AiSimulationFlowIntegrationTest {
         waitFor(id, "FAILED");
         assertThat(count("ai_simulation_messages")).isZero();
         assertThat(notificationRepository.count()).isZero();
-        assertThat(publishedRequests.snapshot()).isEmpty();
+        assertThat(storedRequests.snapshot()).isEmpty();
     }
 
     @Test
@@ -379,6 +392,71 @@ class AiSimulationFlowIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    void Outbox_DB_오류는_완료_변경을_롤백하고_worker의_실패_기록과_구분한다(boolean viaWorker) {
+        Long committedId = persistence.begin(7L, 9L).getId();
+        persistence.complete(committedId, responseFor(new SimulationRequest("7", "9", 10)));
+        var requestsBefore = storedRequests.snapshot();
+        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+        var committedSession = jdbc.queryForMap("SELECT * FROM ai_simulation_sessions WHERE id = ?", committedId);
+        var committedReport = jdbc.queryForMap("SELECT * FROM ai_simulation_reports WHERE session_id = ?", committedId);
+        var committedMessages = jdbc.queryForList(
+            "SELECT * FROM ai_simulation_messages WHERE session_id = ? ORDER BY id", committedId);
+        jdbc.execute("""
+            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_simulation_outbox
+            CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED' OR source_event_id = '%s')
+            """.formatted("AI_SIMULATION_COMPLETED:" + committedId));
+        try {
+            Long id;
+            if (viaWorker) {
+                given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
+                id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
+                waitFor(id, "FAILED");
+                assertThat(query.getState(7L, id).finishedAt()).isNotNull();
+                verify(client, times(1)).run(any());
+            } else {
+                id = persistence.begin(7L, 8L).getId();
+                var sessionBefore = jdbc.queryForMap("SELECT * FROM ai_simulation_sessions WHERE id = ?", id);
+                var reportBefore = jdbc.queryForMap("SELECT * FROM ai_simulation_reports WHERE session_id = ?", id);
+
+                assertThatThrownBy(() -> persistence.complete(id, aiResponse()))
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    .hasMessageContaining("test_reject_simulation_outbox");
+
+                assertThat(jdbc.queryForMap("SELECT * FROM ai_simulation_sessions WHERE id = ?", id))
+                    .isEqualTo(sessionBefore);
+                assertThat(jdbc.queryForMap("SELECT * FROM ai_simulation_reports WHERE session_id = ?", id))
+                    .isEqualTo(reportBefore);
+                assertThat(query.getState(7L, id).finishedAt()).isNull();
+            }
+
+            assertThat(query.getState(7L, id).status().name()).isEqualTo(viaWorker ? "FAILED" : "IN_PROGRESS");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_messages WHERE session_id = ?",
+                Long.class, id)).isZero();
+            assertThat(jdbc.queryForMap("SELECT status, overall_score, summary, detail_result, completed_at "
+                + "FROM ai_simulation_reports WHERE session_id = ?", id))
+                .containsEntry("status", viaWorker ? "FAILED" : "GENERATING")
+                .containsEntry("overall_score", null)
+                .containsEntry("summary", null)
+                .containsEntry("detail_result", null)
+                .containsEntry("completed_at", null);
+            assertThat(storedRequests.snapshot()).containsExactlyElementsOf(requestsBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+                .isEqualTo(outboxesBefore);
+            assertThat(jdbc.queryForMap("SELECT * FROM ai_simulation_sessions WHERE id = ?", committedId))
+                .isEqualTo(committedSession);
+            assertThat(jdbc.queryForMap("SELECT * FROM ai_simulation_reports WHERE session_id = ?", committedId))
+                .isEqualTo(committedReport);
+            assertThat(
+                jdbc.queryForList("SELECT * FROM ai_simulation_messages WHERE session_id = ? ORDER BY id", committedId))
+                .isEqualTo(committedMessages);
+            assertThat(notificationRepository.count()).isZero();
+        } finally {
+            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_simulation_outbox");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void 알림_DB_오류에도_완료된_세션과_메시지와_리포트를_유지한다(boolean viaWorker) {
         jdbc.execute("""
             ALTER TABLE notifications ADD CONSTRAINT test_reject_simulation_notification
@@ -395,9 +473,9 @@ class AiSimulationFlowIntegrationTest {
                 persistence.complete(id, aiResponse());
             }
             await().atMost(Duration.ofSeconds(5))
-                .untilAsserted(() -> assertThat(publishedRequests.snapshot()).singleElement().satisfies(
+                .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement().satisfies(
                     request -> assertThat(request.sourceEventId()).isEqualTo("AI_SIMULATION_COMPLETED:" + id)));
-            assertThatThrownBy(publishedRequests::persistPending)
+            assertThatThrownBy(storedRequests::createNotificationsFromStoredRequests)
                 .isInstanceOf(DataIntegrityViolationException.class);
 
             assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");

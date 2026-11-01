@@ -28,7 +28,7 @@ import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryConsumer;
 import com.team.dating_backend.notification.service.NotificationDeliveryEventValidator;
 import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.PublishedRequests;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import java.time.Instant;
 import com.team.dating_backend.notification.exception.NotificationStreamExceptionHandler;
@@ -121,7 +121,7 @@ class NotificationDeliveryIntegrationTest {
     private NotificationRequestService service;
 
     @Autowired
-    private PublishedRequests publishedRequests;
+    private StoredRequests storedRequests;
 
     @Autowired
     private NotificationDeliveryEventValidator deliveryValidator;
@@ -164,7 +164,7 @@ class NotificationDeliveryIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        publishedRequests.clear();
+        storedRequests.clear();
         transaction = new TransactionTemplate(transactionManager);
         recipientId = createUser("수신자");
         otherUserId = createUser("다른회원");
@@ -223,7 +223,7 @@ class NotificationDeliveryIntegrationTest {
         })).isSameAs(failure);
 
         verify(sender, never()).sendNotification(anyLong(), any());
-        assertThat(publishedRequests.snapshot()).isEmpty();
+        assertThat(storedRequests.snapshot()).isEmpty();
         assertThat(stream.frames().poll(200, TimeUnit.MILLISECONDS)).isNull();
         assertThat(repository.countVisibleUnreadByUserId(recipientId)).isZero();
         assertThat(userRepository.findById(recipientId).orElseThrow().getPersonaOnboardingStatus())
@@ -298,10 +298,10 @@ class NotificationDeliveryIntegrationTest {
     }
 
     private void deliverPending() {
-        assertThat(publishedRequests.snapshot()).hasSize(1);
+        assertThat(storedRequests.snapshot()).hasSize(1);
         assertThat(repository.countVisibleUnreadByUserId(recipientId)).isZero();
-        publishedRequests.persistPending();
-        var request = publishedRequests.snapshot().getFirst();
+        storedRequests.createNotificationsFromStoredRequests();
+        var request = storedRequests.snapshot().getFirst();
         var event = new NotificationDeliveryEvent(1, request.sourceEventId(), recipientId, storedNotification());
         new NotificationDeliveryConsumer(deliveryValidator, sender, registry, observation)
             .consume(new ConsumerRecord<>("test-delivery", 0, 0L, recipientId, event));

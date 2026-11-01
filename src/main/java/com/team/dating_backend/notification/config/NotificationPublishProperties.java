@@ -1,7 +1,6 @@
 package com.team.dating_backend.notification.config;
 
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -13,15 +12,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app.notification.publish")
 public class NotificationPublishProperties {
 
-    @Positive
+    @Positive(message = "INTERNAL_SERVER_ERROR")
     private long resultTimeoutMs = 15_000L;
-
-    @Positive
-    private int poolSize = 2;
-
-    @PositiveOrZero
-    private int queueCapacity = 100;
-
-    @PositiveOrZero
-    private int shutdownWaitSeconds = 20;
 }

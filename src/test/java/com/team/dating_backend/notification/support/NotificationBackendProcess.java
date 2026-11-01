@@ -65,6 +65,12 @@ public final class NotificationBackendProcess implements AutoCloseable {
         String nextDeliveryPrefix = snapshot.get("DELIVERY_PREFIX") + "-g" + nextGeneration;
         var renderedSettings = new HashMap<>(snapshot);
         renderedSettings.put("DELIVERY_PREFIX", nextDeliveryPrefix);
+        renderedSettings.putIfAbsent("OUTBOX_RELAY_ENABLED", "true");
+        renderedSettings.putIfAbsent("OUTBOX_FIXED_DELAY_MS", "1000");
+        renderedSettings.putIfAbsent("OUTBOX_CLAIM_DURATION_MS", "60000");
+        renderedSettings.putIfAbsent("PUBLISH_RESULT_TIMEOUT_MS", "15000");
+        renderedSettings.putIfAbsent("PRODUCER_MAX_BLOCK_MS", "3000");
+        renderedSettings.putIfAbsent("PRODUCER_DELIVERY_TIMEOUT_MS", "10000");
         Files.createDirectories(nextDirectory);
         String template;
         try (var input = NotificationBackendProcess.class.getResourceAsStream("/notification-multiprocess.yaml")) {
@@ -161,9 +167,33 @@ public final class NotificationBackendProcess implements AutoCloseable {
     }
 
     public void restart() throws IOException {
+        restart(Map.of());
+    }
+
+    public void restart(Map<String, String> overrides) throws IOException {
         assertThat(process).isNotNull();
         assertThat(isAlive()).isFalse();
-        start(settings);
+        var next = new HashMap<>(settings);
+        next.putAll(overrides);
+        start(next);
+    }
+
+    public Path dumpThreads(String label) throws IOException, InterruptedException {
+        assertThat(isAlive()).isTrue();
+        Path output = generationDirectory.resolve(label + "-threads.txt");
+        var command = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "jcmd").toString(),
+            Long.toString(pid()), "Thread.print", "-l")
+            .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+        try {
+            assertThat(command.waitFor(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(command.exitValue()).isZero();
+            return output;
+        } finally {
+            if (command.isAlive()) {
+                command.destroyForcibly();
+                assertThat(command.waitFor(5, TimeUnit.SECONDS)).isTrue();
+            }
+        }
     }
 
     public boolean isAlive() {

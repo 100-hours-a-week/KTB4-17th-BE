@@ -32,6 +32,10 @@ public class NotificationFailureReporter {
     }
 
     public void report(NotificationFailureContext context) {
+        report(context, true);
+    }
+
+    public void report(NotificationFailureContext context, boolean alertRequested) {
         if (context == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
@@ -40,7 +44,7 @@ public class NotificationFailureReporter {
         safely("METRIC", context.errorCode(), () -> meterRegistry
             .counter("notification.failures", "error_code", context.errorCode().name()).increment());
 
-        if (shouldAlert(context.errorCode())) {
+        if (alertRequested && shouldAlert(context.errorCode())) {
             safely("ALERT_DISPATCH", context.errorCode(), () -> alertDispatcher.dispatch(context));
         }
     }
@@ -74,7 +78,10 @@ public class NotificationFailureReporter {
 
     private boolean shouldAlert(NotificationFailureCode errorCode) {
         return switch (errorCode) {
-            case RETRY_PUBLISH_FAILED, DLT_PUBLISH_FAILED, ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED -> false;
+            case RETRY_PUBLISH_FAILED, DLT_PUBLISH_FAILED, ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED,
+                OUTBOX_RESTORE_FAILED, OUTBOX_PUBLISH_REQUIRES_ATTENTION, OUTBOX_STATE_UPDATE_FAILED,
+                OUTBOX_LOOKUP_FAILED, OUTBOX_RELAY_FAILED, OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST,
+                OUTBOX_RELEASE_FAILED -> false;
             default -> true;
         };
     }
@@ -108,10 +115,18 @@ public class NotificationFailureReporter {
                 valueForLog(exception.getClass().getSimpleName(), 128),
                 valueForLog(exception.getCause() == null ? null : exception.getCause().getClass().getSimpleName(),
                     128));
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (exception != loggingFailure) {
+                exception.addSuppressed(loggingFailure);
+            }
+        }
         try {
             meterRegistry.counter("notification.reporting.failures", "operation", operation).increment();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException metricFailure) {
+            if (exception != metricFailure) {
+                exception.addSuppressed(metricFailure);
+            }
+        }
     }
 
     private String locationForLog(KafkaLocation location) {

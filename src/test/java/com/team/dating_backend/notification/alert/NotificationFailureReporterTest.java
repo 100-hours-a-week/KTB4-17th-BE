@@ -15,6 +15,7 @@ import com.team.dating_backend.notification.config.NotificationAlertProperties;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
 import com.team.dating_backend.notification.enums.NotificationType;
 import io.micrometer.core.instrument.MockClock;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -46,6 +48,98 @@ class NotificationFailureReporterTest {
     @AfterEach
     void tearDown() {
         registry.close();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        {"OUTBOX_RESTORE_FAILED,OUTBOX_RESTORE", "OUTBOX_PUBLISH_REQUIRES_ATTENTION,PUBLISH",
+            "OUTBOX_STATE_UPDATE_FAILED,OUTBOX_STATE_UPDATE", "OUTBOX_RETRY_LIMIT_EXCEEDED,OUTBOX_RETRY",
+            "OUTBOX_LOOKUP_FAILED,OUTBOX_LOOKUP", "OUTBOX_RELAY_FAILED,OUTBOX_RELAY",
+            "OUTBOX_CLAIM_FAILED,OUTBOX_CLAIM", "OUTBOX_CLAIM_LOST,OUTBOX_CLAIM",
+            "OUTBOX_RELEASE_FAILED,OUTBOX_RELEASE"}
+    )
+    void Outbox_오류는_식별정보와_단계를_유지하고_payload를_노출하지_않는다(
+        NotificationFailureCode code, String stage, CapturedOutput output) {
+        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE,
+            "{\"secret\":\"private-payload\"}", LocalDateTime.of(2026, 10, 30, 12, 0));
+        boolean unrecorded = code == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
+            || code == NotificationFailureCode.OUTBOX_LOOKUP_FAILED
+            || code == NotificationFailureCode.OUTBOX_RELAY_FAILED
+            || code == NotificationFailureCode.OUTBOX_CLAIM_FAILED
+            || code == NotificationFailureCode.OUTBOX_CLAIM_LOST
+            || code == NotificationFailureCode.OUTBOX_RELEASE_FAILED;
+        var context = NotificationFailureContext.fromOutbox(code, outbox, null,
+            new TimeoutException("private-exception"), Instant.now(),
+            unrecorded ? null : 2,
+            unrecorded
+                ? null
+                : code != NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED);
+
+        reporter.report(context);
+
+        if (code != NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED) {
+            verifyNoInteractions(dispatcher);
+        } else {
+            verify(dispatcher).dispatch(context);
+        }
+        assertThat(output.getAll()).contains("errorCode=" + code, "failureStage=" + stage,
+            "sourceEventId=outbox-source", "recipientUserId=7", "requestedAt=null")
+            .doesNotContain("private-payload", "private-exception");
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count()).isEqualTo(1);
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().getId().getTags())
+            .hasSize(1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = NotificationFailureCode.class,
+        names = {"OUTBOX_RESTORE_FAILED", "OUTBOX_PUBLISH_REQUIRES_ATTENTION", "PUBLISH_CALL_FAILED",
+            "PUBLISH_RESULT_FAILED", "PUBLISH_RESULT_TIMEOUT", "PUBLISH_INTERRUPTED"}
+    )
+    void Outbox_재시도와_중단은_Discord_없이_로그와_지표에_남긴다(NotificationFailureCode code,
+        CapturedOutput output) {
+        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE, "{}",
+            LocalDateTime.of(2026, 11, 1, 12, 0));
+        var context = NotificationFailureContext.fromOutbox(code, outbox, null,
+            new TimeoutException("private-message"), Instant.now(), 1, true);
+
+        reporter.report(context, false);
+
+        verifyNoInteractions(dispatcher);
+        assertThat(output.getAll()).contains("errorCode=" + code, "sourceEventId=outbox-source")
+            .doesNotContain("private-message");
+        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count())
+            .isEqualTo(1);
+    }
+
+    @Test
+    void Outbox_한도_소진과_기존_DLT는_같은_Discord_웹훅_경로를_사용한다() {
+        var properties = new NotificationAlertProperties();
+        properties.setEnabled(true);
+        var client = mock(DiscordWebhookClient.class);
+        var sharedDispatcher = new NotificationAlertDispatcher(Runnable::run, client, properties, registry);
+        var sharedReporter = new NotificationFailureReporter(sharedDispatcher, registry);
+        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE, "{}",
+            LocalDateTime.of(2026, 11, 1, 12, 0));
+        for (int count = 1; count <= 5; count++) {
+            sharedReporter.report(NotificationFailureContext.fromOutbox(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT,
+                outbox, null, new TimeoutException(), Instant.now(), count, count < 5), false);
+        }
+        verifyNoInteractions(client);
+        var exhausted = NotificationFailureContext.fromOutbox(NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED,
+            outbox, null, new TimeoutException(), Instant.now(), 5, false);
+
+        sharedReporter.report(exhausted, true);
+        var dlt = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        sharedReporter.report(dlt);
+
+        var contexts = ArgumentCaptor.forClass(NotificationFailureContext.class);
+        verify(client, times(2)).send(contexts.capture());
+        assertThat(contexts.getAllValues()).containsExactly(exhausted, dlt);
+        assertThat(registry.get("notification.failures").tag("error_code", "PUBLISH_RESULT_TIMEOUT")
+            .counter().count()).isEqualTo(5);
+        assertThat(registry.get("notification.failures").tag("error_code", "OUTBOX_RETRY_LIMIT_EXCEEDED")
+            .counter().count()).isEqualTo(1);
     }
 
     @Test

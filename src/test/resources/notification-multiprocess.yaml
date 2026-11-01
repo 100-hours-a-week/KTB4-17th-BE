@@ -29,9 +29,9 @@ spring:
       properties:
         "[enable.idempotence]": true
         "[spring.json.add.type.headers]": false
-        "[max.block.ms]": 3000
+        "[max.block.ms]": @PRODUCER_MAX_BLOCK_MS@
         "[request.timeout.ms]": 3000
-        "[delivery.timeout.ms]": 10000
+        "[delivery.timeout.ms]": @PRODUCER_DELIVERY_TIMEOUT_MS@
     consumer:
       bootstrap-servers: "@CONSUMER_BOOTSTRAP_SERVERS@"
       client-id: "@DELIVERY_PREFIX@"
@@ -74,6 +74,14 @@ app:
     allowed-origins:
       - http://127.0.0.1
   notification:
+    outbox:
+      claim:
+        duration-ms: @OUTBOX_CLAIM_DURATION_MS@
+      relay:
+        enabled: @OUTBOX_RELAY_ENABLED@
+        fixed-delay-ms: @OUTBOX_FIXED_DELAY_MS@
+    publish:
+      result-timeout-ms: @PUBLISH_RESULT_TIMEOUT_MS@
     kafka:
       create-requested-topic: "@CREATION_TOPIC@"
       delivery-topic: "@DELIVERY_TOPIC@"
