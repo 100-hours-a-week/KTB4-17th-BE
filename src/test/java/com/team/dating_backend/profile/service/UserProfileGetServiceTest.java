@@ -140,11 +140,37 @@ class UserProfileGetServiceTest {
 
     @ParameterizedTest
     @NullSource
-    @ValueSource(longs = {0L, -1L, 5L})
-    void 잘못된_상대_ID나_본인_조회는_거절한다(Long userId) {
+    @ValueSource(longs = {0L, -1L})
+    void 잘못된_상대_ID는_거절한다(Long userId) {
         assertUnavailable(userId);
         verifyNoInteractions(userBlockRepository, recommendationItemRepository,
             popularProfileRankingService, profileRepository);
+    }
+
+    @Test
+    void 본인의_프로필은_관계와_랭킹을_확인하지_않고_조회한다() {
+        givenActiveProfile(5L, UserStatus.ACTIVE);
+
+        UserProfileResponse response = service.getUserProfile(5L, 5L);
+
+        assertThat(response.userId()).isEqualTo(5L);
+        assertThat(response.nickname()).isEqualTo("하리");
+        assertThat(response.images()).hasSize(1);
+        verifyNoInteractions(userBlockRepository, chatRoomRepository, likeRepository,
+            recommendationItemRepository, popularProfileRankingService);
+    }
+
+    @Test
+    void 본인이라도_프로필이_없으면_조회할_수_없다() {
+        assertUnavailable(5L);
+        verifyNoInteractions(profileImageGetService, popularProfileRankingService);
+    }
+
+    @Test
+    void 본인이라도_비활성이면_조회할_수_없다() {
+        givenActiveProfile(5L, UserStatus.SUSPENDED);
+        assertUnavailable(5L);
+        verifyNoInteractions(profileImageGetService, popularProfileRankingService);
     }
 
     @ParameterizedTest
@@ -167,16 +193,20 @@ class UserProfileGetServiceTest {
     }
 
     private void givenActiveProfile(UserStatus status) {
+        givenActiveProfile(21L, status);
+    }
+
+    private void givenActiveProfile(Long userId, UserStatus status) {
         User user = mock(User.class);
         given(user.getStatus()).willReturn(status);
         given(user.getBirthDate()).willReturn(LocalDate.now().minusYears(29));
         Profile profile = mock(Profile.class);
         given(profile.getUser()).willReturn(user);
         given(profile.getNickname()).willReturn("하리");
-        given(profileRepository.findByUserIdAndDeletedAtIsNull(21L))
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(userId))
             .willReturn(Optional.of(profile));
-        given(profileImageGetService.getProfileImagesByUserIds(List.of(21L)))
-            .willReturn(Map.of(21L,
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(userId)))
+            .willReturn(Map.of(userId,
                 List.of(new ProfileImageAccessResult(
                     701L,
                     (short) 1,

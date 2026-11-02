@@ -35,15 +35,18 @@ public class UserProfileGetService {
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long viewerUserId, Long userId) {
-        if (viewerUserId == null || userId == null || userId <= 0
-            || viewerUserId.equals(userId)
-            || userBlockRepository.existsActiveBlockBetween(viewerUserId, userId)
-            || chatRoomRepository.existsLeftParticipantBetweenUsers(viewerUserId, userId)
-            || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
-                && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
-                && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
-                    viewerUserId, userId)
-                && !popularProfileRankingService.isInTopProfiles(userId))) {
+        if (viewerUserId == null || userId == null || userId <= 0) {
+            throw profileNotAvailable();
+        }
+
+        if (!viewerUserId.equals(userId)
+            && (userBlockRepository.existsActiveBlockBetween(viewerUserId, userId)
+                || chatRoomRepository.existsLeftParticipantBetweenUsers(viewerUserId, userId)
+                || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
+                    && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
+                    && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
+                        viewerUserId, userId)
+                    && !popularProfileRankingService.isInTopProfiles(userId)))) {
             throw profileNotAvailable();
         }
 
