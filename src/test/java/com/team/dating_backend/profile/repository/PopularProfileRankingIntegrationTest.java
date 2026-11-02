@@ -6,6 +6,7 @@ import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.service.PopularProfileRankingService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -24,6 +26,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
 @DataJpaTest(properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate"})
+@Import(PopularProfileRankingService.class)
 @Testcontainers
 class PopularProfileRankingIntegrationTest {
 
@@ -41,6 +44,8 @@ class PopularProfileRankingIntegrationTest {
     private ProfileRepository profiles;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private PopularProfileRankingService rankingService;
 
     @Test
     void 인증된_활성회원만_서로_다른_발신자_수와_아이디_순으로_상위_10명을_조회한다() {
@@ -83,6 +88,13 @@ class PopularProfileRankingIntegrationTest {
                 candidates.get(2).getId(), candidates.get(3).getId(), candidates.get(4).getId(),
                 candidates.get(6).getId(), candidates.get(7).getId(), candidates.get(8).getId(),
                 candidates.get(9).getId());
+        assertThat(rankingService.isInTopProfiles(candidates.get(9).getId())).isTrue();
+        assertThat(rankingService.isInTopProfiles(candidates.get(10).getId())).isFalse();
+
+        likes.saveAndFlush(new Like(secondSender.getId(), candidates.get(10).getId(), NOW));
+
+        assertThat(rankingService.isInTopProfiles(candidates.get(10).getId())).isTrue();
+        assertThat(rankingService.isInTopProfiles(candidates.get(9).getId())).isFalse();
     }
 
     @Test

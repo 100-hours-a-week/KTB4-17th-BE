@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
@@ -38,6 +39,7 @@ class UserProfileGetServiceTest {
     private ChatRoomRepository chatRoomRepository;
     private UserBlockRepository userBlockRepository;
     private RecommendationItemRepository recommendationItemRepository;
+    private PopularProfileRankingService popularProfileRankingService;
     private UserProfileGetService service;
 
     @BeforeEach
@@ -48,8 +50,10 @@ class UserProfileGetServiceTest {
         chatRoomRepository = mock(ChatRoomRepository.class);
         userBlockRepository = mock(UserBlockRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
+        popularProfileRankingService = mock(PopularProfileRankingService.class);
         service = new UserProfileGetService(profileRepository, profileImageGetService,
-            likeRepository, chatRoomRepository, userBlockRepository, recommendationItemRepository);
+            likeRepository, chatRoomRepository, userBlockRepository, recommendationItemRepository,
+            popularProfileRankingService);
     }
 
     @Test
@@ -68,6 +72,7 @@ class UserProfileGetServiceTest {
                 701L,
                 (short) 1,
                 "https://example.com/701"));
+        verifyNoInteractions(popularProfileRankingService);
     }
 
     @Test
@@ -76,7 +81,7 @@ class UserProfileGetServiceTest {
         givenActiveProfile(UserStatus.ACTIVE);
 
         assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
-        verifyNoInteractions(recommendationItemRepository);
+        verifyNoInteractions(recommendationItemRepository, popularProfileRankingService);
     }
 
     @Test
@@ -85,12 +90,31 @@ class UserProfileGetServiceTest {
         givenActiveProfile(UserStatus.ACTIVE);
 
         assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
-        verifyNoInteractions(recommendationItemRepository);
+        verifyNoInteractions(recommendationItemRepository, popularProfileRankingService);
     }
 
     @Test
-    void 추천과_좋아요와_채팅_관계가_모두_없으면_거절한다() {
+    void 기존_관계가_없어도_인기_랭킹_대상이면_조회한다() {
+        given(popularProfileRankingService.isInTopProfiles(21L)).willReturn(true);
+        givenActiveProfile(UserStatus.ACTIVE);
+
+        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
+        verify(popularProfileRankingService).isInTopProfiles(21L);
+    }
+
+    @Test
+    void 인기_랭킹_대상이어도_비활성이면_조회할_수_없다() {
+        given(popularProfileRankingService.isInTopProfiles(21L)).willReturn(true);
+        givenActiveProfile(UserStatus.SUSPENDED);
+
         assertUnavailable(21L);
+        verifyNoInteractions(profileImageGetService);
+    }
+
+    @Test
+    void 기존_관계와_인기_랭킹_자격이_없으면_거절한다() {
+        assertUnavailable(21L);
+        verify(popularProfileRankingService).isInTopProfiles(21L);
         verifyNoInteractions(profileRepository, profileImageGetService);
     }
 
@@ -100,7 +124,7 @@ class UserProfileGetServiceTest {
 
         assertUnavailable(21L);
         verifyNoInteractions(likeRepository, chatRoomRepository, recommendationItemRepository,
-            profileRepository, profileImageGetService);
+            popularProfileRankingService, profileRepository, profileImageGetService);
     }
 
     @Test
@@ -111,7 +135,7 @@ class UserProfileGetServiceTest {
         assertUnavailable(21L);
 
         verifyNoInteractions(likeRepository, recommendationItemRepository,
-            profileRepository, profileImageGetService);
+            popularProfileRankingService, profileRepository, profileImageGetService);
     }
 
     @ParameterizedTest
@@ -119,7 +143,8 @@ class UserProfileGetServiceTest {
     @ValueSource(longs = {0L, -1L, 5L})
     void 잘못된_상대_ID나_본인_조회는_거절한다(Long userId) {
         assertUnavailable(userId);
-        verifyNoInteractions(userBlockRepository, recommendationItemRepository, profileRepository);
+        verifyNoInteractions(userBlockRepository, recommendationItemRepository,
+            popularProfileRankingService, profileRepository);
     }
 
     @ParameterizedTest
