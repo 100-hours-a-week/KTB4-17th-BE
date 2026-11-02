@@ -11,6 +11,7 @@ public enum LikeErrorCode implements ErrorCode {
     LIKE_NOT_FOUND(HttpStatus.NOT_FOUND),
     DUPLICATE_PENDING_LIKE(
         HttpStatus.CONFLICT),
+    LIKE_PREVIOUSLY_REJECTED(HttpStatus.CONFLICT),
     MATCH_ALREADY_EXISTS(
         HttpStatus.CONFLICT),
     LIKE_ALREADY_RESOLVED(HttpStatus.CONFLICT),

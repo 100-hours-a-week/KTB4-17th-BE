@@ -27,6 +27,9 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
         @Param("viewerUserId") Long viewerUserId,
         @Param("targetUserId") Long targetUserId);
 
+    boolean existsBySenderIdAndReceiverIdAndStatus(
+        Long senderId, Long receiverId, LikeStatus status);
+
     Optional<Like> findFirstBySenderIdAndReceiverIdAndStatusOrderByIdDesc(
         Long senderId, Long receiverId, LikeStatus status);
 

@@ -59,7 +59,7 @@ import org.testcontainers.mysql.MySQLContainer;
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
-    {LikeSendService.class, ChatRoomCreateService.class,
+    {LikeSendService.class, LikeRejectService.class, ChatRoomCreateService.class,
         UserPairLockRepository.class, NotificationRequestTestConfiguration.class}
 )
 @Testcontainers
@@ -73,6 +73,9 @@ class LikeSendServiceIntegrationTest {
 
     @Autowired
     private LikeSendService service;
+
+    @Autowired
+    private LikeRejectService rejectService;
 
     @Autowired
     private UserRepository userRepository;
@@ -119,6 +122,62 @@ class LikeSendServiceIntegrationTest {
             jdbc.update("DELETE FROM profiles");
             jdbc.update("DELETE FROM users");
         });
+    }
+
+    @Test
+    void 거절된_좋아요는_같은_방향으로_재전송할_수_없지만_반대_방향은_보낼_수_있다() {
+        LikeCreateResponse original = service.sendLike(senderId, receiverId);
+        rejectService.rejectLike(receiverId, original.likeId());
+        var requestsBefore = storedRequests.snapshot();
+        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+
+        assertError(senderId, receiverId, LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
+        assertThat(likeRepository.count()).isEqualTo(1);
+        assertThat(storedRequests.snapshot()).isEqualTo(requestsBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+            .isEqualTo(outboxesBefore);
+
+        LikeCreateResponse reverse = service.sendLike(receiverId, senderId);
+        assertThat(reverse.status()).isEqualTo(LikeStatus.PENDING);
+        assertThat(likeRepository.findById(original.likeId()).orElseThrow().getStatus())
+            .isEqualTo(LikeStatus.REJECTED);
+        assertThat(likeRepository.count()).isEqualTo(2);
+        assertThat(storedRequests.snapshot()).hasSize(2);
+    }
+
+    @Test
+    void 거절과_재전송이_동시에_요청되어도_중복_좋아요를_생성하지_않는다() throws Exception {
+        LikeCreateResponse original = service.sendLike(senderId, receiverId);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> rejection = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("동시 요청 시작 대기 초과");
+                }
+                rejectService.rejectLike(receiverId, original.likeId());
+                return null;
+            });
+            Future<String> resend = executor.submit(
+                () -> sendAfterStart(senderId, receiverId, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            rejection.get(15, TimeUnit.SECONDS);
+            assertThat(resend.get(15, TimeUnit.SECONDS))
+                .isIn("DUPLICATE_PENDING_LIKE", "LIKE_PREVIOUSLY_REJECTED");
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(likeRepository.count()).isEqualTo(1);
+        assertThat(likeRepository.findById(original.likeId()).orElseThrow().getStatus())
+            .isEqualTo(LikeStatus.REJECTED);
+        assertThat(storedRequests.snapshot()).hasSize(1);
+        assertError(senderId, receiverId, LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
     }
 
     @Test
