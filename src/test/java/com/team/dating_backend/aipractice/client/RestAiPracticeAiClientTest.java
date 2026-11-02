@@ -6,6 +6,9 @@ import com.sun.net.httpserver.HttpServer;
 import com.team.dating_backend.aipractice.config.AiPracticeProperties;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,14 +17,19 @@ import org.springframework.web.client.RestClient;
 
 class RestAiPracticeAiClientTest {
 
+    private static final UUID IDEMPOTENCY_KEY = UUID.fromString(
+        "123e4567-e89b-12d3-a456-426614174000");
+
     private HttpServer server;
     private final AtomicReference<String> requestBody = new AtomicReference<>();
+    private final List<String> idempotencyKeys = new CopyOnWriteArrayList<>();
     private RestAiPracticeAiClient client;
 
     @BeforeEach
     void setUp() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/ai/api/v2/practice/start", exchange -> {
+            idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             requestBody.set(new String(
                 exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = "{\"session_id\":\"ai-session-42\"}"
@@ -33,6 +41,7 @@ class RestAiPracticeAiClientTest {
             }
         });
         server.createContext("/ai/api/v2/practice/ai-session-42/messages", exchange -> {
+            idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             byte[] response = replyJson("메시지 응답");
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.length);
@@ -41,6 +50,7 @@ class RestAiPracticeAiClientTest {
             }
         });
         server.createContext("/ai/api/v2/practice/ai-session-42/retry", exchange -> {
+            idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             byte[] response = replyJson("재생성 응답");
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.length);
@@ -49,6 +59,7 @@ class RestAiPracticeAiClientTest {
             }
         });
         server.createContext("/ai/api/v2/practice/ai-session-42/end", exchange -> {
+            idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
             exchange.getRequestBody().readAllBytes();
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
@@ -66,7 +77,7 @@ class RestAiPracticeAiClientTest {
 
     @Test
     void 세션_시작_요청에_나와_상대_회원_ID를_snake_case로_보낸다() {
-        String aiSessionId = client.startSession(42L, 77L);
+        String aiSessionId = client.startSession(42L, 77L, IDEMPOTENCY_KEY);
 
         assertThat(aiSessionId).isEqualTo("ai-session-42");
         assertThat(requestBody.get())
@@ -76,12 +87,28 @@ class RestAiPracticeAiClientTest {
 
     @Test
     void 메시지_재생성_종료_요청에_v2_경로를_사용한다() {
-        assertThat(client.sendMessage("ai-session-42", "안녕하세요").content())
+        assertThat(client.sendMessage(
+            "ai-session-42", "안녕하세요", IDEMPOTENCY_KEY).content())
             .isEqualTo("메시지 응답");
-        assertThat(client.retryMessage("ai-session-42").content())
+        assertThat(client.retryMessage("ai-session-42", IDEMPOTENCY_KEY).content())
             .isEqualTo("재생성 응답");
 
-        client.endSession("ai-session-42");
+        client.endSession("ai-session-42", IDEMPOTENCY_KEY);
+    }
+
+    @Test
+    void AI_서버로_보내는_모든_연습_요청에_멱등성_키를_포함한다() {
+        client.startSession(42L, 77L, IDEMPOTENCY_KEY);
+        client.sendMessage("ai-session-42", "안녕하세요", IDEMPOTENCY_KEY);
+        client.retryMessage("ai-session-42", IDEMPOTENCY_KEY);
+        client.endSession("ai-session-42", IDEMPOTENCY_KEY);
+
+        assertThat(idempotencyKeys)
+            .containsExactly(
+                IDEMPOTENCY_KEY.toString(),
+                IDEMPOTENCY_KEY.toString(),
+                IDEMPOTENCY_KEY.toString(),
+                IDEMPOTENCY_KEY.toString());
     }
 
     private byte[] replyJson(String content) {

@@ -22,6 +22,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +37,8 @@ class AiPracticeOutboxPublishJobTest {
     private static final Long OUTBOX_ID = 30L;
     private static final Long TARGET_USER_ID = 2L;
     private static final String PROCESSING_TOKEN = "9d525e70-28d0-4214-b3ac-dc45f9d073ca";
+    private static final UUID IDEMPOTENCY_KEY = UUID.fromString(
+        "123e4567-e89b-12d3-a456-426614174000");
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 27, 12, 0);
 
     private AiPracticeOutboxRepository outboxRepository;
@@ -76,6 +79,7 @@ class AiPracticeOutboxPublishJobTest {
         outbox = new AiPracticeOutbox(
             AiPracticeOutboxCommandType.GENERATE, SESSION_ID, CHAT_ID, 1, CREATED_AT);
         ReflectionTestUtils.setField(outbox, "id", OUTBOX_ID);
+        ReflectionTestUtils.setField(outbox, "idempotencyKey", IDEMPOTENCY_KEY);
         ReflectionTestUtils.setField(outbox, "processingToken", PROCESSING_TOKEN);
 
         given(outboxRepository.findAvailable(
@@ -92,14 +96,15 @@ class AiPracticeOutboxPublishJobTest {
 
     @Test
     void 새_AI_세션에서_사용자_메시지에_대한_AI_답변을_저장한다() {
-        given(aiClient.startSession(USER_ID, TARGET_USER_ID)).willReturn("ai-session-42");
-        given(aiClient.sendMessage(anyString(), anyString()))
+        given(aiClient.startSession(USER_ID, TARGET_USER_ID, IDEMPOTENCY_KEY))
+            .willReturn("ai-session-42");
+        given(aiClient.sendMessage(anyString(), anyString(), any(UUID.class)))
             .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
 
         job.publishDueCommands();
 
-        verify(aiClient).startSession(USER_ID, TARGET_USER_ID);
-        verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
+        verify(aiClient).startSession(USER_ID, TARGET_USER_ID, IDEMPOTENCY_KEY);
+        verify(aiClient).sendMessage("ai-session-42", "연습 메시지", IDEMPOTENCY_KEY);
         verify(resultService).attachAiSessionId(
             OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42");
         verify(resultService).markGenerationCompleted(
@@ -109,15 +114,15 @@ class AiPracticeOutboxPublishJobTest {
     @Test
     void 기존_AI_세션에_사용자_메시지를_전달하고_AI_답변을_저장한다() {
         session.attachAiSessionId("ai-session-42");
-        given(aiClient.sendMessage(anyString(), anyString()))
+        given(aiClient.sendMessage(anyString(), anyString(), any(UUID.class)))
             .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
 
         job.publishDueCommands();
 
-        verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
+        verify(aiClient).sendMessage("ai-session-42", "연습 메시지", IDEMPOTENCY_KEY);
         verify(resultService).markGenerationCompleted(
             OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42", "AI 답변");
-        verify(aiClient, never()).startSession(any(), any());
+        verify(aiClient, never()).startSession(any(), any(), any());
     }
 
     @Test
@@ -133,7 +138,7 @@ class AiPracticeOutboxPublishJobTest {
     @Test
     void AI_서버_요청에_실패하면_재시도를_예약한다() {
         org.mockito.BDDMockito.willThrow(new RestClientException("AI_SERVER_REQUEST_FAILED"))
-            .given(aiClient).startSession(USER_ID, TARGET_USER_ID);
+            .given(aiClient).startSession(USER_ID, TARGET_USER_ID, IDEMPOTENCY_KEY);
 
         job.publishDueCommands();
 

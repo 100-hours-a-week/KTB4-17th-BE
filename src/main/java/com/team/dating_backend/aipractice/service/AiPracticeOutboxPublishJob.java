@@ -75,7 +75,7 @@ public class AiPracticeOutboxPublishJob {
             if (!claimService.renew(outbox.getId(), token)) {
                 return;
             }
-            aiClient.endSession(session.getAiSessionId());
+            aiClient.endSession(session.getAiSessionId(), outbox.getIdempotencyKey());
             resultService.markEndSubmitted(outbox.getId(), token);
             return;
         }
@@ -103,7 +103,7 @@ public class AiPracticeOutboxPublishJob {
                     return;
                 }
                 aiSessionId = aiClient.startSession(
-                    session.getUserId(), session.getTargetUserId());
+                    session.getUserId(), session.getTargetUserId(), outbox.getIdempotencyKey());
                 if (!resultService.attachAiSessionId(outbox.getId(), token, aiSessionId)) {
                     return;
                 }
@@ -114,9 +114,10 @@ public class AiPracticeOutboxPublishJob {
             }
             GenerationReplyResponse response;
             if (retryExistingAiMessage) {
-                response = aiClient.retryMessage(aiSessionId);
+                response = aiClient.retryMessage(aiSessionId, outbox.getIdempotencyKey());
             } else {
-                response = aiClient.sendMessage(aiSessionId, chat.getUserMessage());
+                response = aiClient.sendMessage(
+                    aiSessionId, chat.getUserMessage(), outbox.getIdempotencyKey());
             }
             resultService.markGenerationCompleted(
                 outbox.getId(), token, aiSessionId, response.content());
