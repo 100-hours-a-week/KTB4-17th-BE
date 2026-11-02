@@ -10,6 +10,7 @@ import com.team.dating_backend.aipractice.exception.AiPracticeBusinessException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 public class RestAiPracticeAiClient implements AiPracticeAiClient {
+
+    private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final RestClient restClient;
     private final AiPracticeProperties properties;
@@ -34,8 +37,8 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     @Override
-    public String startSession(Long meUserId, Long partnerUserId) {
-        StartSessionResponse response = request()
+    public String startSession(Long meUserId, Long partnerUserId, UUID idempotencyKey) {
+        StartSessionResponse response = request(idempotencyKey)
             .uri(uri(properties.getInitialSessionPath()))
             .body(new StartSessionRequest(
                 partnerUserId == null ? null : partnerUserId.toString(),
@@ -51,8 +54,9 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     @Override
-    public GenerationReplyResponse sendMessage(String aiSessionId, String userMessage) {
-        GenerationReplyResponse response = request()
+    public GenerationReplyResponse sendMessage(
+        String aiSessionId, String userMessage, UUID idempotencyKey) {
+        GenerationReplyResponse response = request(idempotencyKey)
             .uri(uri(properties.getMessagePath(), aiSessionId))
             .body(new MessageRequest(userMessage))
             .retrieve()
@@ -61,8 +65,8 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     @Override
-    public GenerationReplyResponse retryMessage(String aiSessionId) {
-        GenerationReplyResponse response = request()
+    public GenerationReplyResponse retryMessage(String aiSessionId, UUID idempotencyKey) {
+        GenerationReplyResponse response = request(idempotencyKey)
             .uri(uri(properties.getRetryPath(), aiSessionId))
             .retrieve()
             .body(GenerationReplyResponse.class);
@@ -70,8 +74,8 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     }
 
     @Override
-    public void endSession(String aiSessionId) {
-        request()
+    public void endSession(String aiSessionId, UUID idempotencyKey) {
+        request(idempotencyKey)
             .uri(uri(properties.getEndSessionPath(), aiSessionId))
             .retrieve()
             .toBodilessEntity();
@@ -90,7 +94,7 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
         return response;
     }
 
-    private RestClient.RequestBodyUriSpec request() {
+    private RestClient.RequestBodyUriSpec request(UUID idempotencyKey) {
         if (properties.getBaseUrl() == null || properties.getBaseUrl().isBlank()) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.AI_SERVER_NOT_CONFIGURED);
         }
@@ -98,6 +102,7 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
         RestClient.RequestBodyUriSpec request = restClient.post();
         request.contentType(MediaType.APPLICATION_JSON);
         request.accept(MediaType.APPLICATION_JSON);
+        request.header(IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString());
         if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
             request.header("X-API-Key", properties.getApiKey());
         }

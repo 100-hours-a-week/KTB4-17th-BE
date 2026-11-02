@@ -104,6 +104,12 @@ public class AiPracticeOutbox {
     @Column(name = "failed_at")
     private LocalDateTime failedAt;
 
+    @Column(name = "processing_token", length = 36)
+    private String processingToken;
+
+    @Column(name = "processing_until")
+    private LocalDateTime processingUntil;
+
     public AiPracticeOutbox(
         AiPracticeOutboxCommandType commandType,
         Long sessionId,
@@ -124,16 +130,24 @@ public class AiPracticeOutbox {
         this.failureCount++;
         this.nextAttemptAt = nextAttemptAt;
         this.lastFailureType = failureType;
+        clearProcessing();
     }
 
     public void markPublished(LocalDateTime publishedAt) {
         this.publishedAt = publishedAt;
         this.lastFailureType = null;
+        clearProcessing();
     }
 
     public void markFailed(LocalDateTime failedAt, String failureType) {
         this.failureCount++;
         this.failedAt = failedAt;
         this.lastFailureType = failureType;
+        clearProcessing();
+    }
+
+    private void clearProcessing() {
+        this.processingToken = null;
+        this.processingUntil = null;
     }
 }
