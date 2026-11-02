@@ -65,6 +65,10 @@ public class LikeSendService {
         if (matchRepository.existsBetween(senderId, receiverId)) {
             throw new LikeBusinessException(LikeErrorCode.MATCH_ALREADY_EXISTS);
         }
+        if (likeRepository.existsBySenderIdAndReceiverIdAndStatus(
+            senderId, receiverId, LikeStatus.REJECTED)) {
+            throw new LikeBusinessException(LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
+        }
         if (likeRepository
             .findFirstBySenderIdAndReceiverIdAndStatusOrderByIdDesc(
                 senderId, receiverId, LikeStatus.PENDING)

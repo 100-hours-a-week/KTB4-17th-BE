@@ -80,6 +80,17 @@ class LikeSendServiceTest {
     }
 
     @Test
+    void 같은_방향으로_거절된_좋아요가_있으면_저장하거나_알림을_보내지_않는다() {
+        given(likeRepository.existsBySenderIdAndReceiverIdAndStatus(1L, 2L, LikeStatus.REJECTED))
+            .willReturn(true);
+
+        assertError(1L, 2L, LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
+
+        verify(likeRepository, never()).save(any(Like.class));
+        verifyNoInteractions(notificationRequestService);
+    }
+
+    @Test
     void 좋아요_전송은_인증된_발신자와_수신자일_때_PENDING으로_저장한다() {
         Profile profile = mock(Profile.class);
         given(profile.getNickname()).willReturn("봄날");
