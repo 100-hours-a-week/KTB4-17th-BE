@@ -11,6 +11,7 @@ import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.aipractice.service.AiPracticeCallbackSecretVerifier;
 import com.team.dating_backend.aipractice.service.AiPracticeGenerationCallbackService;
+import com.team.dating_backend.aipractice.service.AiPracticeOutboxClaimService;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxPublishJob;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxResultService;
 import com.team.dating_backend.aipractice.service.AiPracticeRedisEventPublisher;
@@ -92,6 +93,8 @@ class ChatRuntimeConditionTest {
         .withBean(AiPracticeChatRepository.class,
             () -> mock(AiPracticeChatRepository.class))
         .withBean(AiPracticeAiClient.class, () -> mock(AiPracticeAiClient.class))
+        .withBean(AiPracticeOutboxClaimService.class,
+            () -> mock(AiPracticeOutboxClaimService.class))
         .withBean(AiPracticeOutboxResultService.class,
             () -> mock(AiPracticeOutboxResultService.class))
         .withBean(AiPracticeProperties.class, () -> mock(AiPracticeProperties.class))

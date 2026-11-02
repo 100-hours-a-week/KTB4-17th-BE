@@ -4,6 +4,7 @@ import com.team.dating_backend.aipractice.entity.AiPracticeOutbox;
 import com.team.dating_backend.aipractice.enums.AiPracticeOutboxCommandType;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -52,6 +53,16 @@ public interface AiPracticeOutboxRepository extends JpaRepository<AiPracticeOutb
         @Param("id") Long id,
         @Param("token") String token,
         @Param("durationMicros") long durationMicros);
+
+    @Query(value = """
+        SELECT * FROM ai_practice_outbox
+        WHERE id = :id AND processing_token = :token
+            AND processing_until > UTC_TIMESTAMP(6)
+        FOR UPDATE
+        """, nativeQuery = true)
+    Optional<AiPracticeOutbox> findClaimedByIdForUpdate(
+        @Param("id") Long id,
+        @Param("token") String token);
 
     boolean existsBySessionIdAndCommandType(
         Long sessionId, AiPracticeOutboxCommandType commandType);

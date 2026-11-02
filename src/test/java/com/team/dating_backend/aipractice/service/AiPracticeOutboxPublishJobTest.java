@@ -35,12 +35,14 @@ class AiPracticeOutboxPublishJobTest {
     private static final Long CHAT_ID = 20L;
     private static final Long OUTBOX_ID = 30L;
     private static final Long TARGET_USER_ID = 2L;
+    private static final String PROCESSING_TOKEN = "9d525e70-28d0-4214-b3ac-dc45f9d073ca";
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 27, 12, 0);
 
     private AiPracticeOutboxRepository outboxRepository;
     private AiPracticeSessionRepository sessionRepository;
     private AiPracticeChatRepository chatRepository;
     private AiPracticeAiClient aiClient;
+    private AiPracticeOutboxClaimService claimService;
     private AiPracticeOutboxResultService resultService;
     private AiPracticeProperties properties;
     private AiPracticeOutboxPublishJob job;
@@ -54,6 +56,7 @@ class AiPracticeOutboxPublishJobTest {
         sessionRepository = mock(AiPracticeSessionRepository.class);
         chatRepository = mock(AiPracticeChatRepository.class);
         aiClient = mock(AiPracticeAiClient.class);
+        claimService = mock(AiPracticeOutboxClaimService.class);
         resultService = mock(AiPracticeOutboxResultService.class);
         properties = new AiPracticeProperties();
         job = new AiPracticeOutboxPublishJob(
@@ -61,6 +64,7 @@ class AiPracticeOutboxPublishJobTest {
             sessionRepository,
             chatRepository,
             aiClient,
+            claimService,
             resultService,
             properties);
 
@@ -72,18 +76,22 @@ class AiPracticeOutboxPublishJobTest {
         outbox = new AiPracticeOutbox(
             AiPracticeOutboxCommandType.GENERATE, SESSION_ID, CHAT_ID, 1, CREATED_AT);
         ReflectionTestUtils.setField(outbox, "id", OUTBOX_ID);
+        ReflectionTestUtils.setField(outbox, "processingToken", PROCESSING_TOKEN);
 
-        given(outboxRepository
-            .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                any(LocalDateTime.class), any(Pageable.class)))
+        given(outboxRepository.findAvailable(
+            any(LocalDateTime.class), any(Pageable.class)))
             .willReturn(List.of(outbox));
+        given(claimService.tryClaim(OUTBOX_ID)).willReturn(Optional.of(outbox));
+        given(claimService.renew(OUTBOX_ID, PROCESSING_TOKEN)).willReturn(true);
+        given(resultService.attachAiSessionId(
+            OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42")).willReturn(true);
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
         given(chatRepository.findByIdAndSession_Id(CHAT_ID, SESSION_ID))
             .willReturn(Optional.of(chat));
     }
 
     @Test
-    void 최초생성은AI세션을만든뒤메시지를보내고답변을저장한다() {
+    void 새_AI_세션에서_사용자_메시지에_대한_AI_답변을_저장한다() {
         given(aiClient.startSession(USER_ID, TARGET_USER_ID)).willReturn("ai-session-42");
         given(aiClient.sendMessage(anyString(), anyString()))
             .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
@@ -92,12 +100,14 @@ class AiPracticeOutboxPublishJobTest {
 
         verify(aiClient).startSession(USER_ID, TARGET_USER_ID);
         verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
-        verify(resultService).attachAiSessionId(OUTBOX_ID, "ai-session-42");
-        verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
+        verify(resultService).attachAiSessionId(
+            OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42");
+        verify(resultService).markGenerationCompleted(
+            OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42", "AI 답변");
     }
 
     @Test
-    void 기존AI세션이있으면세션ID와메시지로후속생성을요청한다() {
+    void 기존_AI_세션에_사용자_메시지를_전달하고_AI_답변을_저장한다() {
         session.attachAiSessionId("ai-session-42");
         given(aiClient.sendMessage(anyString(), anyString()))
             .willReturn(new GenerationReplyResponse("ai-session-42", 1, "AI 답변", "llm"));
@@ -105,23 +115,24 @@ class AiPracticeOutboxPublishJobTest {
         job.publishDueCommands();
 
         verify(aiClient).sendMessage("ai-session-42", "연습 메시지");
-        verify(resultService).markGenerationCompleted(OUTBOX_ID, "ai-session-42", "AI 답변");
+        verify(resultService).markGenerationCompleted(
+            OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42", "AI 답변");
         verify(aiClient, never()).startSession(any(), any());
     }
 
     @Test
-    void 이미실패했거나오래된생성시도의Outbox는AI로전달하지않는다() {
+    void 현재_생성_요청과_일치하지_않으면_AI_서버를_호출하지_않는다() {
         ReflectionTestUtils.setField(outbox, "generationAttempt", 0);
 
         job.publishDueCommands();
 
-        verify(resultService).markSkipped(OUTBOX_ID);
+        verify(resultService).markSkipped(OUTBOX_ID, PROCESSING_TOKEN);
         verifyNoInteractions(aiClient);
     }
 
     @Test
-    void AI서버요청실패는정해진횟수와재시도시각을기록한다() {
-        org.mockito.BDDMockito.willThrow(new RestClientException("request failed"))
+    void AI_서버_요청에_실패하면_재시도를_예약한다() {
+        org.mockito.BDDMockito.willThrow(new RestClientException("AI_SERVER_REQUEST_FAILED"))
             .given(aiClient).startSession(USER_ID, TARGET_USER_ID);
 
         job.publishDueCommands();
@@ -132,6 +143,7 @@ class AiPracticeOutboxPublishJobTest {
             .forClass(LocalDateTime.class);
         verify(resultService).recordFailure(
             org.mockito.ArgumentMatchers.eq(OUTBOX_ID),
+            org.mockito.ArgumentMatchers.eq(PROCESSING_TOKEN),
             failureTypeCaptor.capture(),
             maxFailuresCaptor.capture(),
             retryAtCaptor.capture());
@@ -139,6 +151,15 @@ class AiPracticeOutboxPublishJobTest {
         assertThat(maxFailuresCaptor.getValue()).isEqualTo(10);
         assertThat(retryAtCaptor.getValue()).isAfter(AiPracticeTime.now());
         verify(resultService, never()).markGenerationCompleted(
-            OUTBOX_ID, "ai-session-42", "AI 답변");
+            OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42", "AI 답변");
+    }
+
+    @Test
+    void 다른_서버가_처리_중인_요청은_건너뛴다() {
+        given(claimService.tryClaim(OUTBOX_ID)).willReturn(Optional.empty());
+
+        job.publishDueCommands();
+
+        verifyNoInteractions(aiClient, resultService);
     }
 }

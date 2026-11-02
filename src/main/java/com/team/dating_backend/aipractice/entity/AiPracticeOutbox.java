@@ -130,16 +130,24 @@ public class AiPracticeOutbox {
         this.failureCount++;
         this.nextAttemptAt = nextAttemptAt;
         this.lastFailureType = failureType;
+        clearProcessing();
     }
 
     public void markPublished(LocalDateTime publishedAt) {
         this.publishedAt = publishedAt;
         this.lastFailureType = null;
+        clearProcessing();
     }
 
     public void markFailed(LocalDateTime failedAt, String failureType) {
         this.failureCount++;
         this.failedAt = failedAt;
         this.lastFailureType = failureType;
+        clearProcessing();
+    }
+
+    private void clearProcessing() {
+        this.processingToken = null;
+        this.processingUntil = null;
     }
 }

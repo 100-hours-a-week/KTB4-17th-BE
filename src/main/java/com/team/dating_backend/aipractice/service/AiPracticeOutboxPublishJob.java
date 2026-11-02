@@ -38,15 +38,19 @@ public class AiPracticeOutboxPublishJob {
     private final AiPracticeSessionRepository sessionRepository;
     private final AiPracticeChatRepository chatRepository;
     private final AiPracticeAiClient aiClient;
+    private final AiPracticeOutboxClaimService claimService;
     private final AiPracticeOutboxResultService resultService;
     private final AiPracticeProperties properties;
 
     @Scheduled(fixedDelayString = "${app.ai-practice.outbox-publish-delay-ms:1000}")
     public void publishDueCommands() {
-        List<AiPracticeOutbox> outboxes = outboxRepository
-            .findByPublishedAtIsNullAndFailedAtIsNullAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                AiPracticeTime.now(), PageRequest.of(0, BATCH_SIZE));
-        for (AiPracticeOutbox outbox : outboxes) {
+        List<AiPracticeOutbox> outboxes = outboxRepository.findAvailable(
+            AiPracticeTime.now(), PageRequest.of(0, BATCH_SIZE));
+        for (AiPracticeOutbox candidate : outboxes) {
+            AiPracticeOutbox outbox = claimService.tryClaim(candidate.getId()).orElse(null);
+            if (outbox == null) {
+                continue;
+            }
             try {
                 publish(outbox);
             } catch (RuntimeException exception) {
@@ -56,19 +60,23 @@ public class AiPracticeOutboxPublishJob {
     }
 
     private void publish(AiPracticeOutbox outbox) {
+        String token = outbox.getProcessingToken();
         AiPracticeSession session = sessionRepository.findById(outbox.getSessionId()).orElse(null);
         if (session == null) {
-            resultService.markSkipped(outbox.getId());
+            resultService.markSkipped(outbox.getId(), token);
             return;
         }
 
         if (outbox.getCommandType() == AiPracticeOutboxCommandType.END_SESSION) {
             if (session.getAiSessionId() == null) {
-                resultService.markSkipped(outbox.getId());
+                resultService.markSkipped(outbox.getId(), token);
+                return;
+            }
+            if (!claimService.renew(outbox.getId(), token)) {
                 return;
             }
             aiClient.endSession(session.getAiSessionId());
-            resultService.markEndSubmitted(outbox.getId());
+            resultService.markEndSubmitted(outbox.getId(), token);
             return;
         }
 
@@ -79,7 +87,7 @@ public class AiPracticeOutboxPublishJob {
         if (chat == null
             || chat.getStatus() != AiPracticeChatStatus.GENERATING
             || chat.getGenerationAttempt() != outbox.getGenerationAttempt()) {
-            resultService.markSkipped(outbox.getId());
+            resultService.markSkipped(outbox.getId(), token);
             return;
         }
 
@@ -91,22 +99,32 @@ public class AiPracticeOutboxPublishJob {
                     throw new AiPracticeBusinessException(
                         AiPracticeErrorCode.TARGET_USER_UNAVAILABLE);
                 }
+                if (!claimService.renew(outbox.getId(), token)) {
+                    return;
+                }
                 aiSessionId = aiClient.startSession(
                     session.getUserId(), session.getTargetUserId());
-                resultService.attachAiSessionId(outbox.getId(), aiSessionId);
+                if (!resultService.attachAiSessionId(outbox.getId(), token, aiSessionId)) {
+                    return;
+                }
             }
 
+            if (!claimService.renew(outbox.getId(), token)) {
+                return;
+            }
             GenerationReplyResponse response;
             if (retryExistingAiMessage) {
                 response = aiClient.retryMessage(aiSessionId);
             } else {
                 response = aiClient.sendMessage(aiSessionId, chat.getUserMessage());
             }
-            resultService.markGenerationCompleted(outbox.getId(), aiSessionId, response.content());
+            resultService.markGenerationCompleted(
+                outbox.getId(), token, aiSessionId, response.content());
         } catch (RestClientResponseException exception) {
             int status = exception.getStatusCode().value();
             if (status == 503 || status >= 400 && status < 500) {
-                resultService.markGenerationFailed(outbox.getId(), getPermanentFailureCode(status));
+                resultService.markGenerationFailed(
+                    outbox.getId(), token, getPermanentFailureCode(status));
                 return;
             }
             throw exception;
@@ -115,7 +133,7 @@ public class AiPracticeOutboxPublishJob {
             if (failureCode == null) {
                 throw exception;
             }
-            resultService.markGenerationFailed(outbox.getId(), failureCode);
+            resultService.markGenerationFailed(outbox.getId(), token, failureCode);
         }
     }
 
@@ -130,11 +148,12 @@ public class AiPracticeOutboxPublishJob {
 
         resultService.recordFailure(
             outbox.getId(),
+            outbox.getProcessingToken(),
             failureType,
             properties.getMaxOutboxFailures(),
             now.plusSeconds(retryDelaySeconds));
-        log.warn("AI Practice outbox delivery failed. outboxId={}, failureType={}, exceptionType={}",
-            outbox.getId(), failureType, exception.getClass().getSimpleName());
+        log.warn("failureCode={}, outboxId={}, exceptionType={}",
+            failureType, outbox.getId(), exception.getClass().getSimpleName());
     }
 
     private String getFailureType(RuntimeException exception) {
