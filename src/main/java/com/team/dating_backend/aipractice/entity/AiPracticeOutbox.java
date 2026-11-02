@@ -104,6 +104,12 @@ public class AiPracticeOutbox {
     @Column(name = "failed_at")
     private LocalDateTime failedAt;
 
+    @Column(name = "processing_token", length = 36)
+    private String processingToken;
+
+    @Column(name = "processing_until")
+    private LocalDateTime processingUntil;
+
     public AiPracticeOutbox(
         AiPracticeOutboxCommandType commandType,
         Long sessionId,

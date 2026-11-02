@@ -187,6 +187,7 @@ app:
     daily-limit: ${AI_PRACTICE_DAILY_LIMIT:30}
     max-outbox-failures: ${AI_PRACTICE_OUTBOX_MAX_FAILURES:10}
     outbox-publish-delay-ms: ${AI_PRACTICE_OUTBOX_PUBLISH_DELAY_MS:1000}
+    outbox-claim-duration-ms: ${AI_PRACTICE_OUTBOX_CLAIM_DURATION_MS:150000}
 
   persona-ai:
     base-url: ${AI_PERSONA_BASE_URL:}
