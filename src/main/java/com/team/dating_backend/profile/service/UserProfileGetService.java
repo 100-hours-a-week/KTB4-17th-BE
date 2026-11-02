@@ -31,6 +31,7 @@ public class UserProfileGetService {
     private final ChatRoomRepository chatRoomRepository;
     private final UserBlockRepository userBlockRepository;
     private final RecommendationItemRepository recommendationItemRepository;
+    private final PopularProfileRankingService popularProfileRankingService;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long viewerUserId, Long userId) {
@@ -41,7 +42,8 @@ public class UserProfileGetService {
             || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
                 && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
                 && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
-                    viewerUserId, userId))) {
+                    viewerUserId, userId)
+                && !popularProfileRankingService.isInTopProfiles(userId))) {
             throw profileNotAvailable();
         }
 

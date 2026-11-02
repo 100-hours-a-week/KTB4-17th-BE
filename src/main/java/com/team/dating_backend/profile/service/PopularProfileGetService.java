@@ -1,6 +1,5 @@
 package com.team.dating_backend.profile.service;
 
-import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.dto.response.PopularProfilesResponse;
 import com.team.dating_backend.profile.repository.PopularProfileRow;
@@ -10,7 +9,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,14 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PopularProfileGetService {
 
-    private static final int RANKING_SIZE = 10;
-
-    private final LikeRepository likeRepository;
+    private final PopularProfileRankingService rankingService;
     private final ProfileImageGetService profileImageGetService;
 
     @Transactional(readOnly = true)
     public PopularProfilesResponse getPopularProfiles() {
-        List<PopularProfileRow> rows = likeRepository.findPopularProfiles(PageRequest.of(0, RANKING_SIZE));
+        List<PopularProfileRow> rows = rankingService.getTopProfiles();
         Map<Long, List<ProfileImageAccessResult>> images = profileImageGetService
             .getProfileImagesByUserIds(rows.stream().map(PopularProfileRow::userId).toList());
         List<PopularProfilesResponse.Item> profiles = new ArrayList<>();
