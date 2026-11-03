@@ -36,9 +36,13 @@ public class AiSimulationNotificationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void completed(Long sessionId, Long requesterId, Long targetId, Long recipientId) {
-        if (!eligiblePair(requesterId, targetId)
-            || (recipientId.equals(targetId) && passed(requesterId, targetId)))
+        if (recipientId.equals(requesterId)) {
+            if (!users.existsByIdAndStatus(requesterId, UserStatus.ACTIVE))
+                return;
+        } else if (!recipientId.equals(targetId) || !eligiblePair(requesterId, targetId)
+            || passed(requesterId, targetId)) {
             return;
+        }
         var template = AiNotificationTemplate.SIMULATION_COMPLETED;
         notifications.requestNotification(new NotificationCreateRequested(
             NotificationCreateRequested.CURRENT_SCHEMA_VERSION,

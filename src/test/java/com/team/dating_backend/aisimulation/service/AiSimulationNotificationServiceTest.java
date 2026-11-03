@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
@@ -34,6 +35,7 @@ class AiSimulationNotificationServiceTest {
     void setUp() {
         given(users.existsByIdAndStatusNot(any(), org.mockito.ArgumentMatchers.eq(UserStatus.WITHDRAWN)))
             .willReturn(true);
+        given(users.existsByIdAndStatus(1L, UserStatus.ACTIVE)).willReturn(true);
     }
 
     @Test
@@ -62,18 +64,43 @@ class AiSimulationNotificationServiceTest {
     }
 
     @Test
-    void 차단_탈퇴_방나가기는_알림을_제외한다() {
+    void 차단_탈퇴_방나가기는_B의_요청과_완료_알림을_제외하지만_A의_완료_알림은_유지한다() {
         given(blocks.existsActiveBlockBetween(1L, 2L)).willReturn(true);
         service.requested(100L, 1L, 2L);
         service.completed(100L, 1L, 2L, 1L);
+        service.completed(100L, 1L, 2L, 2L);
         given(blocks.existsActiveBlockBetween(1L, 2L)).willReturn(false);
         given(rooms.existsLeftParticipantBetweenUsers(1L, 2L)).willReturn(true);
         service.requested(100L, 1L, 2L);
+        service.completed(100L, 1L, 2L, 1L);
         service.completed(100L, 1L, 2L, 2L);
         given(rooms.existsLeftParticipantBetweenUsers(1L, 2L)).willReturn(false);
         given(users.existsByIdAndStatusNot(2L, UserStatus.WITHDRAWN)).willReturn(false);
         service.requested(100L, 1L, 2L);
         service.completed(100L, 1L, 2L, 1L);
+        service.completed(100L, 1L, 2L, 2L);
+        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
+        verify(notifications, times(3)).requestNotification(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(request -> {
+            assertThat(request.recipientUserId()).isEqualTo(1L);
+            assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
+        });
+    }
+
+    @Test
+    void A가_활성_상태가_아니면_자신의_완료_알림은_요청하지_않는다() {
+        given(users.existsByIdAndStatus(1L, UserStatus.ACTIVE)).willReturn(false);
+        service.completed(100L, 1L, 2L, 1L);
         verifyNoInteractions(notifications);
+    }
+
+    @Test
+    void 정상_완료시_양쪽에게_각각_완료_알림을_요청한다() {
+        service.completed(100L, 1L, 2L, 1L);
+        service.completed(100L, 1L, 2L, 2L);
+        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
+        verify(notifications, times(2)).requestNotification(captor.capture());
+        assertThat(captor.getAllValues()).extracting(NotificationCreateRequested::recipientUserId)
+            .containsExactly(1L, 2L);
     }
 }

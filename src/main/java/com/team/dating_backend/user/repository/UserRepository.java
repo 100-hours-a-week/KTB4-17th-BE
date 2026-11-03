@@ -27,6 +27,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByIdAndStatusNot(Long userId, UserStatus status);
 
+    boolean existsByIdAndStatus(Long userId, UserStatus status);
+
     @Query("""
         select user.id
         from User user
