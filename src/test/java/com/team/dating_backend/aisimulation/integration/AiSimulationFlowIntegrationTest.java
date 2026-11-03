@@ -237,9 +237,12 @@ class AiSimulationFlowIntegrationTest {
                 case "blocked" -> jdbc.update(
                     "INSERT INTO user_blocks (blocker_user_id, blocked_user_id, blocked_at) VALUES (8, 7, NOW(6))");
                 case "left" -> {
-                    jdbc.update("INSERT INTO matches (id, sender_id, receiver_id, status, matched_at) VALUES (990001, 7, 8, 'ACTIVE', NOW(6))");
-                    jdbc.update("INSERT INTO chat_rooms (id, match_id, status, created_at) VALUES (990001, 990001, 'ACTIVE', NOW(6))");
-                    jdbc.update("INSERT INTO chat_participants (chat_room_id, user_id, status, is_chat_notification) VALUES (990001, 7, 'ACTIVE', true), (990001, 8, 'LEFT', true)");
+                    jdbc.update(
+                        "INSERT INTO matches (id, sender_id, receiver_id, status, matched_at) VALUES (990001, 7, 8, 'ACTIVE', NOW(6))");
+                    jdbc.update(
+                        "INSERT INTO chat_rooms (id, match_id, status, created_at) VALUES (990001, 990001, 'ACTIVE', NOW(6))");
+                    jdbc.update(
+                        "INSERT INTO chat_participants (chat_room_id, user_id, status, is_chat_notification) VALUES (990001, 7, 'ACTIVE', true), (990001, 8, 'LEFT', true)");
                 }
                 case "target_withdrawn" -> jdbc.update("UPDATE users SET status = 'WITHDRAWN' WHERE id = 8");
                 case "requester_withdrawn" -> jdbc.update("UPDATE users SET status = 'WITHDRAWN' WHERE id = 7");
@@ -533,8 +536,8 @@ class AiSimulationFlowIntegrationTest {
         try {
             given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
             Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                assertThat(storedRequests.snapshot()).anySatisfy(request -> {
+            await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(storedRequests.snapshot()).anySatisfy(request -> {
                     assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
                     assertThat(request.recipientUserId()).isEqualTo(8L);
                 }));
