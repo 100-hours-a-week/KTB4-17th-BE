@@ -42,6 +42,13 @@ public class RecommendationItem {
     @Column(name = "ranking_order", nullable = false)
     private Integer rankingOrder;
 
+    @Column(name = "simulation_requested", nullable = false)
+    private boolean simulationRequested;
+
+    public void markSimulationRequested() {
+        this.simulationRequested = true;
+    }
+
     public RecommendationItem(Long recommendationBatchId, Long candidateUserId,
         Integer rankingOrder) {
         this.recommendationBatchId = recommendationBatchId;

@@ -14,6 +14,14 @@ import org.springframework.data.repository.query.Param;
 public interface RecommendationCandidateRepository extends JpaRepository<User, Long> {
 
     @Query("""
+        SELECT count(candidate) > 0 FROM User candidate
+        JOIN Profile profile ON profile.user = candidate AND profile.deletedAt IS NULL
+        WHERE candidate.id = :candidateUserId AND
+        """ + RecommendationEligibilityQuery.ELIGIBLE_CANDIDATE_PREDICATE)
+    boolean isEligibleWithoutPreferences(@Param("requesterUserId") Long requesterUserId,
+        @Param("candidateUserId") Long candidateUserId);
+
+    @Query("""
         SELECT candidate.id FROM User candidate
         JOIN Profile profile ON profile.user = candidate AND profile.deletedAt IS NULL
         WHERE candidate.gender IN :candidateGenders

@@ -16,6 +16,7 @@ import com.team.dating_backend.recommendation.service.RecommendationBatchCreateS
 import com.team.dating_backend.recommendation.service.RecommendationHistoryCleanupService;
 import com.team.dating_backend.recommendation.service.RecommendationItemGetService;
 import com.team.dating_backend.recommendation.service.RecommendationPreferenceService;
+import com.team.dating_backend.recommendation.service.SimulationRecommendationService;
 import com.team.dating_backend.user.entity.User;
 import com.team.dating_backend.user.enums.Gender;
 import com.team.dating_backend.user.repository.UserRepository;
@@ -64,6 +65,8 @@ class RecommendationRefreshIntegrationTest {
     @Autowired
     private RecommendationBatchCreateService service;
     @Autowired
+    private SimulationRecommendationService simulationRecommendations;
+    @Autowired
     private RecommendationItemGetService queryService;
     @Autowired
     private RecommendationHistoryCleanupService cleanupService;
@@ -90,6 +93,8 @@ class RecommendationRefreshIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("delete from recommendation_passes");
+        jdbc.update("delete from user_blocks");
         items.deleteAllInBatch();
         batches.deleteAllInBatch();
         jdbc.update("delete from profiles");
@@ -97,6 +102,47 @@ class RecommendationRefreshIntegrationTest {
         users.deleteAllInBatch();
         requesterId = activeUser(Gender.MALE);
         given(imageService.getProfileImagesByUserIds(anyCollection())).willReturn(Map.of());
+    }
+
+    @Test
+    void 시뮬레이션_요청자는_선호를_우회하고_갱신과_중복_요청에도_유지된다() {
+        Long candidate = activeUser(Gender.MALE);
+        jdbc.update("insert into profiles (user_id, nickname, created_at, updated_at) values (?, '요청자', now(6), now(6))", candidate);
+        simulationRecommendations.add(requesterId, candidate);
+        long batchId = batches.findByUserIdAndDeletedAtIsNull(requesterId).orElseThrow().getId();
+        simulationRecommendations.add(requesterId, candidate);
+        service.refreshRecommendationBatch(requesterId);
+
+        assertThat(items.findAllByRecommendationBatchId(batchId)).singleElement().satisfies(item -> {
+            assertThat(item.getCandidateUserId()).isEqualTo(candidate);
+            assertThat(item.isSimulationRequested()).isTrue();
+        });
+        assertThat(queryService.getRecommendationItems(requesterId, batchId, null).items())
+            .extracting(item -> item.candidate().userId()).containsExactly(candidate);
+        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))", requesterId, candidate);
+        assertThat(queryService.getRecommendationItems(requesterId, batchId, null).items()).isEmpty();
+    }
+
+    @Test
+    void 이미_패스한_요청자는_목록에_추가하지_않는다() {
+        Long candidate = candidate();
+        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))", requesterId, candidate);
+        simulationRecommendations.add(requesterId, candidate);
+        assertThat(batches.findByUserIdAndDeletedAtIsNull(requesterId)).isEmpty();
+    }
+
+    @Test
+    void 기존_일반_추천에도_요청_근거를_추가하고_항목을_중복하지_않는다() {
+        Long candidate = candidate();
+        long batchId = create();
+        Long originalId = items.findAllByRecommendationBatchId(batchId).getFirst().getId();
+        simulationRecommendations.add(requesterId, candidate);
+        jdbc.update("update users set gender = 'MALE' where id = ?", candidate);
+        service.refreshRecommendationBatch(requesterId);
+        assertThat(items.findAllByRecommendationBatchId(batchId)).singleElement().satisfies(item -> {
+            assertThat(item.getId()).isEqualTo(originalId);
+            assertThat(item.isSimulationRequested()).isTrue();
+        });
     }
 
     @Test
@@ -292,7 +338,7 @@ class RecommendationRefreshIntegrationTest {
     @EntityScan("com.team.dating_backend")
     @EnableJpaRepositories("com.team.dating_backend")
     @Import(
-        {RecommendationBatchCreateService.class, RecommendationItemGetService.class,
+        {RecommendationBatchCreateService.class, SimulationRecommendationService.class, RecommendationItemGetService.class,
             RecommendationHistoryCleanupService.class, RecommendationPreferenceService.class}
     )
     static class TestApplication {}
