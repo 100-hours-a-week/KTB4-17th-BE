@@ -131,7 +131,7 @@ class NotificationTest {
             case LIKE, MATCH -> NotificationCategory.INTEREST;
             case CHAT_MESSAGE -> NotificationCategory.CHAT;
             case PERSONA_TRAINING_COMPLETED, FACE_ANALYSIS_COMPLETED,
-                AI_PRACTICE_CHAT_COMPLETED, AI_SIMULATION_REPORT_COMPLETED,
+                AI_PRACTICE_CHAT_COMPLETED, AI_SIMULATION_REQUESTED, AI_SIMULATION_REPORT_COMPLETED,
                 NOTICE -> NotificationCategory.SYSTEM;
         };
 

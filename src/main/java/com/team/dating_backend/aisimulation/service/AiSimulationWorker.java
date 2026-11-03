@@ -20,6 +20,7 @@ public class AiSimulationWorker {
     private final AiSimulationPersistenceService persistenceService;
     private final AiSimulationAiClient aiClient;
     private final AiSimulationResponseValidator validator;
+    private final AiSimulationNotificationService notificationService;
 
     @Async("aiSimulationExecutor")
     public void generate(Long simulationId) {
@@ -34,6 +35,8 @@ public class AiSimulationWorker {
                 generation.userId().toString(), generation.targetUserId().toString(), DEFAULT_TURNS));
             validator.validate(response, generation.userId(), generation.targetUserId());
             persistenceService.complete(simulationId, response);
+            notifyCompleted(simulationId, generation.userId(), generation.targetUserId(), generation.userId());
+            notifyCompleted(simulationId, generation.userId(), generation.targetUserId(), generation.targetUserId());
         } catch (RuntimeException exception) {
             log.warn("AI simulation generation failed. simulationId={}, exceptionType={}",
                 simulationId, exception.getClass().getSimpleName());
@@ -43,6 +46,15 @@ public class AiSimulationWorker {
                 log.error("AI simulation failure persistence failed. simulationId={}, exceptionType={}",
                     simulationId, persistenceException.getClass().getSimpleName());
             }
+        }
+    }
+
+    private void notifyCompleted(Long simulationId, Long requesterId, Long targetId, Long recipientId) {
+        try {
+            notificationService.completed(simulationId, requesterId, targetId, recipientId);
+        } catch (RuntimeException exception) {
+            log.warn("Simulation completion notification failed: simulationId={}, recipientId={}",
+                simulationId, recipientId, exception);
         }
     }
 }

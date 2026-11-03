@@ -87,6 +87,10 @@ class NotificationMultiProcessIntegrationTest extends NotificationMultiProcessTe
         long simulationId = handle.path("simulationId").asLong();
         var expected = new Expected("AI_SIMULATION_COMPLETED:" + simulationId, requester,
             "AI_SIMULATION_REPORT_COMPLETED");
+        var requested = new Expected("AI_SIMULATION_REQUESTED:" + simulationId, partner,
+            "AI_SIMULATION_REQUESTED");
+        var partnerCompleted = new Expected("AI_SIMULATION_COMPLETED:" + simulationId + ":" + partner,
+            partner, "AI_SIMULATION_REPORT_COMPLETED");
 
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
             var state = success(request(second, "GET", "/api/v1/ai-simulations/" + simulationId + "/status",
@@ -101,7 +105,7 @@ class NotificationMultiProcessIntegrationTest extends NotificationMultiProcessTe
             200);
         assertThat(report.path("overall").path("score").asInt()).isEqualTo(78);
         assertThat(stored(expected).targetId()).isEqualTo(simulationId);
-        reconcile("ai-completion", List.of(expected), onFirst, onSecond, partnerStream);
+        reconcile("ai-completion", List.of(expected, requested, partnerCompleted), onFirst, onSecond, partnerStream);
         var page = success(request(second, "GET", NOTIFICATIONS + "?category=SYSTEM", token(requester), null), 200);
         assertThat(page.path("items")).hasSize(1);
         assertThat(page.path("items").get(0).path("notificationId").asLong())

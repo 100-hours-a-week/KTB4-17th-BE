@@ -101,7 +101,7 @@ class AiSimulationWorkerAsyncTest {
         @Bean
         AiSimulationWorker worker(AiSimulationPersistenceService persistence,
             AiSimulationAiClient client, AiSimulationResponseValidator validator) {
-            return new AiSimulationWorker(persistence, client, validator);
+            return new AiSimulationWorker(persistence, client, validator, mock(AiSimulationNotificationService.class));
         }
     }
 }

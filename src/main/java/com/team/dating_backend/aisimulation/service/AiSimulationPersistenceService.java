@@ -11,11 +11,6 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.repository.AiSimulationMessageRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
-import com.team.dating_backend.notification.enums.AiNotificationTemplate;
-import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.service.NotificationRequestService;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -35,7 +30,6 @@ public class AiSimulationPersistenceService {
     private final AiSimulationMessageRepository messageRepository;
     private final AiSimulationReportRepository reportRepository;
     private final ObjectMapper objectMapper;
-    private final NotificationRequestService notificationRequestService;
 
     @Transactional
     public AiSimulationSession begin(Long userId, Long targetUserId) {
@@ -78,12 +72,6 @@ public class AiSimulationPersistenceService {
             toMap(response),
             completedAt);
         session.complete(completedAt);
-        AiNotificationTemplate template = AiNotificationTemplate.SIMULATION_COMPLETED;
-        Instant requestedAt = Instant.now();
-        notificationRequestService.requestNotification(new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "AI_SIMULATION_COMPLETED:" + session.getId(),
-            session.getUserId(), NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-            template.getTitle(), template.getBody(), template.getTargetType(), session.getId(), requestedAt));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
