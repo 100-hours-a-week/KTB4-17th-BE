@@ -15,6 +15,14 @@ import org.springframework.data.repository.query.Param;
 
 public interface AiSimulationSessionRepository extends JpaRepository<AiSimulationSession, Long> {
 
+    @Query("""
+        select count(session) > 0 from AiSimulationSession session
+        where session.status = com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus.COMPLETED
+          and ((session.userId = :first and session.targetUserId = :second)
+            or (session.userId = :second and session.targetUserId = :first))
+        """)
+    boolean existsCompletedBetween(@Param("first") Long first, @Param("second") Long second);
+
     interface ParticipantPair {
         Long getUserId();
 

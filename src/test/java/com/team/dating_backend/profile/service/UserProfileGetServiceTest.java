@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
@@ -41,6 +42,7 @@ class UserProfileGetServiceTest {
     private RecommendationItemRepository recommendationItemRepository;
     private PopularProfileRankingService popularProfileRankingService;
     private UserProfileGetService service;
+    private AiSimulationSessionRepository simulationSessions;
 
     @BeforeEach
     void setUp() {
@@ -51,9 +53,25 @@ class UserProfileGetServiceTest {
         userBlockRepository = mock(UserBlockRepository.class);
         recommendationItemRepository = mock(RecommendationItemRepository.class);
         popularProfileRankingService = mock(PopularProfileRankingService.class);
+        simulationSessions = mock(AiSimulationSessionRepository.class);
         service = new UserProfileGetService(profileRepository, profileImageGetService,
             likeRepository, chatRoomRepository, userBlockRepository, recommendationItemRepository,
-            popularProfileRankingService);
+            popularProfileRankingService, simulationSessions);
+    }
+
+    @Test
+    void 완료된_시뮬레이션의_참가자는_프로필을_조회할_수_있다() {
+        given(simulationSessions.existsCompletedBetween(5L, 21L)).willReturn(true);
+        givenActiveProfile(UserStatus.ACTIVE);
+        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
+        verifyNoInteractions(popularProfileRankingService);
+    }
+
+    @Test
+    void 완료된_시뮬레이션이_있어도_차단하면_프로필을_조회할_수_없다() {
+        given(userBlockRepository.existsActiveBlockBetween(5L, 21L)).willReturn(true);
+        assertUnavailable(21L);
+        verifyNoInteractions(simulationSessions);
     }
 
     @Test

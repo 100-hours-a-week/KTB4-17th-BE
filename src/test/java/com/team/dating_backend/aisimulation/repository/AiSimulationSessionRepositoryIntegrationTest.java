@@ -55,6 +55,19 @@ class AiSimulationSessionRepositoryIntegrationTest {
 
     private Long committedSessionId;
 
+    @ParameterizedTest
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 완료된_세션만_양방향_프로필_접근_근거가_된다(AiSimulationSessionStatus status) {
+        AiSimulationSession session = repository.saveAndFlush(
+            new AiSimulationSession(USER_ID, TARGET_ID, CREATED_AT));
+        jdbc.update("UPDATE ai_simulation_sessions SET status = ? WHERE id = ?", status.name(), session.getId());
+        entityManager.clear();
+        boolean expected = status == AiSimulationSessionStatus.COMPLETED;
+        assertThat(repository.existsCompletedBetween(USER_ID, TARGET_ID)).isEqualTo(expected);
+        assertThat(repository.existsCompletedBetween(TARGET_ID, USER_ID)).isEqualTo(expected);
+        assertThat(repository.existsCompletedBetween(USER_ID, 99L)).isFalse();
+    }
+
     @AfterTransaction
     void cleanUpCommittedSession() {
         if (committedSessionId != null) {
