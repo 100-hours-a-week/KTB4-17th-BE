@@ -67,6 +67,16 @@ class AiSimulationWorkerTest {
     }
 
     @Test
+    void B의_완료_알림이_실패해도_A의_완료_알림과_완료_상태를_유지한다() {
+        givenInputAndResponse();
+        doThrow(new IllegalStateException()).when(notifications)
+            .completed(SESSION_ID, USER_ID, TARGET_ID, TARGET_ID);
+        worker.generate(SESSION_ID);
+        verify(notifications).completed(SESSION_ID, USER_ID, TARGET_ID, USER_ID);
+        verify(persistenceService, never()).fail(SESSION_ID);
+    }
+
+    @Test
     void 실행할_입력이_없으면_AI_호출이나_상태_변경을_하지_않는다() {
         given(persistenceService.loadGenerationInput(SESSION_ID)).willReturn(Optional.empty());
 
@@ -96,6 +106,7 @@ class AiSimulationWorkerTest {
         assertThatCode(() -> worker.generate(SESSION_ID)).doesNotThrowAnyException();
 
         verify(persistenceService, times(1)).fail(SESSION_ID);
+        verifyNoInteractions(notifications);
         verify(aiClient, times(stage.equals("load") ? 0 : 1)).run(request());
         if (!stage.equals("complete")) {
             verify(persistenceService, never()).complete(SESSION_ID, aiResponse());

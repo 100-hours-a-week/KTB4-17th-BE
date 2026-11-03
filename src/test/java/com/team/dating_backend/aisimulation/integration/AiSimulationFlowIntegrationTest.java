@@ -60,6 +60,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -224,6 +225,47 @@ class AiSimulationFlowIntegrationTest {
             }));
         assertThat(count("recommendation_items")).isZero();
         assertThat(count("recommendation_passes")).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"blocked", "left", "target_withdrawn", "requester_withdrawn"})
+    void 결과_저장_후_관계가_변해도_A의_수신_상태만으로_A의_알림을_판단한다(String situation) {
+        Long id = persistence.begin(7L, 8L).getId();
+        persistence.complete(id, aiResponse());
+        try {
+            switch (situation) {
+                case "blocked" -> jdbc.update(
+                    "INSERT INTO user_blocks (blocker_user_id, blocked_user_id, blocked_at) VALUES (8, 7, NOW(6))");
+                case "left" -> {
+                    jdbc.update("INSERT INTO matches (id, sender_id, receiver_id, status, matched_at) VALUES (990001, 7, 8, 'ACTIVE', NOW(6))");
+                    jdbc.update("INSERT INTO chat_rooms (id, match_id, status, created_at) VALUES (990001, 990001, 'ACTIVE', NOW(6))");
+                    jdbc.update("INSERT INTO chat_participants (chat_room_id, user_id, status, is_chat_notification) VALUES (990001, 7, 'ACTIVE', true), (990001, 8, 'LEFT', true)");
+                }
+                case "target_withdrawn" -> jdbc.update("UPDATE users SET status = 'WITHDRAWN' WHERE id = 8");
+                case "requester_withdrawn" -> jdbc.update("UPDATE users SET status = 'WITHDRAWN' WHERE id = 7");
+                default -> throw new IllegalArgumentException(situation);
+            }
+
+            simulationNotifications.completed(id, 7L, 8L, 7L);
+            simulationNotifications.completed(id, 7L, 8L, 8L);
+
+            if (situation.equals("requester_withdrawn")) {
+                assertThat(storedRequests.snapshot()).isEmpty();
+            } else {
+                assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
+                    assertThat(request.recipientUserId()).isEqualTo(7L);
+                    assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
+                });
+            }
+            assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_sessions WHERE id = ?", String.class, id))
+                .isEqualTo("COMPLETED");
+        } finally {
+            if (situation.equals("left")) {
+                jdbc.update("DELETE FROM chat_participants WHERE chat_room_id = 990001");
+                jdbc.update("DELETE FROM chat_rooms WHERE id = 990001");
+                jdbc.update("DELETE FROM matches WHERE id = 990001");
+            }
+        }
     }
 
     @ParameterizedTest
@@ -479,6 +521,30 @@ class AiSimulationFlowIntegrationTest {
                 Long.class, id)).isEqualTo(20L);
         } finally {
             jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_simulation_outbox");
+        }
+    }
+
+    @Test
+    void A의_완료_알림_기록에_실패해도_B의_알림과_결과_완료는_유지된다() {
+        jdbc.execute("""
+            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_requester_completion
+            CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED' OR recipient_user_id <> 7)
+            """);
+        try {
+            given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
+            Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(storedRequests.snapshot()).anySatisfy(request -> {
+                    assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
+                    assertThat(request.recipientUserId()).isEqualTo(8L);
+                }));
+            assertThat(storedRequests.snapshot()).noneSatisfy(request -> {
+                assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
+                assertThat(request.recipientUserId()).isEqualTo(7L);
+            });
+            assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");
+        } finally {
+            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_requester_completion");
         }
     }
 
