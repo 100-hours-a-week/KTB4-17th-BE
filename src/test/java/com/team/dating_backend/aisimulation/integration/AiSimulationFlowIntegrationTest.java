@@ -60,7 +60,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -156,15 +155,18 @@ class AiSimulationFlowIntegrationTest {
                     'NOT_VERIFIED', 'MALE', 'CONFIRMED', 'ACTIVE')
                 """, id);
         }
-        mvc = MockMvcBuilders.standaloneSetup(new AiSimulationController(service, query), new UserProfileController(profileService))
+        mvc = MockMvcBuilders
+            .standaloneSetup(new AiSimulationController(service, query), new UserProfileController(profileService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalResolver()).build();
     }
 
     @Test
     void 완료_후_양쪽_프로필_API는_패스와_무관하게_열리고_차단하면_닫힌다() throws Exception {
-        jdbc.update("insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6)), (8, '상대', now(6), now(6))");
-        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
+        jdbc.update(
+            "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6)), (8, '상대', now(6), now(6))");
+        jdbc.update(
+            "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
         Long id = persistence.begin(7L, 8L).getId();
         persistence.complete(id, aiResponse());
         viewer = 7L;
@@ -177,10 +179,12 @@ class AiSimulationFlowIntegrationTest {
 
     @Test
     void 신규_요청은_B에게_알리고_B의_목록에_A를_추가하며_재사용시_반복하지_않는다() throws Exception {
-        jdbc.update("insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
+        jdbc.update(
+            "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
         CountDownLatch release = new CountDownLatch(1);
         given(client.run(any())).willAnswer(invocation -> {
-            if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+            if (!release.await(10, TimeUnit.SECONDS))
+                throw new IllegalStateException("timeout");
             return responseFor(invocation.getArgument(0));
         });
         try {
@@ -198,8 +202,7 @@ class AiSimulationFlowIntegrationTest {
             assertThat(storedRequests.snapshot()).hasSize(1);
             release.countDown();
             waitFor(id, "COMPLETED");
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                assertThat(storedRequests.snapshot()).hasSize(3));
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(storedRequests.snapshot()).hasSize(3));
         } finally {
             release.countDown();
         }
@@ -207,13 +210,15 @@ class AiSimulationFlowIntegrationTest {
 
     @Test
     void B가_A를_패스했다면_B의_알림과_추천은_없고_A의_완료_알림은_남는다() {
-        jdbc.update("insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
-        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
+        jdbc.update(
+            "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
+        jdbc.update(
+            "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
         given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
         Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
         waitFor(id, "COMPLETED");
-        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-            assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
+        await().atMost(Duration.ofSeconds(5))
+            .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
                 assertThat(request.recipientUserId()).isEqualTo(7L);
                 assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
             }));
@@ -334,16 +339,17 @@ class AiSimulationFlowIntegrationTest {
             release.countDown();
         }
         waitFor(id, "COMPLETED");
-        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-            assertThat(storedRequests.snapshot()).hasSize(3));
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(storedRequests.snapshot()).hasSize(3));
         var requests = storedRequests.snapshot();
         assertThat(requests).anySatisfy(request -> {
             assertThat(request.recipientUserId()).isEqualTo(8L);
             assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED);
             assertThat(request.targetId()).isNull();
         });
-        assertThat(requests.stream().filter(request -> request.type() == NotificationType.AI_SIMULATION_REPORT_COMPLETED)
-            .map(NotificationCreateRequested::recipientUserId)).containsExactlyInAnyOrder(7L, 8L);
+        assertThat(
+            requests.stream().filter(request -> request.type() == NotificationType.AI_SIMULATION_REPORT_COMPLETED)
+                .map(NotificationCreateRequested::recipientUserId))
+            .containsExactlyInAnyOrder(7L, 8L);
         var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
         storedRequests.createNotificationsFromStoredRequests();
         assertThat(notificationRepository.count()).isEqualTo(3L);
@@ -467,8 +473,8 @@ class AiSimulationFlowIntegrationTest {
             given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
             Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
             waitFor(id, "COMPLETED");
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED"));
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED"));
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_messages WHERE session_id = ?",
                 Long.class, id)).isEqualTo(20L);
         } finally {

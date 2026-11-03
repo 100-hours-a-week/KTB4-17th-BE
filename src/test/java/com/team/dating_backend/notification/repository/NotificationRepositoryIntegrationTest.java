@@ -540,13 +540,15 @@ class NotificationRepositoryIntegrationTest {
         List<NotificationType> expectedTypes = switch (category) {
             case ALL -> List.of(NotificationType.LIKE, NotificationType.MATCH, NotificationType.CHAT_MESSAGE,
                 NotificationType.PERSONA_TRAINING_COMPLETED, NotificationType.FACE_ANALYSIS_COMPLETED,
-                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.AI_SIMULATION_REQUESTED, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.AI_PRACTICE_CHAT_COMPLETED, NotificationType.AI_SIMULATION_REQUESTED,
+                NotificationType.AI_SIMULATION_REPORT_COMPLETED,
                 NotificationType.NOTICE);
             case INTEREST -> List.of(NotificationType.LIKE, NotificationType.MATCH);
             case CHAT -> List.of(NotificationType.CHAT_MESSAGE);
             case SYSTEM -> List.of(NotificationType.PERSONA_TRAINING_COMPLETED,
                 NotificationType.FACE_ANALYSIS_COMPLETED, NotificationType.AI_PRACTICE_CHAT_COMPLETED,
-                NotificationType.AI_SIMULATION_REQUESTED, NotificationType.AI_SIMULATION_REPORT_COMPLETED, NotificationType.NOTICE);
+                NotificationType.AI_SIMULATION_REQUESTED, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                NotificationType.NOTICE);
         };
 
         NotificationListResponse response = listService.getNotifications(userId, category, null, 20);

@@ -26,7 +26,8 @@ public class AiSimulationNotificationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void requested(Long sessionId, Long requesterId, Long targetId) {
-        if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId)) return;
+        if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId))
+            return;
         notifications.requestNotification(new NotificationCreateRequested(
             NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "AI_SIMULATION_REQUESTED:" + sessionId,
             targetId, NotificationType.AI_SIMULATION_REQUESTED, "시뮬레이션 요청",
@@ -36,7 +37,8 @@ public class AiSimulationNotificationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void completed(Long sessionId, Long requesterId, Long targetId, Long recipientId) {
         if (!eligiblePair(requesterId, targetId)
-            || (recipientId.equals(targetId) && passed(requesterId, targetId))) return;
+            || (recipientId.equals(targetId) && passed(requesterId, targetId)))
+            return;
         var template = AiNotificationTemplate.SIMULATION_COMPLETED;
         notifications.requestNotification(new NotificationCreateRequested(
             NotificationCreateRequested.CURRENT_SCHEMA_VERSION,

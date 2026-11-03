@@ -27,8 +27,8 @@ class AiSimulationNotificationServiceTest {
     private final ChatRoomRepository rooms = mock(ChatRoomRepository.class);
     private final RecommendationPassRepository passes = mock(RecommendationPassRepository.class);
     private final NotificationRequestService notifications = mock(NotificationRequestService.class);
-    private final AiSimulationNotificationService service =
-        new AiSimulationNotificationService(users, blocks, rooms, passes, notifications);
+    private final AiSimulationNotificationService service = new AiSimulationNotificationService(users, blocks, rooms,
+        passes, notifications);
 
     @BeforeEach
     void setUp() {

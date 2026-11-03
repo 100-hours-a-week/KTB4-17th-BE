@@ -107,7 +107,9 @@ class RecommendationRefreshIntegrationTest {
     @Test
     void 시뮬레이션_요청자는_선호를_우회하고_갱신과_중복_요청에도_유지된다() {
         Long candidate = activeUser(Gender.MALE);
-        jdbc.update("insert into profiles (user_id, nickname, created_at, updated_at) values (?, '요청자', now(6), now(6))", candidate);
+        jdbc.update(
+            "insert into profiles (user_id, nickname, created_at, updated_at) values (?, '요청자', now(6), now(6))",
+            candidate);
         simulationRecommendations.add(requesterId, candidate);
         long batchId = batches.findByUserIdAndDeletedAtIsNull(requesterId).orElseThrow().getId();
         simulationRecommendations.add(requesterId, candidate);
@@ -119,14 +121,18 @@ class RecommendationRefreshIntegrationTest {
         });
         assertThat(queryService.getRecommendationItems(requesterId, batchId, null).items())
             .extracting(item -> item.candidate().userId()).containsExactly(candidate);
-        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))", requesterId, candidate);
+        jdbc.update(
+            "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))",
+            requesterId, candidate);
         assertThat(queryService.getRecommendationItems(requesterId, batchId, null).items()).isEmpty();
     }
 
     @Test
     void 이미_패스한_요청자는_목록에_추가하지_않는다() {
         Long candidate = candidate();
-        jdbc.update("insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))", requesterId, candidate);
+        jdbc.update(
+            "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (?, ?, now(6))",
+            requesterId, candidate);
         simulationRecommendations.add(requesterId, candidate);
         assertThat(batches.findByUserIdAndDeletedAtIsNull(requesterId)).isEmpty();
     }
@@ -338,7 +344,8 @@ class RecommendationRefreshIntegrationTest {
     @EntityScan("com.team.dating_backend")
     @EnableJpaRepositories("com.team.dating_backend")
     @Import(
-        {RecommendationBatchCreateService.class, SimulationRecommendationService.class, RecommendationItemGetService.class,
+        {RecommendationBatchCreateService.class, SimulationRecommendationService.class,
+            RecommendationItemGetService.class,
             RecommendationHistoryCleanupService.class, RecommendationPreferenceService.class}
     )
     static class TestApplication {}
