@@ -1,5 +1,6 @@
 package com.team.dating_backend.profile.service;
 
+import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
@@ -32,6 +33,7 @@ public class UserProfileGetService {
     private final UserBlockRepository userBlockRepository;
     private final RecommendationItemRepository recommendationItemRepository;
     private final PopularProfileRankingService popularProfileRankingService;
+    private final AiSimulationSessionRepository simulationSessionRepository;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long viewerUserId, Long userId) {
@@ -46,6 +48,7 @@ public class UserProfileGetService {
                     && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
                     && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
                         viewerUserId, userId)
+                    && !simulationSessionRepository.existsCompletedBetween(viewerUserId, userId)
                     && !popularProfileRankingService.isInTopProfiles(userId)))) {
             throw profileNotAvailable();
         }

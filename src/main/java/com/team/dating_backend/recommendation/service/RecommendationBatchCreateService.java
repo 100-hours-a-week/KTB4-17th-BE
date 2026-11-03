@@ -115,7 +115,7 @@ public class RecommendationBatchCreateService {
         for (RecommendationItem item : stored) {
             storedCandidates.add(item.getCandidateUserId());
             lastRanking = Math.max(lastRanking, item.getRankingOrder());
-            if (!eligible.contains(item.getCandidateUserId())) {
+            if (!eligible.contains(item.getCandidateUserId()) && !item.isSimulationRequested()) {
                 removedIds.add(item.getId());
             }
         }
