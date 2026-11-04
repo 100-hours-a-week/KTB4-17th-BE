@@ -63,7 +63,7 @@ app:
   chat:
     runtime-enabled: true
     kafka:
-      message-created-topic: notification-test-chat-message-created-v1
+      message-created-topic: "@CHAT_MESSAGE_TOPIC@"
   auth:
     login-redirect-uri: "@AI_URL@/unused"
     service-redirect-uri: "@AI_URL@/unused"
@@ -88,6 +88,9 @@ app:
     creation:
       enabled: @CREATION_ENABLED@
       group-id: "@CREATION_GROUP@"
+    chat-message:
+      enabled: true
+      group-id: "@CHAT_MESSAGE_GROUP@"
     delivery:
       enabled: true
       group-id-prefix: "@DELIVERY_PREFIX@"

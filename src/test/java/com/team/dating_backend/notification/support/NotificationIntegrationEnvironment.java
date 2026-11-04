@@ -146,7 +146,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000));
         resource(() -> admin.close(Duration.ofSeconds(5)));
         assertThat(admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)).hasSize(3);
-        var topics = Stream.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic())
+        var topics = Stream.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic())
             .map(name -> (mode == Mode.BROKER
                 ? new NewTopic(name, Map.of(0, List.of(1, 2, 3), 1, List.of(3, 2, 1)))
                 : new NewTopic(name, 2, (short) 3)).configs(name.equals(dltTopic())
@@ -182,6 +182,8 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             "DB_URL", mysql.getJdbcUrl(), "DB_USERNAME", mysql.getUsername(), "DB_PASSWORD", mysql.getPassword(),
             "BOOTSTRAP_SERVERS", bootstrap, "JWT_SECRET", jwtSecret, "AI_URL", aiUrl,
             "CREATION_TOPIC", creationTopic(), "DELIVERY_TOPIC", deliveryTopic(), "CREATION_GROUP", creationGroup()));
+        settings.put("CHAT_MESSAGE_TOPIC", chatMessageTopic());
+        settings.put("CHAT_MESSAGE_GROUP", chatMessageGroup());
         first = resource(new NotificationBackendProcess("a", directory));
         settings.put("DB_CONNECTION_INIT_SQL", "SET SESSION innodb_lock_wait_timeout = 50");
         settings.put("ALERT_ENABLED", "false");
@@ -283,6 +285,13 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
                     creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
                     .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
                         new TopicPartition(creationTopic(), 1));
+                var chatMessage = admin.describeConsumerGroups(List.of(chatMessageGroup())).all()
+                    .get(10, TimeUnit.SECONDS).get(chatMessageGroup());
+                assertThat(chatMessage.members()).hasSize(2);
+                assertThat(
+                    chatMessage.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
+                    .containsExactlyInAnyOrder(new TopicPartition(chatMessageTopic(), 0),
+                        new TopicPartition(chatMessageTopic(), 1));
                 var groups = deliveryGroups();
                 assertThat(groups).hasSize(2);
                 assertThat(groups).anyMatch(group -> group.startsWith(first.deliveryGroupPrefix() + "-"));
@@ -300,6 +309,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     public void awaitProcessed() {
         await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> {
             assertCommitted(creationGroup(), creationTopic());
+            assertCommitted(chatMessageGroup(), chatMessageTopic());
             for (String group : deliveryGroups()) {
                 assertCommitted(group, deliveryTopic());
             }
@@ -403,7 +413,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         assertThat(admin).isNotNull();
         if (kafkaProbe == null) {
             kafkaProbe = resource(new NotificationKafkaProbe(admin, bootstrap, creationTopic(),
-                Set.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic())));
+                Set.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic())));
         }
         return kafkaProbe;
     }
@@ -512,8 +522,16 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         return runId + "-delivery";
     }
 
+    public String chatMessageTopic() {
+        return runId + "-chat-message";
+    }
+
     public String creationGroup() {
         return runId + "-creation";
+    }
+
+    public String chatMessageGroup() {
+        return runId + "-chat-message-notification";
     }
 
     private static byte[] randomKey() {
