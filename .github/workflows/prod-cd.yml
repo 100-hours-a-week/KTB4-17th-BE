@@ -58,8 +58,36 @@ jobs:
                     --image-ids "imageDigest=$DIGEST" > image.json
                   jq -e '.images | length > 0' image.json
                   jq -ej '.images[0].imageManifest' image.json > manifest.json
-                  # ECS task digest 검증을 위해 현재 single-platform 빌드만 허용한다.
-                  jq -e 'has("manifests") | not' manifest.json
+                  # 원본 digest를 유지하며 단일 linux/amd64 이미지와 빌드 증명을 허용한다.
+                  jq -e '
+                    def is_image_manifest:
+                      .mediaType == "application/vnd.oci.image.manifest.v1+json"
+                      or .mediaType == "application/vnd.docker.distribution.manifest.v2+json";
+
+                    def is_attestation:
+                      .platform.os == "unknown"
+                      and .platform.architecture == "unknown"
+                      and .annotations["vnd.docker.reference.type"] == "attestation-manifest";
+
+                    if has("manifests") then
+                      .schemaVersion == 2
+                      and (
+                        .mediaType == "application/vnd.oci.image.index.v1+json"
+                        or .mediaType == "application/vnd.docker.distribution.manifest.list.v2+json"
+                      )
+                      and (.manifests | type == "array")
+                      and all(.manifests[]; is_image_manifest)
+                      and (
+                        [.manifests[] | select(is_attestation | not)] as $runnable
+                        | ($runnable | length) == 1
+                          and $runnable[0].platform.os == "linux"
+                          and $runnable[0].platform.architecture == "amd64"
+                          and $runnable[0].annotations["vnd.docker.reference.type"] != "attestation-manifest"
+                      )
+                    else
+                      true
+                    end
+                  ' manifest.json
                   aws ecr describe-images --repository-name "$ECR_REPOSITORY" > tags.json
                   EXISTING=$(jq -r --arg tag "$RELEASE_TAG" \
                     '[.imageDetails[] | select((.imageTags // []) | index($tag))
