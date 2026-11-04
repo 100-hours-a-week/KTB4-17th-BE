@@ -41,6 +41,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
+import org.hibernate.SessionFactory;
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -291,6 +292,51 @@ class UserProfileCacheAsideIntegrationTest {
             assertThat(sample.entityManagerBound()).isFalse();
             assertThat(sample.activeConnections()).isZero();
         });
+    }
+
+    @Test
+    void 캐시_적중은_미적중보다_SQL이_적고_본문과_이미지_URL을_다시_만들지_않는다() throws Exception {
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        boolean previouslyEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            HttpResponse<String> miss = get(detailPath(), true);
+            assertThat(miss.statusCode()).isEqualTo(200);
+            long missStatements = statistics.getPrepareStatementCount();
+            statistics.clear();
+
+            HttpResponse<String> hit = get(detailPath(), true);
+
+            long hitStatements = statistics.getPrepareStatementCount();
+            assertThat(hit.statusCode()).isEqualTo(200);
+            assertThat(body(hit)).isEqualTo(body(miss));
+            assertThat(hitStatements).isPositive().isLessThan(missStatements);
+            assertThat(signedCount).hasValue(1);
+            System.out.printf("PROFILE_CACHE_SQL miss=%d hit=%d%n", missStatements, hitStatements);
+        } finally {
+            statistics.setStatisticsEnabled(previouslyEnabled);
+            statistics.clear();
+        }
+    }
+
+    @Test
+    void 서로_다른_조회자가_같은_대상의_공통_캐시를_재사용한다() throws Exception {
+        HttpResponse<String> first = get(detailPath(), true);
+        assertThat(first.statusCode()).isEqualTo(200);
+        String cached = redis.opsForValue().get(key());
+        double hitsBefore = count("get", "hit");
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + detailPath()))
+            .timeout(Duration.ofSeconds(10)).GET()
+            .header("Authorization", "Bearer " + jwt.createServiceAuthToken(targetId)).build();
+
+        HttpResponse<String> second = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(second.statusCode()).isEqualTo(200);
+        assertThat(body(second)).isEqualTo(body(first));
+        assertThat(count("get", "hit")).isEqualTo(hitsBefore + 1);
+        assertThat(redis.opsForValue().get(key())).isEqualTo(cached);
+        assertThat(signedCount).hasValue(1);
     }
 
     @ParameterizedTest
