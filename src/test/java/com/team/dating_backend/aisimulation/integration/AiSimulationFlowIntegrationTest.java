@@ -37,6 +37,11 @@ import com.team.dating_backend.aisimulation.service.AiSimulationNotificationServ
 import com.team.dating_backend.recommendation.service.SimulationRecommendationService;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
 import com.team.dating_backend.profile.service.UserProfileGetService;
+import com.team.dating_backend.profile.service.UserProfileSourceLoader;
+import com.team.dating_backend.profile.service.ProfileAvailabilityValidator;
+import com.team.dating_backend.profile.cache.UserProfileCache;
+import com.team.dating_backend.profile.cache.ProfileCacheExpirationPolicy;
+import com.team.dating_backend.profile.config.ProfileCacheProperties;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.profile.service.PopularProfileRankingService;
 import com.team.dating_backend.profile.controller.UserProfileController;
@@ -89,7 +94,7 @@ import tools.jackson.databind.ObjectMapper;
 @DataJpaTest(
     properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate",
         "app.ai-simulation.async-pool-size=1", "app.ai-simulation.async-queue-capacity=1",
-        "app.ai-simulation.async-shutdown-wait-seconds=1"}
+        "app.ai-simulation.async-shutdown-wait-seconds=1", "app.profile-cache.enabled=false"}
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
@@ -99,6 +104,7 @@ import tools.jackson.databind.ObjectMapper;
         AiSimulationTargetValidator.class, AiSimulationResponseMapper.class, AiSimulationResponseValidator.class,
         AiSimulationRecoveryJob.class, AiSimulationNotificationService.class,
         SimulationRecommendationService.class, RecommendationBatchCreateService.class, UserProfileGetService.class,
+        UserProfileSourceLoader.class, ProfileAvailabilityValidator.class,
         UserPairLockRepository.class, NotificationRequestTestConfiguration.class,
         AiSimulationFlowIntegrationTest.Config.class}
 )
@@ -163,7 +169,7 @@ class AiSimulationFlowIntegrationTest {
     }
 
     @Test
-    void 완료_후_양쪽_프로필_API는_패스와_무관하게_열리고_차단하면_닫힌다() throws Exception {
+    void 완료_후_양쪽_프로필_API는_패스와_차단에_관계없이_조회한다() throws Exception {
         jdbc.update(
             "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6)), (8, '상대', now(6), now(6))");
         jdbc.update(
@@ -175,7 +181,7 @@ class AiSimulationFlowIntegrationTest {
         viewer = 8L;
         mvc.perform(get("/api/v1/users/7/profile")).andExpect(status().isOk());
         jdbc.update("insert into user_blocks (blocker_user_id, blocked_user_id, blocked_at) values (7, 8, now(6))");
-        mvc.perform(get("/api/v1/users/7/profile")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/users/7/profile")).andExpect(status().isOk());
     }
 
     @Test
@@ -804,8 +810,16 @@ class AiSimulationFlowIntegrationTest {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
-    @EnableConfigurationProperties(AiSimulationProperties.class)
+    @EnableConfigurationProperties({AiSimulationProperties.class, ProfileCacheProperties.class})
     static class Config {
+        @Bean
+        UserProfileCache userProfileCache() {
+            return org.mockito.Mockito.mock(UserProfileCache.class);
+        }
+        @Bean
+        ProfileCacheExpirationPolicy profileCacheExpirationPolicy() {
+            return org.mockito.Mockito.mock(ProfileCacheExpirationPolicy.class);
+        }
         @Bean
         ProfileImageGetService profileImageGetService() {
             return org.mockito.Mockito.mock(ProfileImageGetService.class);

@@ -168,8 +168,8 @@ public class S3FileStorage implements FileStorage {
                 .getObjectRequest(getObjectRequest)
                 .build();
 
-            String url = s3Presigner.presignGetObject(presignRequest).url().toString();
-            return new PresignedReadUrl(url, Instant.now().plus(expiration));
+            var presigned = s3Presigner.presignGetObject(presignRequest);
+            return new PresignedReadUrl(presigned.url().toString(), presigned.expiration());
         } catch (SdkException exception) {
             throw new FileStorageException(FileErrorCode.FILE_READ_URL_FAILED, exception);
         }

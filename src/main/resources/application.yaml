@@ -46,6 +46,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
+    open-in-view: false
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: validate
@@ -85,6 +86,9 @@ kakao:
 
 app:
   profile-cache:
+    enabled: ${PROFILE_CACHE_ENABLED:true}
+    max-ttl: ${PROFILE_CACHE_MAX_TTL:3m}
+    image-request-buffer: ${PROFILE_CACHE_IMAGE_REQUEST_BUFFER:10s}
     redis:
       url: ${PROFILE_CACHE_REDIS_URL:redis://localhost:6380}
       connect-timeout: ${PROFILE_CACHE_REDIS_CONNECT_TIMEOUT:300ms}

@@ -118,6 +118,7 @@ import org.testcontainers.utility.DockerImageName;
         "app.chat.realtime-relay.read-receipt-redis-channel=chat-message-flow:read-receipt",
         "app.chat.realtime-relay.ai-practice-redis-channel="
             + "chat-message-flow:ai-practice-updated",
+        "spring.jpa.open-in-view=false",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
