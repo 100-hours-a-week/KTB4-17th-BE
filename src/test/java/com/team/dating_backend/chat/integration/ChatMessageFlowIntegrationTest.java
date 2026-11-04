@@ -1,7 +1,6 @@
 package com.team.dating_backend.chat.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,12 +34,7 @@ import com.team.dating_backend.chat.enums.ChatRoomPresenceAction;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
 import com.team.dating_backend.chat.service.ChatRoomPresenceService;
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
-import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.service.ChatNotificationReadService;
-import org.springframework.dao.DataIntegrityViolationException;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
@@ -78,7 +72,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -211,12 +204,8 @@ class ChatMessageFlowIntegrationTest {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final BlockingQueue<ChatRoomPresenceRequest> completedPresenceRequests = new LinkedBlockingQueue<>();
 
-    @Autowired
-    private StoredRequests storedRequests;
-
     @BeforeEach
     void setUpDatabase() {
-        storedRequests.clear();
         given(profileImageGetService.getProfileImagesByUserIds(anyCollection()))
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
@@ -301,11 +290,8 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(1, countChatNotifications());
-            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
-                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
-                String.class, RECEIVER_USER_ID));
+            assertEquals(0, jdbcTemplate.queryForObject(
+                "select count(*) from notification_request_outbox", Integer.class));
             assertThat(sent.body()).contains("\"messageId\":" + messageId);
 
             HttpResponse<String> retry = postMessage(senderToken, clientMessageId, MESSAGE_TEXT);
@@ -313,9 +299,6 @@ class ChatMessageFlowIntegrationTest {
             assertThat(retry.body()).contains("\"messageId\":" + messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(1, countChatNotifications());
-            assertThat(storedRequests.snapshot()).hasSize(1);
 
             HttpResponse<String> conflict = postMessage(
                 senderToken, clientMessageId, "같은 ID의 다른 내용");
@@ -333,16 +316,10 @@ class ChatMessageFlowIntegrationTest {
             HttpResponse<String> secondMessage = postMessage(
                 senderToken, UUID.randomUUID(), "두 번째 메시지");
             assertEquals(201, secondMessage.statusCode(), secondMessage.body());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(2, countChatNotifications());
 
             HttpResponse<String> read = postRead(receiverToken, messageId);
             assertEquals(200, read.statusCode(), read.body());
             assertThat(read.body()).contains("\"lastReadMessageId\":" + messageId);
-            assertEquals(0, jdbcTemplate.queryForObject(
-                "select count(*) from notifications where user_id = ? "
-                    + "and type = 'CHAT_MESSAGE' and read_at is null",
-                Integer.class, RECEIVER_USER_ID));
 
             ChatMessageReadReceiptEvent readReceipt = readReceiptEvents.poll(5, TimeUnit.SECONDS);
             assertNotNull(readReceipt);
@@ -424,11 +401,6 @@ class ChatMessageFlowIntegrationTest {
         assertNotNull(messageId);
         assertEquals("IMAGE", jdbcTemplate.queryForObject(
             "select message_type from chat_messages where id = ?", String.class, messageId));
-        storedRequests.createNotificationsFromStoredRequests();
-        assertEquals(1, countChatNotifications());
-        assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
-            "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
-            String.class, RECEIVER_USER_ID));
 
         outboxPublishJob.publishDueMessages();
         verify(kafkaPublisher).publish(messageId);
@@ -438,56 +410,6 @@ class ChatMessageFlowIntegrationTest {
         assertThat(history.body())
             .contains("\"messageType\":\"IMAGE\"")
             .contains("\"imageFileId\":" + fileId);
-    }
-
-    @Test
-    void 여러_연결의_화면_상태와_연결_종료에_따라_알림을_생략하거나_생성한다() throws Exception {
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
-        client.setMessageConverter(new JacksonJsonMessageConverter());
-        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
-        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
-        StompSession pc = null;
-        StompSession mobile = null;
-        try {
-            pc = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
-            mobile = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
-            sendPresenceAndAwait(pc, ChatRoomPresenceAction.ENTER);
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "첫 번째").statusCode());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(0, countChatNotifications());
-            assertThat(storedRequests.snapshot()).isEmpty();
-
-            disconnect(pc);
-            assertTrue(awaitCondition(() -> {
-                SimpUser user = simpUserRegistry.getUser(RECEIVER_USER_ID.toString());
-                return user != null && user.getSessions().size() == 1;
-            }));
-            assertThat(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).isTrue();
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "두 번째").statusCode());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(0, countChatNotifications());
-            assertThat(storedRequests.snapshot()).isEmpty();
-
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.LEAVE);
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "세 번째").statusCode());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(1, countChatNotifications());
-            assertThat(storedRequests.snapshot()).hasSize(1);
-
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
-            disconnect(mobile);
-            assertTrue(awaitCondition(() -> !presenceRegistry.isViewingChatRoom(
-                RECEIVER_USER_ID, CHAT_ROOM_ID)));
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "네 번째").statusCode());
-            storedRequests.createNotificationsFromStoredRequests();
-            assertEquals(2, countChatNotifications());
-            assertThat(storedRequests.snapshot()).hasSize(2);
-        } finally {
-            disconnect(pc);
-            disconnect(mobile);
-            client.stop();
-        }
     }
 
     @Test
@@ -533,102 +455,12 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void 알림_Outbox의_DB_저장_실패는_신규_메시지와_채팅_Outbox를_롤백하고_기존_데이터를_보존한다() throws Exception {
-        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
-        assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "기존 메시지").statusCode());
-        var messagesBefore = jdbcTemplate.queryForList("SELECT * FROM chat_messages ORDER BY id");
-        var chatOutboxesBefore = jdbcTemplate.queryForList("SELECT * FROM chat_message_outbox ORDER BY id");
-        var notificationOutboxesBefore = jdbcTemplate
-            .queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
-        var requestsBefore = storedRequests.snapshot();
-        String existingSourceEventId = requestsBefore.getFirst().sourceEventId();
-        UUID retryMessageId = UUID.randomUUID();
-        jdbcTemplate.execute("""
-            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_chat_outbox
-            CHECK (type <> 'CHAT_MESSAGE' OR source_event_id = '%s')
-            """.formatted(existingSourceEventId));
-        try {
-            HttpResponse<String> rejected = postMessage(senderToken, retryMessageId, MESSAGE_TEXT);
-
-            assertEquals(500, rejected.statusCode(), rejected.body());
-            assertThat(jdbcTemplate.queryForList("SELECT * FROM chat_messages ORDER BY id"))
-                .usingRecursiveComparison().isEqualTo(messagesBefore);
-            assertThat(jdbcTemplate.queryForList("SELECT * FROM chat_message_outbox ORDER BY id"))
-                .isEqualTo(chatOutboxesBefore);
-            assertThat(jdbcTemplate.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
-                .isEqualTo(notificationOutboxesBefore);
-            assertThat(storedRequests.snapshot()).containsExactlyElementsOf(requestsBefore);
-            assertEquals(0, countChatNotifications());
-        } finally {
-            jdbcTemplate.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_chat_outbox");
-        }
-
-        assertEquals(201, postMessage(senderToken, retryMessageId, MESSAGE_TEXT).statusCode());
-        assertEquals(2, countMessages());
-        assertEquals(2, countOutboxes());
-        assertThat(storedRequests.snapshot()).hasSize(2);
-    }
-
-    @Test
-    void 닉네임_변경과_같은_메시지_재요청에도_최초_알림_Outbox의_내용과_시각을_보존한다() throws Exception {
-        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
-        UUID clientMessageId = UUID.randomUUID();
-        assertEquals(201, postMessage(senderToken, clientMessageId, MESSAGE_TEXT).statusCode());
-        var original = storedRequests.snapshot().getFirst();
-        Long messageId = jdbcTemplate.queryForObject("SELECT id FROM chat_messages", Long.class);
-        var outboxesBefore = jdbcTemplate.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
-        assertThat(original.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
-        assertThat(original.sourceEventId()).isEqualTo("CHAT_MESSAGE_SENT:" + messageId);
-        assertThat(original.recipientUserId()).isEqualTo(RECEIVER_USER_ID);
-        assertThat(original.type()).isEqualTo(NotificationType.CHAT_MESSAGE);
-        assertThat(original.title()).isEqualTo("새로운 메시지");
-        assertThat(original.body()).isEqualTo("보내는사람님에게서 메시지가 도착했어요.");
-        assertThat(original.targetType()).isEqualTo("CHAT_ROOM");
-        assertThat(original.targetId()).isEqualTo(CHAT_ROOM_ID);
-        assertThat(original.requestedAt()).isNotNull();
-        jdbcTemplate.update("UPDATE profiles SET nickname = '변경된닉네임' WHERE user_id = ?", SENDER_USER_ID);
-
-        assertEquals(201, postMessage(senderToken, clientMessageId, MESSAGE_TEXT).statusCode());
-
-        assertEquals(1, countMessages());
-        assertEquals(1, countOutboxes());
-        assertThat(storedRequests.snapshot()).containsExactly(original);
-        assertThat(jdbcTemplate.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
-            .isEqualTo(outboxesBefore);
-    }
-
-    @Test
-    void 알림_저장이_나중에_실패해도_이미_커밋된_메시지와_Outbox를_유지한다() throws Exception {
-        jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_notification "
-            + "CHECK (type <> 'CHAT_MESSAGE')");
-        try {
-            HttpResponse<String> response = postMessage(
-                jwtService.createServiceAuthToken(SENDER_USER_ID), UUID.randomUUID(), MESSAGE_TEXT);
-
-            assertEquals(201, response.statusCode(), response.body());
-            assertEquals(1, countMessages());
-            assertEquals(1, countOutboxes());
-            assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
-                Long messageId = jdbcTemplate.queryForObject("SELECT id FROM chat_messages", Long.class);
-                assertThat(request.sourceEventId()).isEqualTo("CHAT_MESSAGE_SENT:" + messageId);
-            });
-            assertThatThrownBy(storedRequests::createNotificationsFromStoredRequests)
-                .isInstanceOf(DataIntegrityViolationException.class);
-            assertEquals(1, countMessages());
-            assertEquals(1, countOutboxes());
-            assertEquals(0, countChatNotifications());
-        } finally {
-            jdbcTemplate.execute("ALTER TABLE notifications DROP CHECK test_reject_chat_notification");
-        }
-    }
-
-    @Test
     void 알림_읽음_갱신이_실패하면_채팅_읽음_위치도_롤백한다() throws Exception {
         assertEquals(201, postMessage(jwtService.createServiceAuthToken(SENDER_USER_ID),
             UUID.randomUUID(), MESSAGE_TEXT).statusCode());
         Long messageId = jdbcTemplate.queryForObject(
             "select id from chat_messages where chat_room_id = ?", Long.class, CHAT_ROOM_ID);
-        storedRequests.createNotificationsFromStoredRequests();
+        insertChatNotification(messageId);
         jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_read "
             + "CHECK (type <> 'CHAT_MESSAGE' OR read_at IS NULL)");
         try {
@@ -655,20 +487,14 @@ class ChatMessageFlowIntegrationTest {
         assertThat(completedPresenceRequests.poll(3, TimeUnit.SECONDS)).isEqualTo(request);
     }
 
-    private boolean awaitCondition(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(10);
-        }
-        return false;
-    }
-
-    private int countChatNotifications() {
-        return jdbcTemplate.queryForObject(
-            "select count(*) from notifications where type = 'CHAT_MESSAGE'", Integer.class);
+    private void insertChatNotification(Long messageId) {
+        jdbcTemplate.update("""
+            insert into notifications
+                (source_event_id, user_id, type, title, body, target_type, target_id, created_at)
+            values (?, ?, 'CHAT_MESSAGE', '새로운 메시지', '새로운 메시지가 도착했어요.',
+                'CHAT_ROOM', ?, ?)
+            """, "CHAT_MESSAGE_SENT:" + messageId, RECEIVER_USER_ID, CHAT_ROOM_ID,
+            Timestamp.valueOf(BASE_TIME));
     }
 
     private StompSession connectAndSubscribe(
@@ -870,7 +696,6 @@ class ChatMessageFlowIntegrationTest {
             ChatRoomPresenceService.class,
             ChatRoomPresenceRegistry.class,
             ChatRoomPresenceDisconnectListener.class,
-            NotificationRequestTestConfiguration.class,
             ChatNotificationReadService.class,
             ChatMessageSendController.class,
             ChatMessageListController.class,

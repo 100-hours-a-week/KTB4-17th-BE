@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.team.dating_backend.chat.dto.event.ChatMessageCreatedKafkaEvent;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
@@ -51,6 +52,7 @@ import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.ConsumerAwareRebalanceListener;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.kafka.support.KafkaUtils;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
@@ -101,6 +103,13 @@ class NotificationKafkaConfigurationTest {
                 ConcurrentKafkaListenerContainerFactory.class), NotificationCreateRequested.class, "earliest");
             assertFactory(context.getBean("notificationDeliveryKafkaListenerContainerFactory",
                 ConcurrentKafkaListenerContainerFactory.class), NotificationDeliveryEvent.class, "latest");
+            assertFactory(context.getBean("notificationChatMessageKafkaListenerContainerFactory",
+                ConcurrentKafkaListenerContainerFactory.class), ChatMessageCreatedKafkaEvent.class, "earliest");
+            var chatMessage = context.getBean("notificationChatMessageKafkaListenerContainerFactory",
+                ConcurrentKafkaListenerContainerFactory.class);
+            assertThat(chatMessage.getContainerProperties().isSyncCommits()).isTrue();
+            assertThat(chatMessage.createContainer("chat.message-created.v1").getCommonErrorHandler())
+                .isInstanceOf(DefaultErrorHandler.class);
             assertThat(context.getBean("kafkaConsumerFactory", ConsumerFactory.class).getConfigurationProperties())
                 .doesNotContainKeys(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
                     JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, JacksonJsonDeserializer.USE_TYPE_INFO_HEADERS);

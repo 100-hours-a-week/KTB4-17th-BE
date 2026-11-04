@@ -1,5 +1,6 @@
 package com.team.dating_backend.notification.config;
 
+import com.team.dating_backend.chat.dto.event.ChatMessageCreatedKafkaEvent;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryFailureRecoverer;
@@ -27,15 +28,19 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
+import org.springframework.util.backoff.FixedBackOff;
 import tools.jackson.databind.json.JsonMapper;
 
 @Configuration(proxyBeanMethods = false)
 public class NotificationKafkaConfiguration {
+
+    private static final long CHAT_MESSAGE_RETRY_INTERVAL_MS = 1_000L;
 
     @Bean
     public DefaultKafkaProducerFactoryCustomizer notificationKafkaProducerFactoryCustomizer(
@@ -103,6 +108,22 @@ public class NotificationKafkaConfiguration {
         factory.setCommonErrorHandler(notificationDeliveryErrorHandler(recoverer, readinessTracker));
         factory.getContainerProperties().setConsumerRebalanceListener(readinessListener.createRebalanceListener());
         factory.getContainerProperties().setGroupId(processIdentity.getGroupId());
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.getContainerProperties().setSyncCommits(true);
+        factory.getContainerProperties().setCheckDeserExWhenValueNull(true);
+        return factory;
+    }
+
+    @Bean("notificationChatMessageKafkaListenerContainerFactory")
+    public ConcurrentKafkaListenerContainerFactory<Object, Object> notificationChatMessageListenerFactory(
+        ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
+        ConsumerFactory<Object, Object> kafkaConsumerFactory,
+        JsonMapper jsonMapper) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = listenerContainerFactory(
+            configurer, kafkaConsumerFactory, jsonMapper, ChatMessageCreatedKafkaEvent.class, "earliest",
+            Map.of(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false));
+        factory.setCommonErrorHandler(new DefaultErrorHandler(
+            new FixedBackOff(CHAT_MESSAGE_RETRY_INTERVAL_MS, FixedBackOff.UNLIMITED_ATTEMPTS)));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.getContainerProperties().setSyncCommits(true);
         factory.getContainerProperties().setCheckDeserExWhenValueNull(true);
