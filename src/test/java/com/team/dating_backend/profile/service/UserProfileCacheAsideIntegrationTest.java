@@ -15,6 +15,32 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
+import com.team.dating_backend.auth.config.AuthWebProperties;
+import com.team.dating_backend.auth.controller.AuthCookieFactory;
+import com.team.dating_backend.auth.service.AuthTokenService;
+import com.team.dating_backend.aipractice.service.AiPracticeWithdrawalTerminationService;
+import com.team.dating_backend.aisimulation.service.AiSimulationWithdrawalTerminationService;
+import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService;
+import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
+import com.team.dating_backend.matching.service.LikeTerminationService;
+import com.team.dating_backend.matching.service.MatchWithdrawalTerminationService;
+import com.team.dating_backend.onboarding.controller.ProfileSaveController;
+import com.team.dating_backend.onboarding.dto.request.ProfileSaveRequest;
+import com.team.dating_backend.onboarding.service.OnboardingCompletionService;
+import com.team.dating_backend.onboarding.service.ProfileSaveService;
+import com.team.dating_backend.persona.client.PersonaAiClient;
+import com.team.dating_backend.profile.cache.ProfileCacheEvictionListener;
+import com.team.dating_backend.profile.controller.ProfileImageController;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
+import com.team.dating_backend.profile.dto.request.ProfileImageSaveItemRequest;
+import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
+import com.team.dating_backend.profile.enums.JobCategory;
+import com.team.dating_backend.user.controller.UserWithdrawalController;
+import com.team.dating_backend.user.service.UserWithdrawalService;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+
 import com.team.dating_backend.TestJwtSecret;
 import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.auth.config.JwtProperties;
@@ -110,7 +136,7 @@ import tools.jackson.databind.json.JsonMapper;
         "app.security.allowed-origins=http://localhost", "app.file.s3.bucket=cache-test",
         "app.file.s3.region=ap-northeast-2", "app.file.s3.upload-url-expiration=5m",
         "app.file.s3.download-url-expiration=10m", "jwt.service-expiration-minutes=60",
-        "jwt.pending-expiration-minutes=5"}
+        "jwt.pending-expiration-minutes=5", "app.auth.secure-cookie=false", "app.auth.same-site=Lax"}
 )
 @ContextConfiguration(initializers = UserProfileCacheAsideIntegrationTest.MainYamlInitializer.class)
 @Testcontainers
@@ -166,6 +192,29 @@ class UserProfileCacheAsideIntegrationTest {
     @MockitoSpyBean(name = "profileCacheStringRedisTemplate")
     private StringRedisTemplate redis;
 
+    @Autowired
+    private ProfileSaveService profileSaveService;
+    @Autowired
+    private ProfileImageSaveService profileImageSaveService;
+    @Autowired
+    private UserWithdrawalService userWithdrawalService;
+    @MockitoBean
+    private OnboardingCompletionService onboardingCompletionService;
+    @MockitoBean
+    private PersonaAiClient personaAiClient;
+    @MockitoBean
+    private AuthTokenService authTokenService;
+    @MockitoBean
+    private LikeTerminationService likeTerminationService;
+    @MockitoBean
+    private MatchWithdrawalTerminationService matchWithdrawalTerminationService;
+    @MockitoBean
+    private ChatRoomWithdrawalTerminationService chatRoomWithdrawalTerminationService;
+    @MockitoBean
+    private AiPracticeWithdrawalTerminationService aiPracticeWithdrawalTerminationService;
+    @MockitoBean
+    private AiSimulationWithdrawalTerminationService aiSimulationWithdrawalTerminationService;
+
     private final List<Boundary> boundaries = new CopyOnWriteArrayList<>();
     private final AtomicInteger signedCount = new AtomicInteger();
     private Long viewerId;
@@ -173,6 +222,7 @@ class UserProfileCacheAsideIntegrationTest {
     private Long targetProfileId;
     private String firstStorageKey;
     private Instant imageExpiration;
+    private Long replacementFileId;
 
     @BeforeEach
     void setUp() {
@@ -194,6 +244,10 @@ class UserProfileCacheAsideIntegrationTest {
             targetProfileId = targetProfile.getId();
             firstStorageKey = "cache-image-" + targetId;
             addImage(targetProfile, firstStorageKey, (short) 1);
+            File replacement = File.create(targetId, "replacement-image-" + targetId,
+                "replacement.png", "image/png", 100L);
+            entityManager.persist(replacement);
+            replacementFileId = replacement.getId();
             entityManager.flush();
         });
         given(fileStorage.createReadUrl(anyString(), anyString(), anyString(), anyString(), any(Duration.class)))
@@ -392,6 +446,228 @@ class UserProfileCacheAsideIntegrationTest {
         assertThat(boundaries).isEmpty();
     }
 
+    @Test
+    void 프로필_수정_HTTP_커밋_후_본인_캐시만_삭제하고_다음_조회에_변경을_반영한다() throws Exception {
+        HttpResponse<String> original = get(detailPath(), true);
+        assertThat(original.statusCode()).isEqualTo(200);
+        String otherKey = "profile:detail:" + viewerId;
+        assertThat(get("/api/v1/users/" + viewerId + "/profile", true).statusCode()).isEqualTo(200);
+        String otherCache = redis.opsForValue().get(otherKey);
+
+        assertThat(mutateHttp(Mutation.PROFILE).statusCode()).isEqualTo(204);
+
+        assertThat(redis.hasKey(key())).isFalse();
+        assertThat(redis.opsForValue().get(otherKey)).isEqualTo(otherCache);
+        HttpResponse<String> refreshed = get(detailPath(), true);
+        assertThat(refreshed.statusCode()).isEqualTo(200);
+        assertThat(body(refreshed).path("data").path("nickname").asText()).isEqualTo(changedNickname());
+        assertThat(signedCount).hasValue(2);
+        assertThat(body(get(detailPath(), true))).isEqualTo(body(refreshed));
+        assertThat(signedCount).hasValue(2);
+    }
+
+    @Test
+    void 이미지_추가_제거_순서변경_HTTP_커밋_후_캐시를_삭제하고_새_목록을_반환한다() throws Exception {
+        new TransactionTemplate(transactions).executeWithoutResult(
+            status -> addImage(entityManager.getReference(Profile.class, targetProfileId), "second-image-" + targetId,
+                (short) 2));
+        List<Long> existing = jdbc.queryForList(
+            "SELECT image_id FROM profile_images WHERE profile_id = ? ORDER BY display_order", Long.class,
+            targetProfileId);
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        ProfileImageSaveRequest request = new ProfileImageSaveRequest(List.of(
+            new ProfileImageSaveItemRequest(existing.get(1), true),
+            new ProfileImageSaveItemRequest(replacementFileId, false)));
+
+        assertThat(write("PUT", "/api/v1/users/me/profile/images", json.writeValueAsString(request))
+            .statusCode()).isEqualTo(200);
+
+        assertThat(redis.hasKey(key())).isFalse();
+        JsonNode images = body(get(detailPath(), true)).path("data").path("images");
+        assertThat(images.size()).isEqualTo(2);
+        assertThat(images.get(0).path("fileId").asLong()).isEqualTo(existing.get(1));
+        assertThat(images.get(0).path("displayOrder").asInt()).isEqualTo(1);
+        assertThat(images.get(1).path("fileId").asLong()).isEqualTo(replacementFileId);
+        assertThat(jdbc.queryForObject(
+            "SELECT deleted_at IS NOT NULL FROM profile_images WHERE profile_id = ? AND image_id = ?",
+            Boolean.class, targetProfileId, existing.get(0))).isTrue();
+    }
+
+    @Test
+    void 탈퇴_HTTP_커밋_후_캐시를_삭제하고_프로필_상세_조회가_제한된다() throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+
+        assertThat(mutateHttp(Mutation.WITHDRAWAL).statusCode()).isEqualTo(204);
+
+        assertThat(redis.hasKey(key())).isFalse();
+        assertCommitted(Mutation.WITHDRAWAL);
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(404);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mutation.class)
+    void 변경_서비스가_반환해도_외부_트랜잭션_커밋_전에는_캐시를_삭제하지_않는다(Mutation mutation) throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        String original = redis.opsForValue().get(key());
+
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            mutate(mutation);
+            entityManager.flush();
+            assertThat(redis.opsForValue().get(key())).isEqualTo(original);
+            verify(cache, never()).evict(targetId);
+        });
+
+        assertThat(redis.hasKey(key())).isFalse();
+        verify(cache).evict(targetId);
+        assertCommitted(mutation);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mutation.class)
+    void 변경_후_트랜잭션이_롤백되면_DB와_기존_캐시를_유지한다(Mutation mutation) throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        String original = redis.opsForValue().get(key());
+        List<Long> originalImages = activeImageIds();
+
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            mutate(mutation);
+            entityManager.flush();
+            assertThat(redis.opsForValue().get(key())).isEqualTo(original);
+            status.setRollbackOnly();
+        });
+
+        assertThat(redis.opsForValue().get(key())).isEqualTo(original);
+        verify(cache, never()).evict(targetId);
+        assertThat(jdbc.queryForObject("SELECT nickname FROM profiles WHERE id = ?", String.class,
+            targetProfileId)).isEqualTo("회원" + targetId);
+        assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, targetId))
+            .isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject("SELECT deleted_at IS NULL FROM profiles WHERE id = ?", Boolean.class,
+            targetProfileId)).isTrue();
+        assertThat(activeImageIds()).isEqualTo(originalImages);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mutation.class)
+    @ExtendWith(OutputCaptureExtension.class)
+    void 캐시_삭제가_실패해도_HTTP_성공과_DB_변경을_유지하고_오류를_기록한다(
+        Mutation mutation, CapturedOutput output) throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        String original = redis.opsForValue().get(key());
+        double before = count("evict", "delete_error");
+        doThrow(new RedisConnectionFailureException(ProfileCacheErrorCode.PROFILE_CACHE_DELETE_FAILED.name()))
+            .when(redis).delete(key());
+
+        HttpResponse<String> response = mutateHttp(mutation);
+
+        assertThat(response.statusCode()).isEqualTo(mutation == Mutation.IMAGES ? 200 : 204);
+        assertCommitted(mutation);
+        assertThat(redis.opsForValue().get(key())).isEqualTo(original);
+        assertThat(redis.getExpire(key(), java.util.concurrent.TimeUnit.MILLISECONDS)).isPositive()
+            .isLessThanOrEqualTo(180_000L);
+        assertThat(count("evict", "delete_error")).isEqualTo(before + 1);
+        assertThat(output.getOut()).contains("errorCode=PROFILE_CACHE_DELETE_FAILED", "operation=evict");
+        if (mutation == Mutation.WITHDRAWAL) {
+            assertThat(get(detailPath(), true).statusCode()).isEqualTo(404);
+        }
+    }
+
+    @Test
+    void 삭제할_캐시가_없어도_프로필_수정은_성공한다() throws Exception {
+        double before = count("evict", "absent");
+
+        assertThat(mutateHttp(Mutation.PROFILE).statusCode()).isEqualTo(204);
+
+        assertCommitted(Mutation.PROFILE);
+        assertThat(count("evict", "absent")).isEqualTo(before + 1);
+    }
+
+    @Test
+    void 트랜잭션_밖에서_발행한_이벤트는_캐시를_삭제하지_않는다() throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        String original = redis.opsForValue().get(key());
+
+        context.publishEvent(new ProfileCacheEvictionRequestedEvent(targetId));
+
+        assertThat(redis.opsForValue().get(key())).isEqualTo(original);
+        verify(cache, never()).evict(targetId);
+    }
+
+    @Test
+    void 조회_캐시를_비활성화해도_수정시_기존_캐시는_삭제한다() throws Exception {
+        assertThat(get(detailPath(), true).statusCode()).isEqualTo(200);
+        cacheProperties.setEnabled(false);
+
+        assertThat(mutateHttp(Mutation.PROFILE).statusCode()).isEqualTo(204);
+
+        assertThat(redis.hasKey(key())).isFalse();
+    }
+
+    private void mutate(Mutation mutation) {
+        switch (mutation) {
+            case PROFILE -> profileSaveService.saveProfile(targetId, profileRequest());
+            case IMAGES -> profileImageSaveService.saveProfileImages(targetId, imageRequest());
+            case WITHDRAWAL -> userWithdrawalService.withdraw(targetId);
+        }
+    }
+
+    private HttpResponse<String> mutateHttp(Mutation mutation) throws Exception {
+        return switch (mutation) {
+            case PROFILE -> write("PUT", "/api/v1/users/me/profile", json.writeValueAsString(profileRequest()));
+            case IMAGES -> write("PUT", "/api/v1/users/me/profile/images", json.writeValueAsString(imageRequest()));
+            case WITHDRAWAL -> write("DELETE", "/api/v1/users/me", null);
+        };
+    }
+
+    private ProfileSaveRequest profileRequest() {
+        return new ProfileSaveRequest(changedNickname(), null, null, null, null, JobCategory.IT_DATA,
+            null, null, null, null);
+    }
+
+    private ProfileImageSaveRequest imageRequest() {
+        return new ProfileImageSaveRequest(List.of(new ProfileImageSaveItemRequest(replacementFileId, true)));
+    }
+
+    private String changedNickname() {
+        return "변경" + targetId;
+    }
+
+    private List<Long> activeImageIds() {
+        return jdbc.queryForList(
+            "SELECT image_id FROM profile_images WHERE profile_id = ? AND deleted_at IS NULL ORDER BY display_order",
+            Long.class, targetProfileId);
+    }
+
+    private void assertCommitted(Mutation mutation) {
+        switch (mutation) {
+            case PROFILE -> assertThat(jdbc.queryForObject("SELECT nickname FROM profiles WHERE id = ?",
+                String.class, targetProfileId)).isEqualTo(changedNickname());
+            case IMAGES -> assertThat(activeImageIds()).containsExactly(replacementFileId);
+            case WITHDRAWAL -> {
+                assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, targetId))
+                    .isEqualTo("WITHDRAWN");
+                assertThat(jdbc.queryForObject("SELECT deleted_at IS NOT NULL FROM profiles WHERE id = ?",
+                    Boolean.class, targetProfileId)).isTrue();
+                assertThat(activeImageIds()).isEmpty();
+            }
+        }
+    }
+
+    private HttpResponse<String> write(String method, String path, String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
+            .timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer " + jwt.createServiceAuthToken(targetId))
+            .header("Content-Type", "application/json")
+            .method(method,
+                body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    enum Mutation {
+        PROFILE, IMAGES, WITHDRAWAL
+    }
+
     private void boundary(String operation) {
         boundaries.add(new Boundary(operation, TransactionSynchronizationManager.isActualTransactionActive(),
             TransactionSynchronizationManager.hasResource(entityManagerFactory),
@@ -467,14 +743,18 @@ class UserProfileCacheAsideIntegrationTest {
     @EntityScan(basePackages = "com.team.dating_backend")
     @EnableJpaRepositories(
         basePackages = {"com.team.dating_backend.profile.repository",
-            "com.team.dating_backend.user.repository", "com.team.dating_backend.file.repository"}
+            "com.team.dating_backend.user.repository", "com.team.dating_backend.file.repository",
+            "com.team.dating_backend.activityregion.repository", "com.team.dating_backend.auth.repository"}
     )
     @EnableConfigurationProperties(
-        {JwtProperties.class, SecurityProperties.class, S3Properties.class,
+        {JwtProperties.class, AuthWebProperties.class, SecurityProperties.class, S3Properties.class,
             ProfileCacheProperties.class}
     )
     @Import(
         {RedisConfiguration.class, ProfileCacheRedisConfiguration.class, UserProfileCache.class,
+            ProfileCacheEvictionListener.class, ProfileSaveService.class, ProfileImageSaveService.class,
+            UserWithdrawalService.class, ProfileSaveController.class, ProfileImageController.class,
+            UserWithdrawalController.class, AuthCookieFactory.class, JpaFileRepositoryAdapter.class,
             ProfileCacheExpirationPolicy.class, UserProfileGetService.class, UserProfileSourceLoader.class,
             ProfileAvailabilityValidator.class, ProfileImageGetService.class, FileAccessUrlCreateService.class,
             UserProfileController.class, MyProfileController.class, MyProfileGetService.class, SecurityConfig.class,
