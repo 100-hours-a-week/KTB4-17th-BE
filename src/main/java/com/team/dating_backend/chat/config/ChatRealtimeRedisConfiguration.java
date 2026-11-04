@@ -36,7 +36,7 @@ public class ChatRealtimeRedisConfiguration {
 
     @Bean
     public RedisMessageListenerContainer chatRedisMessageListenerContainer(
-        RedisConnectionFactory connectionFactory,
+        @Qualifier("redisConnectionFactory") RedisConnectionFactory connectionFactory,
         ChatMessageRedisSubscriber messageSubscriber,
         ChatMessageReadReceiptRedisSubscriber readReceiptSubscriber,
         AiPracticeRedisEventSubscriber aiPracticeSubscriber,
