@@ -94,7 +94,7 @@ jobs:
                           " if [ -n \"$CID\" ]; then" +
                           " IP=$(docker inspect -f \"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\" \"$CID\");" +
                           " fi;" +
-                          " if [ -n \"$IP\" ] && OUT=$(curl -fsS -m 3 \"http://$IP:8080/actuator/health\" 2>&1); then echo backend healthy; exit 0; fi;" +
+                          " if [ -n \"$IP\" ] && OUT=$(curl -fsS -m 3 \"http://$IP:8080/actuator/health/service\" 2>&1); then echo backend healthy; exit 0; fi;" +
                           " echo \"attempt $i cid=$CID ip=$IP last=$OUT\";" +
                           " sleep 3; done;" +
                           " echo backend health check failed; docker compose ps -a; docker compose logs --tail 50 backend; exit 1; }"
