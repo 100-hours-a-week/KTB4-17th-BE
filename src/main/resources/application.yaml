@@ -84,6 +84,12 @@ kakao:
     talk-profile-uri: ${KAKAO_TALK_PROFILE_URI}
 
 app:
+  profile-cache:
+    redis:
+      url: ${PROFILE_CACHE_REDIS_URL:redis://localhost:6380}
+      connect-timeout: ${PROFILE_CACHE_REDIS_CONNECT_TIMEOUT:300ms}
+      command-timeout: ${PROFILE_CACHE_REDIS_COMMAND_TIMEOUT:200ms}
+
   recommendation:
     refresh:
       enabled: ${APP_RECOMMENDATION_REFRESH_ENABLED:false}
@@ -225,6 +231,13 @@ app:
       download-url-expiration: ${AWS_S3_DOWNLOAD_URL_EXPIRATION}
 
 management:
+  endpoint:
+    health:
+      group:
+        service:
+          exclude: redis/profileCacheRedisConnectionFactory
+        cache:
+          include: redis/profileCacheRedisConnectionFactory
   endpoints:
     web:
       exposure:
