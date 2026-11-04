@@ -56,7 +56,7 @@ class UserProfileControllerTest {
     private UserProfileGetService userProfileGetService;
 
     @Test
-    void 추천_회원_프로필을_반환한다() throws Exception {
+    void 회원_프로필을_기존_응답_형식으로_반환한다() throws Exception {
         given(userProfileGetService.getUserProfile(5L, 21L))
             .willReturn(new UserProfileResponse(
                 21L,

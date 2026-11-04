@@ -1,17 +1,11 @@
 package com.team.dating_backend.profile.service;
 
-import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
-import com.team.dating_backend.chat.repository.ChatRoomRepository;
-import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileRepository;
-import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
-import com.team.dating_backend.user.enums.UserStatus;
-import com.team.dating_backend.user.repository.UserBlockRepository;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.List;
@@ -28,12 +22,7 @@ public class UserProfileGetService {
 
     private final ProfileRepository profileRepository;
     private final ProfileImageGetService profileImageGetService;
-    private final LikeRepository likeRepository;
-    private final ChatRoomRepository chatRoomRepository;
-    private final UserBlockRepository userBlockRepository;
-    private final RecommendationItemRepository recommendationItemRepository;
-    private final PopularProfileRankingService popularProfileRankingService;
-    private final AiSimulationSessionRepository simulationSessionRepository;
+    private final ProfileAvailabilityValidator profileAvailabilityValidator;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long viewerUserId, Long userId) {
@@ -41,20 +30,9 @@ public class UserProfileGetService {
             throw profileNotAvailable();
         }
 
-        if (!viewerUserId.equals(userId)
-            && (userBlockRepository.existsActiveBlockBetween(viewerUserId, userId)
-                || chatRoomRepository.existsLeftParticipantBetweenUsers(viewerUserId, userId)
-                || (!likeRepository.hasProfileViewAccessBetween(viewerUserId, userId)
-                    && !chatRoomRepository.existsVisibleBetweenUsers(viewerUserId, userId)
-                    && !recommendationItemRepository.existsEligibleCandidateInActiveBatch(
-                        viewerUserId, userId)
-                    && !simulationSessionRepository.existsCompletedBetween(viewerUserId, userId)
-                    && !popularProfileRankingService.isInTopProfiles(userId)))) {
-            throw profileNotAvailable();
-        }
+        profileAvailabilityValidator.validate(userId);
 
         Profile profile = profileRepository.findByUserIdAndDeletedAtIsNull(userId)
-            .filter(candidate -> candidate.getUser().getStatus() == UserStatus.ACTIVE)
             .orElseThrow(UserProfileGetService::profileNotAvailable);
 
         LocalDate birthDate = profile.getUser().getBirthDate();
