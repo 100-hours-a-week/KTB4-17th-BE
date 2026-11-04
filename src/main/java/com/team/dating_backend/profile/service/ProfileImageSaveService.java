@@ -9,6 +9,7 @@ import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageResponse;
 import com.team.dating_backend.profile.dto.response.ProfileImageSaveResponse;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.entity.ProfileImage;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
@@ -26,6 +27,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -37,6 +39,7 @@ public class ProfileImageSaveService {
     private final ProfileImageRepository profileImageRepository;
     private final FileRepository fileRepository;
     private final OnboardingCompletionService onboardingCompletionService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ProfileImageSaveResponse saveProfileImages(
@@ -99,6 +102,7 @@ public class ProfileImageSaveService {
                 profileImage.getDisplayOrder(),
                 profileImage.isFrontal()))
             .toList();
+        eventPublisher.publishEvent(new ProfileCacheEvictionRequestedEvent(userId));
         return new ProfileImageSaveResponse(responseImages);
     }
 
