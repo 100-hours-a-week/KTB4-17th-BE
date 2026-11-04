@@ -24,19 +24,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.core.task.TaskRejectedException;
+import com.team.dating_backend.recommendation.service.SimulationRecommendationService;
 
 class AiSimulationServiceTest {
     private AiSimulationAdmissionService admission;
     private AiSimulationWorker worker;
     private AiSimulationPersistenceService persistence;
     private AiSimulationService service;
+    private AiSimulationNotificationService notifications;
+    private SimulationRecommendationService recommendations;
 
     @BeforeEach
     void setUp() {
         admission = mock(AiSimulationAdmissionService.class);
         worker = mock(AiSimulationWorker.class);
         persistence = mock(AiSimulationPersistenceService.class);
-        service = new AiSimulationService(admission, worker, persistence);
+        notifications = mock(AiSimulationNotificationService.class);
+        recommendations = mock(SimulationRecommendationService.class);
+        service = new AiSimulationService(admission, worker, persistence, notifications, recommendations);
     }
 
     @Test
@@ -48,6 +53,8 @@ class AiSimulationServiceTest {
         var order = inOrder(admission, worker);
         order.verify(admission).admit(USER_ID, TARGET_ID);
         order.verify(worker).generate(SESSION_ID);
+        verify(notifications).requested(SESSION_ID, USER_ID, TARGET_ID);
+        verify(recommendations).add(TARGET_ID, USER_ID);
         verifyNoInteractions(persistence);
     }
 
@@ -58,6 +65,7 @@ class AiSimulationServiceTest {
         assertThat(service.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
             .isEqualTo(new AiSimulationResponses.Handle(SESSION_ID, status));
         verifyNoInteractions(worker, persistence);
+        verifyNoInteractions(notifications, recommendations);
     }
 
     @Test
@@ -69,6 +77,29 @@ class AiSimulationServiceTest {
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 e -> assertThat(e.getErrorCode()).isEqualTo(AiSimulationErrorCode.SIMULATION_CAPACITY_EXCEEDED));
         verify(persistence).fail(SESSION_ID);
+        verifyNoInteractions(notifications, recommendations);
+    }
+
+    @Test
+    void 요청_알림이_실패해도_추천을_시도하고_접수는_성공한다() {
+        given(admission.admit(USER_ID, TARGET_ID))
+            .willReturn(new AdmissionDecision(SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS, true));
+        doThrow(new IllegalStateException()).when(notifications).requested(SESSION_ID, USER_ID, TARGET_ID);
+        assertThat(service.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)).simulationId())
+            .isEqualTo(SESSION_ID);
+        verify(recommendations).add(TARGET_ID, USER_ID);
+        verifyNoInteractions(persistence);
+    }
+
+    @Test
+    void 추천이_실패해도_접수된_AI_작업을_실패시키지_않는다() {
+        given(admission.admit(USER_ID, TARGET_ID))
+            .willReturn(new AdmissionDecision(SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS, true));
+        doThrow(new IllegalStateException()).when(recommendations).add(TARGET_ID, USER_ID);
+        assertThat(service.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)).simulationId())
+            .isEqualTo(SESSION_ID);
+        verify(notifications).requested(SESSION_ID, USER_ID, TARGET_ID);
+        verifyNoInteractions(persistence);
     }
 
     @Test
@@ -91,6 +122,7 @@ class AiSimulationServiceTest {
         order.verify(admission).admitAttempt(TARGET_ID, SESSION_ID);
         order.verify(worker).generate(SESSION_ID + 1);
         verifyNoInteractions(persistence);
+        verifyNoInteractions(notifications, recommendations);
     }
 
     @ParameterizedTest
@@ -102,6 +134,7 @@ class AiSimulationServiceTest {
         assertThat(service.attempt(USER_ID, SESSION_ID))
             .isEqualTo(new AiSimulationResponses.Handle(SESSION_ID + 1, status));
         verifyNoInteractions(worker, persistence);
+        verifyNoInteractions(notifications, recommendations);
     }
 
     @Test

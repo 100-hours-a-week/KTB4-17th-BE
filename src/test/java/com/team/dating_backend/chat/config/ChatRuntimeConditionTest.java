@@ -11,9 +11,10 @@ import com.team.dating_backend.aipractice.repository.AiPracticeOutboxRepository;
 import com.team.dating_backend.aipractice.repository.AiPracticeSessionRepository;
 import com.team.dating_backend.aipractice.service.AiPracticeCallbackSecretVerifier;
 import com.team.dating_backend.aipractice.service.AiPracticeGenerationCallbackService;
+import com.team.dating_backend.aipractice.service.AiPracticeOutboxClaimService;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxPublishJob;
 import com.team.dating_backend.aipractice.service.AiPracticeOutboxResultService;
-import com.team.dating_backend.aipractice.service.AiPracticeWebSocketEventPublisher;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventPublisher;
 import com.team.dating_backend.chat.delegation.controller.ChatDelegationController;
 import com.team.dating_backend.chat.delegation.repository.ChatDelegationMessageRepository;
 import com.team.dating_backend.chat.controller.ChatMessageImageAccessController;
@@ -31,21 +32,26 @@ import com.team.dating_backend.chat.delegation.service.ChatDelegationProgressSer
 import com.team.dating_backend.chat.delegation.service.ChatDelegationRetryService;
 import com.team.dating_backend.chat.delegation.service.ChatDelegationStartService;
 import com.team.dating_backend.chat.service.ChatMessageImageAccessService;
+import com.team.dating_backend.chat.service.ChatMessageKafkaPublisher;
 import com.team.dating_backend.chat.service.ChatMessageListService;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
 import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
+import com.team.dating_backend.chat.service.ChatOutboxPublisherLockService;
 import com.team.dating_backend.chat.service.ChatRoomLeaveService;
 import com.team.dating_backend.chat.service.ChatRoomListService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
 import com.team.dating_backend.chat.service.ChatRoomPresenceService;
+import com.team.dating_backend.common.lock.repository.PublisherLockRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 class ChatRuntimeConditionTest {
 
@@ -68,12 +74,18 @@ class ChatRuntimeConditionTest {
         .withBean(ChatRoomPresenceService.class, () -> mock(ChatRoomPresenceService.class))
         .withBean(ChatMessageOutboxRepository.class,
             () -> mock(ChatMessageOutboxRepository.class))
+        .withBean(ChatMessageKafkaPublisher.class,
+            () -> mock(ChatMessageKafkaPublisher.class))
         .withBean(ChatMessageRepository.class, () -> mock(ChatMessageRepository.class))
         .withBean(ChatParticipantRepository.class,
             () -> mock(ChatParticipantRepository.class))
+        .withBean(PublisherLockRepository.class,
+            () -> mock(PublisherLockRepository.class))
         .withBean(ChatDelegationMessageRepository.class,
             () -> mock(ChatDelegationMessageRepository.class))
         .withBean(SimpMessagingTemplate.class, () -> mock(SimpMessagingTemplate.class))
+        .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+        .withBean(JsonMapper.class, () -> mock(JsonMapper.class))
         .withBean(AiPracticeOutboxRepository.class,
             () -> mock(AiPracticeOutboxRepository.class))
         .withBean(AiPracticeSessionRepository.class,
@@ -81,6 +93,8 @@ class ChatRuntimeConditionTest {
         .withBean(AiPracticeChatRepository.class,
             () -> mock(AiPracticeChatRepository.class))
         .withBean(AiPracticeAiClient.class, () -> mock(AiPracticeAiClient.class))
+        .withBean(AiPracticeOutboxClaimService.class,
+            () -> mock(AiPracticeOutboxClaimService.class))
         .withBean(AiPracticeOutboxResultService.class,
             () -> mock(AiPracticeOutboxResultService.class))
         .withBean(AiPracticeProperties.class, () -> mock(AiPracticeProperties.class))
@@ -104,7 +118,12 @@ class ChatRuntimeConditionTest {
     @Test
     void 런타임이_활성화되면_채팅_실행_컴포넌트를_등록한다() {
         contextRunner
-            .withPropertyValues("app.chat.runtime-enabled=true")
+            .withPropertyValues(
+                "app.chat.runtime-enabled=true",
+                "app.chat.realtime-relay.enabled=true",
+                "app.chat.realtime-relay.read-receipt-redis-channel=chat:read-receipt:v1",
+                "app.chat.realtime-relay.ai-practice-redis-channel="
+                    + "chat:ai-practice-updated:v1")
             .run(context -> {
                 assertThat(context).hasNotFailed();
                 assertThat(context).hasSingleBean(ChatDelegationController.class);
@@ -116,9 +135,10 @@ class ChatRuntimeConditionTest {
                 assertThat(context).hasSingleBean(ChatRoomListController.class);
                 assertThat(context).hasSingleBean(ChatRoomPresenceController.class);
                 assertThat(context).hasSingleBean(ChatMessageOutboxPublishJob.class);
+                assertThat(context).hasSingleBean(ChatOutboxPublisherLockService.class);
                 assertThat(context).hasSingleBean(ChatMessageReadReceiptPublisher.class);
                 assertThat(context).hasSingleBean(AiPracticeOutboxPublishJob.class);
-                assertThat(context).hasSingleBean(AiPracticeWebSocketEventPublisher.class);
+                assertThat(context).hasSingleBean(AiPracticeRedisEventPublisher.class);
                 assertThat(context).hasSingleBean(AiPracticeGenerationCallbackController.class);
             });
     }
@@ -133,9 +153,10 @@ class ChatRuntimeConditionTest {
         assertThat(context.getBeansOfType(ChatRoomListController.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatRoomPresenceController.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMessageOutboxPublishJob.class)).isEmpty();
+        assertThat(context.getBeansOfType(ChatOutboxPublisherLockService.class)).isEmpty();
         assertThat(context.getBeansOfType(ChatMessageReadReceiptPublisher.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeOutboxPublishJob.class)).isEmpty();
-        assertThat(context.getBeansOfType(AiPracticeWebSocketEventPublisher.class)).isEmpty();
+        assertThat(context.getBeansOfType(AiPracticeRedisEventPublisher.class)).isEmpty();
         assertThat(context.getBeansOfType(AiPracticeGenerationCallbackController.class)).isEmpty();
     }
 
@@ -151,9 +172,10 @@ class ChatRuntimeConditionTest {
             ChatRoomListController.class,
             ChatRoomPresenceController.class,
             ChatMessageOutboxPublishJob.class,
+            ChatOutboxPublisherLockService.class,
             ChatMessageReadReceiptPublisher.class,
             AiPracticeOutboxPublishJob.class,
-            AiPracticeWebSocketEventPublisher.class,
+            AiPracticeRedisEventPublisher.class,
             AiPracticeGenerationCallbackController.class
         }
     )

@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.aipractice.dto.request.AiPracticeSessionCreateRequest;
 import com.team.dating_backend.aipractice.entity.AiPracticeSession;
@@ -45,6 +46,17 @@ class AiPracticeSessionServiceTest {
         userPairLockRepository = mock(UserPairLockRepository.class);
         service = new AiPracticeSessionService(
             sessionRepository, userRepository, userBlockRepository, userPairLockRepository);
+    }
+
+    @Test
+    void 본인을_대상으로_연습_세션을_생성하거나_재개할_수_없다() {
+        assertThatThrownBy(() -> service.startOrResume(
+            USER_ID, new AiPracticeSessionCreateRequest(USER_ID)))
+            .isInstanceOfSatisfying(AiPracticeBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiPracticeErrorCode.INVALID_TARGET_USER));
+
+        verifyNoInteractions(userPairLockRepository, userRepository, userBlockRepository, sessionRepository);
     }
 
     @Test

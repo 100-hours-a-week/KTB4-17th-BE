@@ -5,8 +5,11 @@ import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.common.enums.ErrorCode;
 import com.team.dating_backend.common.exception.BusinessException;
 import com.team.dating_backend.notification.controller.NotificationStreamController;
+import com.team.dating_backend.notification.enums.NotificationErrorCode;
+import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
 import com.team.dating_backend.notification.sse.NotificationSseConnection;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -31,28 +34,44 @@ public class NotificationStreamExceptionHandler {
 
     private final NotificationEmitterRegistry registry;
     private final ObjectMapper objectMapper;
+    private final NotificationSseObservation observation;
 
     @ExceptionHandler(Exception.class)
     public void handleStreamException(
         Exception exception, HttpServletRequest request, HttpServletResponse response) {
         Object attribute = request.getAttribute(NotificationStreamController.CONNECTION_ATTRIBUTE);
         NotificationSseConnection connection = attribute instanceof NotificationSseConnection value ? value : null;
+        boolean disconnected = DisconnectedClientHelper.isClientDisconnectedException(exception);
+        ErrorCode errorCode = exception instanceof BusinessException businessException
+            ? businessException.getErrorCode()
+            : CommonErrorCode.INTERNAL_SERVER_ERROR;
+        boolean recordInitializationFailure = false;
         if (connection != null) {
-            registry.remove(connection);
+            NotificationSseCloseReason reason;
+            if (exception instanceof IOException || disconnected) {
+                reason = NotificationSseCloseReason.TRANSPORT_ERROR;
+            } else if (request.getDispatcherType() == DispatcherType.REQUEST) {
+                reason = NotificationSseCloseReason.INITIALIZATION_FAILURE;
+            } else {
+                reason = NotificationSseCloseReason.SERVER_ERROR;
+            }
+            boolean removed = registry.remove(connection, reason);
+            recordInitializationFailure = removed && reason == NotificationSseCloseReason.INITIALIZATION_FAILURE
+                && errorCode.status().is5xxServerError()
+                && errorCode != NotificationErrorCode.NOTIFICATION_STREAM_NOT_READY;
             connection.lockForSend();
         }
 
         try {
-            if (DisconnectedClientHelper.isClientDisconnectedException(exception)) {
+            if (recordInitializationFailure) {
+                observation.initializationFailed(connection, exception);
+            }
+            if (disconnected) {
                 log.debug("SSE request no longer writable. connectionId={}, exceptionType={}",
                     connection == null ? null : connection.getConnectionId(),
                     exception.getClass().getSimpleName());
                 return;
             }
-
-            ErrorCode errorCode = exception instanceof BusinessException businessException
-                ? businessException.getErrorCode()
-                : CommonErrorCode.INTERNAL_SERVER_ERROR;
 
             if (errorCode.status().is5xxServerError()) {
                 log.error("SSE request failed. errorCode={}, connectionId={}, exceptionType={}, causeType={}",

@@ -1,11 +1,15 @@
 package com.team.dating_backend.aipractice.config;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 @Getter
 @Setter
+@Validated
 @ConfigurationProperties(prefix = "app.ai-practice")
 public class AiPracticeProperties {
 
@@ -21,4 +25,8 @@ public class AiPracticeProperties {
     private int dailyLimit = 30;
     private int maxOutboxFailures = 10;
     private long outboxPublishDelayMs = 1000;
+
+    @Positive(message = "INTERNAL_SERVER_ERROR")
+    @Max(value = Long.MAX_VALUE / 1000, message = "INTERNAL_SERVER_ERROR")
+    private long outboxClaimDurationMs = 150_000;
 }

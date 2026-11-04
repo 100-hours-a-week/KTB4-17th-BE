@@ -7,6 +7,7 @@ public enum NotificationType {
     PERSONA_TRAINING_COMPLETED(NotificationCategory.SYSTEM),
     FACE_ANALYSIS_COMPLETED(NotificationCategory.SYSTEM),
     AI_PRACTICE_CHAT_COMPLETED(NotificationCategory.SYSTEM),
+    AI_SIMULATION_REQUESTED(NotificationCategory.SYSTEM),
     AI_SIMULATION_REPORT_COMPLETED(NotificationCategory.SYSTEM),
     NOTICE(NotificationCategory.SYSTEM);
 

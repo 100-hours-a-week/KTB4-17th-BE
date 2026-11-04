@@ -37,7 +37,7 @@ class RecommendationPreferenceSaveRequestJsonTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void 전체_필드가_있는_요청을_타입이_있는_DTO로_변환한다() {
+    void 성별_필드가_없는_기존_요청을_타입이_있는_DTO로_변환한다() {
         RecommendationPreferenceSaveRequest request = objectMapper.readValue(
             VALID_REQUEST, RecommendationPreferenceSaveRequest.class);
 
@@ -46,6 +46,7 @@ class RecommendationPreferenceSaveRequestJsonTest {
             List.of(Religion.NONE, Religion.CATHOLIC),
             List.of(Drinking.NEVER, Drinking.SOCIAL),
             List.of(Smoking.NON_SMOKER, Smoking.OCCASIONAL)));
+        assertThat(request.preferredGenders()).isNull();
     }
 
     @ParameterizedTest

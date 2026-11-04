@@ -202,6 +202,9 @@ class RecommendationProfileAccessIntegrationTest {
 
         assertThat(candidates(null, null, null, null, List.of(), List.of(), List.of()))
             .containsExactly(candidate.getId());
+        assertThat(candidates(List.of(Gender.MALE, Gender.FEMALE), null, null, null, null,
+            List.of(), List.of(), List.of()))
+            .containsExactlyInAnyOrder(candidate.getId(), sameGender.getId());
     }
 
     @ParameterizedTest
@@ -305,8 +308,16 @@ class RecommendationProfileAccessIntegrationTest {
     private List<Long> candidates(LocalDate birthDateAfter, LocalDate birthDateOnOrBefore,
         Short minHeight, Short maxHeight, List<Religion> religion,
         List<Drinking> drinking, List<Smoking> smoking) {
-        return candidateRepository.findEligibleCandidateIds(
-            requester.getId(), Gender.FEMALE, birthDateAfter, birthDateOnOrBefore, minHeight, maxHeight,
+        return candidates(List.of(Gender.FEMALE), birthDateAfter, birthDateOnOrBefore, minHeight, maxHeight,
+            religion, drinking, smoking);
+    }
+
+    private List<Long> candidates(List<Gender> candidateGenders,
+        LocalDate birthDateAfter, LocalDate birthDateOnOrBefore,
+        Short minHeight, Short maxHeight, List<Religion> religion,
+        List<Drinking> drinking, List<Smoking> smoking) {
+        return candidateRepository.findEligibleCandidateIdsByGenders(
+            requester.getId(), candidateGenders, birthDateAfter, birthDateOnOrBefore, minHeight, maxHeight,
             religion.isEmpty(), religion.isEmpty() ? List.of(Religion.values()) : religion,
             drinking.isEmpty(), drinking.isEmpty() ? List.of(Drinking.values()) : drinking,
             smoking.isEmpty(), smoking.isEmpty() ? List.of(Smoking.values()) : smoking);

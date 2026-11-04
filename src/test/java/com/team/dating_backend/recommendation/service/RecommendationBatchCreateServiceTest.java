@@ -69,7 +69,7 @@ class RecommendationBatchCreateServiceTest {
     }
 
     @Test
-    void 추천_후보를_랜덤으로_배치하고_순위를_순차적으로_부여한다() {
+    void 최초_후보를_저장하고_조회용_ID는_유지한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
         givenCandidateIds(List.of(2L, 9L, 11L));
@@ -103,29 +103,22 @@ class RecommendationBatchCreateServiceTest {
         InOrder saveOrder = inOrder(recommendationBatchRepository, recommendationItemRepository);
         saveOrder.verify(recommendationBatchRepository).save(any(RecommendationBatch.class));
         saveOrder.verify(recommendationItemRepository).saveAll(any());
-        saveOrder.verify(recommendationBatchRepository).markPreviousBatchesDeleted(
-            5L, 42L, batch.getCreatedAt());
-        verify(recommendationBatchRepository, never()).markActiveBatchesDeleted(any(), any());
     }
 
     @Test
-    void 후보가_없으면_배치와_아이템을_저장하지_않고_기존_활성_배치를_종료한다() {
+    void 후보가_없어도_빈_목록을_생성해_재요청에_재사용한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
         givenCandidateIds(List.of());
 
-        assertThat(service.createRecommendationBatch(5L)).isEmpty();
+        assertThat(service.createRecommendationBatch(5L).orElseThrow().batchId()).isEqualTo(42L);
 
-        verify(recommendationBatchRepository).markActiveBatchesDeleted(
-            eq(5L), any());
-        verify(recommendationBatchRepository, never()).save(any(RecommendationBatch.class));
-        verify(recommendationBatchRepository, never()).markPreviousBatchesDeleted(
-            any(), any(), any());
+        verify(recommendationBatchRepository).save(any(RecommendationBatch.class));
         verifyNoInteractions(recommendationItemRepository);
     }
 
     @Test
-    void 아이템_저장에_실패하면_이전_배치를_삭제_처리하지_않는다() {
+    void 최초_아이템_저장_실패를_호출자에게_전달한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
         givenCandidateIds(List.of(2L));
@@ -133,9 +126,80 @@ class RecommendationBatchCreateServiceTest {
 
         assertThatThrownBy(() -> service.createRecommendationBatch(5L))
             .isInstanceOf(IllegalStateException.class);
+    }
 
-        verify(recommendationBatchRepository, never()).markPreviousBatchesDeleted(any(), any(),
-            any());
+    @Test
+    void 반복_생성_요청은_후보를_재계산하지_않고_기존_목록을_반환한다() {
+        RecommendationBatch batch = existingBatch();
+
+        assertThat(service.createRecommendationBatch(5L).orElseThrow().batchId()).isEqualTo(42L);
+
+        verifyNoInteractions(recommendationCandidateRepository, recommendationPreferenceRepository,
+            recommendationItemRepository);
+        verify(recommendationBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void 순서만_다른_동일_후보는_Item을_쓰지_않는다() {
+        existingBatch();
+        givenCandidateIds(List.of(9L, 2L));
+        given(recommendationItemRepository.findAllByRecommendationBatchId(42L))
+            .willReturn(List.of(item(101L, 2L, 1), item(102L, 9L, 2)));
+
+        service.refreshRecommendationBatch(5L);
+
+        verify(recommendationBatchRepository, never()).save(any());
+        verify(recommendationItemRepository, never()).saveAll(any());
+        verify(recommendationItemRepository, never()).deleteItems(any(), any());
+    }
+
+    @Test
+    void 유지되는_Item을_건드리지_않고_추가와_제외만_반영한다() {
+        existingBatch();
+        givenCandidateIds(List.of(9L, 11L));
+        given(recommendationItemRepository.findAllByRecommendationBatchId(42L))
+            .willReturn(List.of(item(101L, 2L, 1), item(102L, 9L, 2)));
+
+        service.refreshRecommendationBatch(5L);
+
+        verify(recommendationItemRepository).deleteItems(42L, List.of(101L));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<RecommendationItem>> added = ArgumentCaptor.forClass(List.class);
+        verify(recommendationItemRepository).saveAll(added.capture());
+        assertThat(added.getValue()).extracting(RecommendationItem::getCandidateUserId)
+            .containsExactly(11L);
+        assertThat(added.getValue().getFirst().getRankingOrder()).isEqualTo(3);
+        verify(recommendationBatchRepository, never()).save(any());
+    }
+
+    @Test
+    void 후보가_모두_제외되어도_목록_ID를_유지한다() {
+        existingBatch();
+        givenCandidateIds(List.of());
+        given(recommendationItemRepository.findAllByRecommendationBatchId(42L))
+            .willReturn(List.of(item(101L, 2L, 1)));
+
+        assertThat(service.refreshRecommendationBatch(5L).orElseThrow().batchId()).isEqualTo(42L);
+
+        verify(recommendationItemRepository).deleteItems(42L, List.of(101L));
+        verify(recommendationItemRepository, never()).saveAll(any());
+        verify(recommendationBatchRepository, never()).save(any());
+    }
+
+    private RecommendationBatch existingBatch() {
+        User requester = user(UserStatus.ACTIVE);
+        given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
+        RecommendationBatch batch = new RecommendationBatch(5L, LocalDateTime.now());
+        ReflectionTestUtils.setField(batch, "id", 42L);
+        given(recommendationBatchRepository.findByUserIdAndDeletedAtIsNull(5L))
+            .willReturn(Optional.of(batch));
+        return batch;
+    }
+
+    private RecommendationItem item(long id, long candidateId, int ranking) {
+        RecommendationItem item = new RecommendationItem(42L, candidateId, ranking);
+        ReflectionTestUtils.setField(item, "id", id);
+        return item;
     }
 
     @Test
@@ -175,22 +239,28 @@ class RecommendationBatchCreateServiceTest {
     }
 
     @Test
-    void 저장된_선호조건과_만_나이_날짜_경계를_후보_조회에_전달한다() {
+    void 저장된_선호조건과_선택_성별과_만_나이_날짜_경계를_후보_조회에_전달한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
+        List<Gender> preferredGenders = List.of(Gender.MALE, Gender.FEMALE);
         RecommendationPreference preference = new RecommendationPreference(requester,
             (short) 25, (short) 30, (short) 160, (short) 180,
             List.of(Religion.NONE, Religion.CATHOLIC), List.of(Drinking.NEVER),
-            List.of(Smoking.NON_SMOKER), LocalDateTime.now());
+            List.of(Smoking.NON_SMOKER), preferredGenders, LocalDateTime.now());
         given(recommendationPreferenceRepository.findById(5L)).willReturn(Optional.of(preference));
+        given(recommendationCandidateRepository.findEligibleCandidateIdsByGenders(
+            eq(5L), eq(preferredGenders), any(LocalDate.class), any(LocalDate.class),
+            eq((short) 160), eq((short) 180), eq(false), eq(List.of(Religion.NONE, Religion.CATHOLIC)),
+            eq(false), eq(List.of(Drinking.NEVER)), eq(false), eq(List.of(Smoking.NON_SMOKER))))
+            .willReturn(List.of(2L));
         LocalDate before = LocalDate.now();
 
         service.createRecommendationBatch(5L);
 
         ArgumentCaptor<LocalDate> lowerBound = ArgumentCaptor.forClass(LocalDate.class);
         ArgumentCaptor<LocalDate> upperBound = ArgumentCaptor.forClass(LocalDate.class);
-        verify(recommendationCandidateRepository).findEligibleCandidateIds(
-            eq(5L), eq(Gender.FEMALE), lowerBound.capture(), upperBound.capture(),
+        verify(recommendationCandidateRepository).findEligibleCandidateIdsByGenders(
+            eq(5L), eq(preferredGenders), lowerBound.capture(), upperBound.capture(),
             eq((short) 160), eq((short) 180), eq(false), eq(List.of(Religion.NONE, Religion.CATHOLIC)),
             eq(false), eq(List.of(Drinking.NEVER)), eq(false), eq(List.of(Smoking.NON_SMOKER)));
         LocalDate after = LocalDate.now();
@@ -222,8 +292,8 @@ class RecommendationBatchCreateServiceTest {
     void 저장된_선호조건이_모두_미설정이면_DEFAULT_유형으로_저장한다() {
         User requester = user(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(5L)).willReturn(Optional.of(requester));
-        given(recommendationPreferenceRepository.findById(5L))
-            .willReturn(Optional.of(new RecommendationPreference(requester, LocalDateTime.now())));
+        RecommendationPreference preference = new RecommendationPreference(requester, LocalDateTime.now());
+        given(recommendationPreferenceRepository.findById(5L)).willReturn(Optional.of(preference));
         givenCandidateIds(List.of(2L));
 
         service.createRecommendationBatch(5L);

@@ -22,15 +22,10 @@ import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.enums.ChatParticipantStatus;
 import com.team.dating_backend.chat.enums.ChatRoomEndReason;
 import com.team.dating_backend.chat.exception.ChatBusinessException;
-import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
 import com.team.dating_backend.chat.repository.ChatMessageOutboxRepository;
 import com.team.dating_backend.chat.repository.ChatMessageRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.matching.entity.Match;
-import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.service.NotificationCreateService;
-import com.team.dating_backend.profile.entity.Profile;
-import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.file.repository.FileRepository;
 import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.user.entity.User;
@@ -61,9 +56,6 @@ class ChatMessageSendServiceTest {
     private UserRepository userRepository;
     private UserBlockRepository userBlockRepository;
     private FileRepository fileRepository;
-    private ChatRoomPresenceRegistry presenceRegistry;
-    private NotificationCreateService notificationCreateService;
-    private ProfileRepository profileRepository;
     private ChatDelegationParticipantService delegationParticipantService;
     private ChatDelegationRescheduleService delegationRescheduleService;
     private ChatMessageSendService service;
@@ -80,9 +72,6 @@ class ChatMessageSendServiceTest {
         userRepository = mock(UserRepository.class);
         userBlockRepository = mock(UserBlockRepository.class);
         fileRepository = mock(FileRepository.class);
-        presenceRegistry = mock(ChatRoomPresenceRegistry.class);
-        notificationCreateService = mock(NotificationCreateService.class);
-        profileRepository = mock(ProfileRepository.class);
         delegationParticipantService = mock(ChatDelegationParticipantService.class);
         delegationRescheduleService = mock(ChatDelegationRescheduleService.class);
         service = new ChatMessageSendService(
@@ -93,16 +82,8 @@ class ChatMessageSendServiceTest {
             userRepository,
             userBlockRepository,
             fileRepository,
-            presenceRegistry,
-            notificationCreateService,
-            profileRepository,
             delegationParticipantService,
             delegationRescheduleService);
-
-        Profile profile = mock(Profile.class);
-        given(profile.getNickname()).willReturn("보내는사람");
-        given(profileRepository.findByUserIdAndDeletedAtIsNull(SENDER_USER_ID))
-            .willReturn(Optional.of(profile));
 
         request = new ChatMessageCreateRequest(
             UUID.randomUUID(), ChatMessageType.TEXT, "안녕하세요", null);
@@ -154,32 +135,6 @@ class ChatMessageSendServiceTest {
         assertThat(savedOutbox.getChatMessageId()).isEqualTo(savedMessage.getId());
         assertThat(savedOutbox.getCreatedAt()).isEqualTo(savedMessage.getCreatedAt());
         verify(delegationRescheduleService).rescheduleForNewMessage(savedMessage);
-        verify(notificationCreateService).createNotification(
-            RECEIVER_USER_ID, NotificationType.CHAT_MESSAGE,
-            "새로운 메시지", "보내는사람님에게서 메시지가 도착했어요.", "CHAT_ROOM", CHAT_ROOM_ID);
-    }
-
-    @Test
-    void 수신자가_해당_채팅방을_보고_있으면_메시지만_저장하고_알림과_닉네임_조회는_생략한다() {
-        given(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).willReturn(true);
-
-        service.sendMessage(CHAT_ROOM_ID, SENDER_USER_ID, request);
-
-        verify(chatMessageRepository).save(any(ChatMessage.class));
-        verify(outboxRepository).save(any(ChatMessageOutbox.class));
-        verifyNoInteractions(notificationCreateService, profileRepository);
-    }
-
-    @Test
-    void 발신자_프로필이_없으면_기본_문구로_알림을_생성한다() {
-        given(profileRepository.findByUserIdAndDeletedAtIsNull(SENDER_USER_ID))
-            .willReturn(Optional.empty());
-
-        service.sendMessage(CHAT_ROOM_ID, SENDER_USER_ID, request);
-
-        verify(notificationCreateService).createNotification(
-            RECEIVER_USER_ID, NotificationType.CHAT_MESSAGE,
-            "새로운 메시지", "새로운 메시지가 도착했어요.", "CHAT_ROOM", CHAT_ROOM_ID);
     }
 
     @Test
@@ -206,9 +161,6 @@ class ChatMessageSendServiceTest {
         assertThat(savedMessage.getMessageType()).isEqualTo(ChatMessageType.IMAGE);
         assertThat(savedMessage.getTextContent()).isNull();
         assertThat(savedMessage.getImageFile()).isSameAs(imageFile);
-        verify(notificationCreateService).createNotification(
-            RECEIVER_USER_ID, NotificationType.CHAT_MESSAGE,
-            "새로운 메시지", "보내는사람님에게서 메시지가 도착했어요.", "CHAT_ROOM", CHAT_ROOM_ID);
     }
 
     @Test
@@ -261,9 +213,7 @@ class ChatMessageSendServiceTest {
         verify(chatMessageRepository, never()).save(any(ChatMessage.class));
         verify(outboxRepository, never()).save(any(ChatMessageOutbox.class));
         verify(rateLimiter, never()).tryAcquire(SENDER_USER_ID);
-        verifyNoInteractions(
-            delegationRescheduleService, presenceRegistry,
-            notificationCreateService, profileRepository);
+        verifyNoInteractions(delegationRescheduleService);
     }
 
     @Test

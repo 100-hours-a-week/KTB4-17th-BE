@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.notification.controller.NotificationController;
+import com.team.dating_backend.notification.cursor.NotificationCursorCodec;
 import com.team.dating_backend.notification.entity.Notification;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.repository.NotificationRepository;
@@ -26,6 +27,7 @@ import com.team.dating_backend.notification.service.NotificationListService;
 import com.team.dating_backend.notification.service.NotificationReadService;
 import com.team.dating_backend.notification.service.NotificationUnreadCountService;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.security.ApiAccessDeniedHandler;
 import com.team.dating_backend.security.ApiAuthenticationEntryPoint;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
@@ -73,6 +75,7 @@ import tools.jackson.databind.ObjectMapper;
         SecurityConfigTest.SecurityProbeController.class,
         NotificationAccessService.class,
         NotificationListService.class,
+        NotificationCursorCodec.class,
         NotificationUnreadCountService.class,
         NotificationReadService.class
     }
@@ -96,6 +99,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private NotificationDeleteService notificationDeleteService;

@@ -2,16 +2,28 @@ package com.team.dating_backend.recommendation.repository;
 
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RecommendationItemRepository extends JpaRepository<RecommendationItem, Long> {
 
-    Optional<RecommendationItem> findByIdAndRecommendationBatchId(Long id,
-        Long recommendationBatchId);
+    List<RecommendationItem> findAllByRecommendationBatchId(Long recommendationBatchId);
+
+    @Modifying
+    @Query("DELETE FROM RecommendationItem item WHERE item.recommendationBatchId = :batchId AND item.id IN :ids")
+    int deleteItems(@Param("batchId") Long batchId, @Param("ids") List<Long> ids);
+
+    @Query("""
+        SELECT item.id FROM RecommendationItem item
+        WHERE item.recommendationBatchId = :batchId
+        ORDER BY item.id ASC
+        """)
+    List<Long> findItemIds(@Param("batchId") Long batchId, Pageable pageable);
+
+    boolean existsByRecommendationBatchId(Long recommendationBatchId);
 
     @Query("""
         SELECT count(item) > 0
@@ -39,16 +51,14 @@ public interface RecommendationItemRepository extends JpaRepository<Recommendati
         JOIN Profile profile ON profile.user = candidate AND profile.deletedAt IS NULL
         LEFT JOIN profile.activityRegion region
         WHERE item.recommendationBatchId = :batchId
-          AND (:cursorRankingOrder IS NULL OR item.rankingOrder > :cursorRankingOrder
-            OR (item.rankingOrder = :cursorRankingOrder AND item.id > :cursorItemId))
+          AND (:cursorItemId IS NULL OR item.id > :cursorItemId)
           AND
         """ + RecommendationEligibilityQuery.ELIGIBLE_CANDIDATE_PREDICATE + """
-        ORDER BY item.rankingOrder ASC, item.id ASC
+        ORDER BY item.id ASC
         """)
     List<RecommendationItemCandidateRow> findEligibleItems(
         @Param("batchId") Long batchId,
         @Param("requesterUserId") Long requesterUserId,
-        @Param("cursorRankingOrder") Integer cursorRankingOrder,
         @Param("cursorItemId") Long cursorItemId,
         Pageable pageable);
 }

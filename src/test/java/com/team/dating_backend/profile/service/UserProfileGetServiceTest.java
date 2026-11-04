@@ -3,21 +3,26 @@ package com.team.dating_backend.profile.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.team.dating_backend.chat.repository.ChatRoomRepository;
-import com.team.dating_backend.matching.repository.LikeRepository;
+import com.team.dating_backend.activityregion.entity.ActivityRegion;
 import com.team.dating_backend.profile.dto.ProfileImageAccessResult;
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.enums.BodyType;
+import com.team.dating_backend.profile.enums.Drinking;
+import com.team.dating_backend.profile.enums.EducationLevel;
+import com.team.dating_backend.profile.enums.JobCategory;
+import com.team.dating_backend.profile.enums.Mbti;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
+import com.team.dating_backend.profile.enums.Religion;
+import com.team.dating_backend.profile.enums.Smoking;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.profile.repository.ProfileRepository;
-import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
 import com.team.dating_backend.user.entity.User;
-import com.team.dating_backend.user.enums.UserStatus;
-import com.team.dating_backend.user.repository.UserBlockRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,7 +31,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -34,133 +38,108 @@ class UserProfileGetServiceTest {
 
     private ProfileRepository profileRepository;
     private ProfileImageGetService profileImageGetService;
-    private LikeRepository likeRepository;
-    private ChatRoomRepository chatRoomRepository;
-    private UserBlockRepository userBlockRepository;
-    private RecommendationItemRepository recommendationItemRepository;
+    private ProfileAvailabilityValidator profileAvailabilityValidator;
     private UserProfileGetService service;
 
     @BeforeEach
     void setUp() {
         profileRepository = mock(ProfileRepository.class);
         profileImageGetService = mock(ProfileImageGetService.class);
-        likeRepository = mock(LikeRepository.class);
-        chatRoomRepository = mock(ChatRoomRepository.class);
-        userBlockRepository = mock(UserBlockRepository.class);
-        recommendationItemRepository = mock(RecommendationItemRepository.class);
+        profileAvailabilityValidator = mock(ProfileAvailabilityValidator.class);
         service = new UserProfileGetService(profileRepository, profileImageGetService,
-            likeRepository, chatRoomRepository, userBlockRepository, recommendationItemRepository);
+            profileAvailabilityValidator);
     }
 
     @Test
-    void 좋아요나_채팅방이_없어도_현재_추천_상대의_프로필을_조회한다() {
-        given(recommendationItemRepository.existsEligibleCandidateInActiveBatch(5L, 21L))
-            .willReturn(true);
-        givenActiveProfile(UserStatus.ACTIVE);
+    void 관계_조회_없이_프로필을_기존_응답_형식으로_반환한다() {
+        Profile profile = givenProfile(21L);
+        ActivityRegion region = mock(ActivityRegion.class);
+        given(region.getProvinceName()).willReturn("서울특별시");
+        given(region.getRegionName()).willReturn("강남구");
+        given(profile.getActivityRegion()).willReturn(region);
+        given(profile.getJob()).willReturn(JobCategory.IT_DATA);
+        given(profile.getHeight()).willReturn((short) 175);
+        given(profile.getBodyType()).willReturn(BodyType.AVERAGE);
+        given(profile.getEducationLevel()).willReturn(EducationLevel.BACHELOR);
+        given(profile.getReligion()).willReturn(Religion.NONE);
+        given(profile.getDrinking()).willReturn(Drinking.SOCIAL);
+        given(profile.getSmoking()).willReturn(Smoking.NON_SMOKER);
+        given(profile.getMbti()).willReturn(Mbti.INTJ);
 
         UserProfileResponse response = service.getUserProfile(5L, 21L);
 
-        assertThat(response.userId()).isEqualTo(21L);
+        assertThat(response).isEqualTo(new UserProfileResponse(
+            21L, "하리", 29, JobCategory.IT_DATA, "서울특별시 강남구", (short) 175,
+            BodyType.AVERAGE, EducationLevel.BACHELOR, Religion.NONE, Drinking.SOCIAL,
+            Smoking.NON_SMOKER, Mbti.INTJ,
+            List.of(new UserProfileResponse.Image(701L, (short) 1, "https://example.com/701"))));
+        verify(profileAvailabilityValidator).validate(21L);
+    }
+
+    @Test
+    void 본인도_동일한_상태_검증을_거쳐_프로필을_조회한다() {
+        givenProfile(5L);
+
+        UserProfileResponse response = service.getUserProfile(5L, 5L);
+
+        assertThat(response.userId()).isEqualTo(5L);
         assertThat(response.nickname()).isEqualTo("하리");
-        assertThat(response.age()).isEqualTo(29);
-        assertThat(response.images()).containsExactly(
-            new UserProfileResponse.Image(
-                701L,
-                (short) 1,
-                "https://example.com/701"));
+        assertThat(response.images()).hasSize(1);
+        verify(profileAvailabilityValidator).validate(5L);
     }
 
-    @Test
-    void 기존_좋아요_관계의_상세_조회는_추천_여부와_무관하게_허용한다() {
-        given(likeRepository.hasProfileViewAccessBetween(5L, 21L)).willReturn(true);
-        givenActiveProfile(UserStatus.ACTIVE);
+    @ParameterizedTest
+    @ValueSource(longs = {5L, 21L})
+    void 본인이나_상대가_조회_불가이면_본문과_이미지를_조회하지_않는다(Long userId) {
+        willThrow(new ProfileImageBusinessException(ProfileImageErrorCode.PROFILE_NOT_FOUND))
+            .given(profileAvailabilityValidator).validate(userId);
 
-        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
-        verifyNoInteractions(recommendationItemRepository);
-    }
+        assertUnavailable(5L, userId);
 
-    @Test
-    void 기존_채팅방의_상세_조회는_추천_여부와_무관하게_허용한다() {
-        given(chatRoomRepository.existsVisibleBetweenUsers(5L, 21L)).willReturn(true);
-        givenActiveProfile(UserStatus.ACTIVE);
-
-        assertThat(service.getUserProfile(5L, 21L).userId()).isEqualTo(21L);
-        verifyNoInteractions(recommendationItemRepository);
-    }
-
-    @Test
-    void 추천과_좋아요와_채팅_관계가_모두_없으면_거절한다() {
-        assertUnavailable(21L);
         verifyNoInteractions(profileRepository, profileImageGetService);
-    }
-
-    @Test
-    void 차단_관계는_추천_여부를_확인하기_전에_거절한다() {
-        given(userBlockRepository.existsActiveBlockBetween(5L, 21L)).willReturn(true);
-
-        assertUnavailable(21L);
-        verifyNoInteractions(likeRepository, chatRoomRepository, recommendationItemRepository,
-            profileRepository, profileImageGetService);
-    }
-
-    @Test
-    void 한쪽이_채팅방을_나가면_서로의_프로필_조회를_차단한다() {
-        given(chatRoomRepository.existsLeftParticipantBetweenUsers(5L, 21L))
-            .willReturn(true);
-
-        assertUnavailable(21L);
-
-        verifyNoInteractions(likeRepository, recommendationItemRepository,
-            profileRepository, profileImageGetService);
     }
 
     @ParameterizedTest
     @NullSource
-    @ValueSource(longs = {0L, -1L, 5L})
-    void 잘못된_상대_ID나_본인_조회는_거절한다(Long userId) {
-        assertUnavailable(userId);
-        verifyNoInteractions(userBlockRepository, recommendationItemRepository, profileRepository);
-    }
+    @ValueSource(longs = {0L, -1L})
+    void 잘못된_대상_ID는_상태_검증과_본문_조회_전에_거절한다(Long userId) {
+        assertUnavailable(5L, userId);
 
-    @ParameterizedTest
-    @EnumSource(value = UserStatus.class, names = {"ONBOARDING", "SUSPENDED", "WITHDRAWN"})
-    void 조회_관계가_있어도_비활성_상대는_거절한다(UserStatus status) {
-        given(likeRepository.hasProfileViewAccessBetween(5L, 21L)).willReturn(true);
-        givenActiveProfile(status);
-
-        assertUnavailable(21L);
-        verifyNoInteractions(profileImageGetService);
+        verifyNoInteractions(profileAvailabilityValidator, profileRepository, profileImageGetService);
     }
 
     @Test
-    void 추천_상대라도_프로필이_없거나_삭제되었으면_거절한다() {
-        given(recommendationItemRepository.existsEligibleCandidateInActiveBatch(5L, 21L))
-            .willReturn(true);
+    void 조회자_ID가_없으면_거절한다() {
+        assertUnavailable(null, 21L);
 
-        assertUnavailable(21L);
+        verifyNoInteractions(profileAvailabilityValidator, profileRepository, profileImageGetService);
+    }
+
+    @Test
+    void 상태_검증_이후에도_본문을_찾지_못하면_기존_조회_불가_오류를_반환한다() {
+        assertUnavailable(5L, 21L);
+
+        verify(profileAvailabilityValidator).validate(21L);
         verifyNoInteractions(profileImageGetService);
     }
 
-    private void givenActiveProfile(UserStatus status) {
+    private Profile givenProfile(Long userId) {
         User user = mock(User.class);
-        given(user.getStatus()).willReturn(status);
         given(user.getBirthDate()).willReturn(LocalDate.now().minusYears(29));
         Profile profile = mock(Profile.class);
         given(profile.getUser()).willReturn(user);
         given(profile.getNickname()).willReturn("하리");
-        given(profileRepository.findByUserIdAndDeletedAtIsNull(21L))
+        given(profileRepository.findByUserIdAndDeletedAtIsNull(userId))
             .willReturn(Optional.of(profile));
-        given(profileImageGetService.getProfileImagesByUserIds(List.of(21L)))
-            .willReturn(Map.of(21L,
-                List.of(new ProfileImageAccessResult(
-                    701L,
-                    (short) 1,
-                    "https://example.com/701",
-                    Instant.parse("2026-09-27T12:00:00Z")))));
+        given(profileImageGetService.getProfileImagesByUserIds(List.of(userId)))
+            .willReturn(Map.of(userId, List.of(new ProfileImageAccessResult(
+                701L, (short) 1, "https://example.com/701",
+                Instant.parse("2026-09-27T12:00:00Z")))));
+        return profile;
     }
 
-    private void assertUnavailable(Long userId) {
-        assertThatThrownBy(() -> service.getUserProfile(5L, userId))
+    private void assertUnavailable(Long viewerUserId, Long userId) {
+        assertThatThrownBy(() -> service.getUserProfile(viewerUserId, userId))
             .isInstanceOf(ProfileImageBusinessException.class)
             .satisfies(exception -> assertThat(
                 ((ProfileImageBusinessException) exception).getErrorCode())

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
@@ -57,7 +59,7 @@ class ChatRoomPresenceServiceTest {
     void setUp() {
         roomRepository = mock(ChatRoomRepository.class);
         userRepository = mock(UserRepository.class);
-        registry = new ChatRoomPresenceRegistry();
+        registry = mock(ChatRoomPresenceRegistry.class);
         service = new ChatRoomPresenceService(roomRepository, userRepository, registry);
         attributes = new HashMap<>();
         LocalDateTime now = LocalDateTime.now();
@@ -77,16 +79,16 @@ class ChatRoomPresenceServiceTest {
         update(ChatRoomPresenceAction.ENTER);
         update(ChatRoomPresenceAction.HEARTBEAT);
 
-        assertThat(registry.isViewingChatRoom(USER_ID, ROOM_ID)).isTrue();
+        verify(registry).enter(USER_ID, SESSION_ID, ROOM_ID);
+        verify(registry).heartbeat(USER_ID, SESSION_ID, ROOM_ID);
     }
 
     @Test
     void 방을_나간_참여자의_유지_요청은_거부하고_기존_등록을_해제한다() {
-        registry.enter(USER_ID, SESSION_ID, ROOM_ID);
         viewer.leave(LocalDateTime.now());
 
         assertAccessDenied();
-        assertThat(registry.isViewingChatRoom(USER_ID, ROOM_ID)).isFalse();
+        verify(registry).leave(USER_ID, SESSION_ID, ROOM_ID);
     }
 
     @Test
@@ -94,18 +96,15 @@ class ChatRoomPresenceServiceTest {
         given(user.getStatus()).willReturn(UserStatus.WITHDRAWN);
 
         assertAccessDenied();
-        assertThat(registry.isViewingChatRoom(USER_ID, ROOM_ID)).isFalse();
+        verify(registry).leave(USER_ID, SESSION_ID, ROOM_ID);
     }
 
     @Test
     void 화면_이탈은_DB_권한_조회_없이_자신의_연결_상태를_정리한다() {
-        registry.enter(USER_ID, SESSION_ID, ROOM_ID);
-        registry.enter(USER_ID, "another-socket", ROOM_ID);
-
         update(ChatRoomPresenceAction.LEAVE);
 
         verifyNoInteractions(roomRepository, userRepository);
-        assertThat(registry.isViewingChatRoom(USER_ID, ROOM_ID)).isTrue();
+        verify(registry).leave(USER_ID, SESSION_ID, ROOM_ID);
     }
 
     @Test
@@ -135,7 +134,8 @@ class ChatRoomPresenceServiceTest {
             release.countDown();
             pending.get(5, TimeUnit.SECONDS);
 
-            assertThat(registry.isViewingChatRoom(USER_ID, ROOM_ID)).isFalse();
+            verify(registry).removeConnection(USER_ID, SESSION_ID);
+            verify(registry, never()).enter(USER_ID, SESSION_ID, ROOM_ID);
         } finally {
             release.countDown();
             executor.shutdownNow();

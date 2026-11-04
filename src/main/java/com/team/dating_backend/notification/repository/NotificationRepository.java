@@ -18,9 +18,21 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Query("""
         select notification
         from Notification notification
+        where notification.sourceEventId = :sourceEventId
+          and notification.user.id = :userId
+          and notification.type = :type
+        """)
+    Optional<Notification> findBySourceEventIdAndUserIdAndType(
+        @Param("sourceEventId") String sourceEventId,
+        @Param("userId") Long userId,
+        @Param("type") NotificationType type);
+
+    @Query("""
+        select notification
+        from Notification notification
         where notification.user.id = :userId
           and notification.deletedAt is null
-        order by notification.id desc
+        order by notification.createdAt desc, notification.id desc
         """)
     List<Notification> findVisibleByUserId(
         @Param("userId") Long userId,
@@ -31,12 +43,16 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         from Notification notification
         where notification.user.id = :userId
           and notification.deletedAt is null
-          and notification.id < :cursor
-        order by notification.id desc
+          and (
+            notification.createdAt < :cursorCreatedAt
+            or (notification.createdAt = :cursorCreatedAt and notification.id < :cursorId)
+          )
+        order by notification.createdAt desc, notification.id desc
         """)
-    List<Notification> findVisibleByUserIdAndIdLessThan(
+    List<Notification> findVisibleByUserIdBeforeCursor(
         @Param("userId") Long userId,
-        @Param("cursor") Long cursor,
+        @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+        @Param("cursorId") Long cursorId,
         Pageable pageable);
 
     @Query("""
@@ -45,7 +61,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         where notification.user.id = :userId
           and notification.deletedAt is null
           and notification.type in :types
-        order by notification.id desc
+        order by notification.createdAt desc, notification.id desc
         """)
     List<Notification> findVisibleByUserIdAndTypes(
         @Param("userId") Long userId,
@@ -58,13 +74,17 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         where notification.user.id = :userId
           and notification.deletedAt is null
           and notification.type in :types
-          and notification.id < :cursor
-        order by notification.id desc
+          and (
+            notification.createdAt < :cursorCreatedAt
+            or (notification.createdAt = :cursorCreatedAt and notification.id < :cursorId)
+          )
+        order by notification.createdAt desc, notification.id desc
         """)
-    List<Notification> findVisibleByUserIdAndTypesAndIdLessThan(
+    List<Notification> findVisibleByUserIdAndTypesBeforeCursor(
         @Param("userId") Long userId,
         @Param("types") List<NotificationType> types,
-        @Param("cursor") Long cursor,
+        @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+        @Param("cursorId") Long cursorId,
         Pageable pageable);
 
     @Query("""

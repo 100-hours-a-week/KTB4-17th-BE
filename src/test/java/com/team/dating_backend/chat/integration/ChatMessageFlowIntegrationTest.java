@@ -11,11 +11,17 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.TestJwtSecret;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
+import com.team.dating_backend.aipractice.enums.AiPracticeChatStatus;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventPublisher;
+import com.team.dating_backend.aipractice.service.AiPracticeRedisEventSubscriber;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
+import com.team.dating_backend.chat.config.ChatRealtimeRedisConfiguration;
 import com.team.dating_backend.chat.controller.ChatExceptionHandler;
 import com.team.dating_backend.chat.controller.ChatMessageListController;
 import com.team.dating_backend.chat.controller.ChatMessageSendController;
@@ -29,17 +35,20 @@ import com.team.dating_backend.chat.presence.ChatRoomPresenceDisconnectListener;
 import com.team.dating_backend.chat.presence.ChatRoomPresenceRegistry;
 import com.team.dating_backend.chat.service.ChatRoomPresenceService;
 import com.team.dating_backend.notification.service.ChatNotificationReadService;
-import com.team.dating_backend.notification.service.NotificationCreateService;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedEvent;
 import com.team.dating_backend.chat.dto.event.ChatMessageReadReceiptEvent;
 import com.team.dating_backend.chat.enums.ChatMessageType;
 import com.team.dating_backend.chat.controller.ChatMessageReadController;
 import com.team.dating_backend.chat.service.ChatMessageListService;
+import com.team.dating_backend.chat.service.ChatMessageKafkaPublisher;
 import com.team.dating_backend.chat.service.ChatMessageOutboxPublishJob;
 import com.team.dating_backend.chat.service.ChatMessageReadReceiptPublisher;
+import com.team.dating_backend.chat.service.ChatMessageReadReceiptRedisSubscriber;
+import com.team.dating_backend.chat.service.ChatMessageRedisSubscriber;
 import com.team.dating_backend.chat.service.ChatMessageReadService;
 import com.team.dating_backend.chat.service.ChatMessageRateLimiter;
 import com.team.dating_backend.chat.service.ChatMessageSendService;
+import com.team.dating_backend.chat.service.ChatOutboxPublisherLockService;
 import com.team.dating_backend.chat.service.ChatRoomParticipantDisplayService;
 import com.team.dating_backend.file.repository.JpaFileRepositoryAdapter;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
@@ -59,10 +68,10 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
-import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,9 +100,11 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(
     classes = ChatMessageFlowIntegrationTest.TestApplication.class,
@@ -102,6 +113,11 @@ import org.testcontainers.mysql.MySQLContainer;
         "spring.config.name=chat-message-flow-test",
         "server.address=127.0.0.1",
         "app.chat.runtime-enabled=true",
+        "app.chat.realtime-relay.enabled=true",
+        "app.chat.realtime-relay.redis-channel=chat-message-flow:message-created",
+        "app.chat.realtime-relay.read-receipt-redis-channel=chat-message-flow:read-receipt",
+        "app.chat.realtime-relay.ai-practice-redis-channel="
+            + "chat-message-flow:ai-practice-updated",
         "spring.jpa.hibernate.ddl-auto=create",
         "spring.flyway.enabled=false",
         "app.security.allowed-origins=http://localhost:5173",
@@ -117,17 +133,25 @@ class ChatMessageFlowIntegrationTest {
     private static final Long RECEIVER_USER_ID = 83012L;
     private static final String MESSAGE_DESTINATION = "/user/queue/chat-messages";
     private static final String READ_RECEIPT_DESTINATION = "/user/queue/chat-read-receipts";
+    private static final String AI_PRACTICE_DESTINATION = "/user/queue/ai-practice";
     private static final String MESSAGE_TEXT = "실제 DB 통합 테스트 메시지";
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 27, 10, 0);
 
     @DynamicPropertySource
-    static void registerJwtSecret(DynamicPropertyRegistry registry) {
+    static void registerTestProperties(DynamicPropertyRegistry registry) {
         registry.add("jwt.secret", () -> TEST_JWT_SECRET);
+        registry.add("spring.data.redis.url", () -> "redis://" + REDIS.getHost()
+            + ":" + REDIS.getMappedPort(6379));
     }
 
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+
+    @Container
+    static final GenericContainer<?> REDIS = new GenericContainer<>(
+        DockerImageName.parse("redis:7.4-alpine"))
+        .withExposedPorts(6379);
 
     @LocalServerPort
     private int port;
@@ -142,6 +166,9 @@ class ChatMessageFlowIntegrationTest {
     private ChatMessageOutboxPublishJob outboxPublishJob;
 
     @Autowired
+    private AiPracticeRedisEventPublisher aiPracticeRedisEventPublisher;
+
+    @Autowired
     private SimpUserRegistry simpUserRegistry;
 
     @Autowired
@@ -152,6 +179,12 @@ class ChatMessageFlowIntegrationTest {
 
     @MockitoBean
     private ChatMessageRateLimiter rateLimiter;
+
+    @MockitoBean
+    private ChatOutboxPublisherLockService outboxPublisherLockService;
+
+    @MockitoBean
+    private ChatMessageKafkaPublisher kafkaPublisher;
 
     @MockitoBean
     private ChatDelegationParticipantService delegationParticipantService;
@@ -177,6 +210,9 @@ class ChatMessageFlowIntegrationTest {
             .willReturn(Map.of());
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
         given(rateLimiter.tryAcquire(anyLong())).willReturn(true);
+        given(outboxPublisherLockService.tryAcquire()).willReturn(true);
+        given(kafkaPublisher.publish(anyLong()))
+            .willReturn(CompletableFuture.completedFuture(null));
         completedPresenceRequests.clear();
         doAnswer(invocation -> {
             try {
@@ -219,7 +255,7 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void HTTP_전송부터_DB_저장_Outbox_WebSocket_전달_이력_조회까지_연결한다() throws Exception {
+    void 텍스트_메시지를_DB에_저장하고_Kafka로_발행한_뒤_채팅_내역에서_조회한다() throws Exception {
         UUID clientMessageId = UUID.randomUUID();
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
         String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
@@ -254,10 +290,8 @@ class ChatMessageFlowIntegrationTest {
             assertNotNull(messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
-            assertEquals(1, countChatNotifications());
-            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
-                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
-                String.class, RECEIVER_USER_ID));
+            assertEquals(0, jdbcTemplate.queryForObject(
+                "select count(*) from notification_request_outbox", Integer.class));
             assertThat(sent.body()).contains("\"messageId\":" + messageId);
 
             HttpResponse<String> retry = postMessage(senderToken, clientMessageId, MESSAGE_TEXT);
@@ -265,7 +299,6 @@ class ChatMessageFlowIntegrationTest {
             assertThat(retry.body()).contains("\"messageId\":" + messageId);
             assertEquals(1, countMessages());
             assertEquals(1, countOutboxes());
-            assertEquals(1, countChatNotifications());
 
             HttpResponse<String> conflict = postMessage(
                 senderToken, clientMessageId, "같은 ID의 다른 내용");
@@ -274,22 +307,7 @@ class ChatMessageFlowIntegrationTest {
             assertEquals(1, countOutboxes());
 
             outboxPublishJob.publishDueMessages();
-
-            ChatMessageCreatedEvent senderEvent = senderEvents.poll(5, TimeUnit.SECONDS);
-            ChatMessageCreatedEvent receiverEvent = receiverEvents.poll(5, TimeUnit.SECONDS);
-            assertNotNull(senderEvent);
-            assertNotNull(receiverEvent);
-            assertThat(senderEvent.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
-            assertThat(senderEvent.messageId()).isEqualTo(messageId);
-            assertThat(senderEvent.clientMessageId()).isEqualTo(clientMessageId);
-            assertThat(senderEvent.mine()).isTrue();
-            assertThat(senderEvent.textContent()).isEqualTo(MESSAGE_TEXT);
-            assertThat(senderEvent.unreadCount()).isEqualTo(1);
-            assertThat(receiverEvent.chatRoomId()).isEqualTo(CHAT_ROOM_ID);
-            assertThat(receiverEvent.messageId()).isEqualTo(messageId);
-            assertThat(receiverEvent.mine()).isFalse();
-            assertThat(receiverEvent.textContent()).isEqualTo(MESSAGE_TEXT);
-            assertThat(receiverEvent.unreadCount()).isZero();
+            verify(kafkaPublisher).publish(messageId);
             assertEquals(1, countPublishedOutboxes());
 
             HttpResponse<String> senderHistoryBeforeRead = getMessageHistory(senderToken);
@@ -298,15 +316,10 @@ class ChatMessageFlowIntegrationTest {
             HttpResponse<String> secondMessage = postMessage(
                 senderToken, UUID.randomUUID(), "두 번째 메시지");
             assertEquals(201, secondMessage.statusCode(), secondMessage.body());
-            assertEquals(2, countChatNotifications());
 
             HttpResponse<String> read = postRead(receiverToken, messageId);
             assertEquals(200, read.statusCode(), read.body());
             assertThat(read.body()).contains("\"lastReadMessageId\":" + messageId);
-            assertEquals(0, jdbcTemplate.queryForObject(
-                "select count(*) from notifications where user_id = ? "
-                    + "and type = 'CHAT_MESSAGE' and read_at is null",
-                Integer.class, RECEIVER_USER_ID));
 
             ChatMessageReadReceiptEvent readReceipt = readReceiptEvents.poll(5, TimeUnit.SECONDS);
             assertNotNull(readReceipt);
@@ -339,94 +352,64 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void 이미지_메시지는_소유한_파일만_연결하고_WebSocket과_이력에_fileId를_전달한다()
-        throws Exception {
-        Long fileId = 83031L;
-        insertImageFile(fileId);
-        String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
-        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
-        BlockingQueue<ChatMessageCreatedEvent> receiverEvents = new LinkedBlockingQueue<>();
+    void AI_연습_결과를_Redis를_통해_사용자에게_전달한다() throws Exception {
+        String accessToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
+        BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents = new LinkedBlockingQueue<>();
         WebSocketStompClient stompClient = new WebSocketStompClient(
             new StandardWebSocketClient());
         stompClient.setMessageConverter(new JacksonJsonMessageConverter());
-        StompSession receiverSession = null;
+        StompSession session = null;
 
         try {
-            receiverSession = connectAndSubscribe(stompClient, receiverToken, receiverEvents);
-            assertTrue(awaitUserSubscription(RECEIVER_USER_ID.toString(), MESSAGE_DESTINATION));
+            session = connectAndSubscribe(
+                stompClient, accessToken, new LinkedBlockingQueue<>());
+            subscribeToAiPracticeUpdates(session, receivedEvents);
+            assertTrue(awaitUserSubscription(
+                SENDER_USER_ID.toString(), AI_PRACTICE_DESTINATION));
+            AiPracticeChatUpdatedEvent event = new AiPracticeChatUpdatedEvent(
+                SENDER_USER_ID,
+                83041L,
+                83051L,
+                AiPracticeChatStatus.COMPLETED,
+                "AI 연습 응답",
+                null,
+                BASE_TIME);
 
-            HttpResponse<String> sent = postImageMessage(
-                senderToken, UUID.randomUUID(), fileId);
-            assertEquals(201, sent.statusCode(), sent.body());
-            Long messageId = jdbcTemplate.queryForObject(
-                "select id from chat_messages where chat_room_id = ? and file_id = ?",
-                Long.class, CHAT_ROOM_ID, fileId);
-            assertNotNull(messageId);
-            assertEquals("IMAGE", jdbcTemplate.queryForObject(
-                "select message_type from chat_messages where id = ?", String.class, messageId));
-            assertEquals(1, countChatNotifications());
-            assertEquals("보내는사람님에게서 메시지가 도착했어요.", jdbcTemplate.queryForObject(
-                "select body from notifications where user_id = ? and type = 'CHAT_MESSAGE'",
-                String.class, RECEIVER_USER_ID));
+            aiPracticeRedisEventPublisher.publish(event);
 
-            outboxPublishJob.publishDueMessages();
-            ChatMessageCreatedEvent event = receiverEvents.poll(5, TimeUnit.SECONDS);
-            assertNotNull(event);
-            assertThat(event.messageType()).isEqualTo(ChatMessageType.IMAGE);
-            assertThat(event.imageFileId()).isEqualTo(fileId);
-            assertThat(event.unreadCount()).isZero();
-
-            HttpResponse<String> history = getMessageHistory(receiverToken);
-            assertEquals(200, history.statusCode());
-            assertThat(history.body())
-                .contains("\"messageType\":\"IMAGE\"")
-                .contains("\"imageFileId\":" + fileId);
+            assertThat(receivedEvents.poll(5, TimeUnit.SECONDS)).isEqualTo(event);
         } finally {
-            disconnect(receiverSession);
+            disconnect(session);
             stompClient.stop();
         }
     }
 
     @Test
-    void 여러_연결의_화면_상태와_연결_종료에_따라_알림을_생략하거나_생성한다() throws Exception {
-        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
-        client.setMessageConverter(new JacksonJsonMessageConverter());
-        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
+    void 이미지_메시지를_보내면_Kafka_Publisher를_호출한다()
+        throws Exception {
+        Long fileId = 83031L;
+        insertImageFile(fileId);
         String senderToken = jwtService.createServiceAuthToken(SENDER_USER_ID);
-        StompSession pc = null;
-        StompSession mobile = null;
-        try {
-            pc = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
-            mobile = connectAndSubscribe(client, receiverToken, new LinkedBlockingQueue<>());
-            sendPresenceAndAwait(pc, ChatRoomPresenceAction.ENTER);
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "첫 번째").statusCode());
-            assertEquals(0, countChatNotifications());
+        String receiverToken = jwtService.createServiceAuthToken(RECEIVER_USER_ID);
 
-            disconnect(pc);
-            assertTrue(awaitCondition(() -> {
-                SimpUser user = simpUserRegistry.getUser(RECEIVER_USER_ID.toString());
-                return user != null && user.getSessions().size() == 1;
-            }));
-            assertThat(presenceRegistry.isViewingChatRoom(RECEIVER_USER_ID, CHAT_ROOM_ID)).isTrue();
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "두 번째").statusCode());
-            assertEquals(0, countChatNotifications());
+        HttpResponse<String> sent = postImageMessage(
+            senderToken, UUID.randomUUID(), fileId);
+        assertEquals(201, sent.statusCode(), sent.body());
+        Long messageId = jdbcTemplate.queryForObject(
+            "select id from chat_messages where chat_room_id = ? and file_id = ?",
+            Long.class, CHAT_ROOM_ID, fileId);
+        assertNotNull(messageId);
+        assertEquals("IMAGE", jdbcTemplate.queryForObject(
+            "select message_type from chat_messages where id = ?", String.class, messageId));
 
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.LEAVE);
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "세 번째").statusCode());
-            assertEquals(1, countChatNotifications());
+        outboxPublishJob.publishDueMessages();
+        verify(kafkaPublisher).publish(messageId);
 
-            sendPresenceAndAwait(mobile, ChatRoomPresenceAction.ENTER);
-            disconnect(mobile);
-            assertTrue(awaitCondition(() -> !presenceRegistry.isViewingChatRoom(
-                RECEIVER_USER_ID, CHAT_ROOM_ID)));
-            assertEquals(201, postMessage(senderToken, UUID.randomUUID(), "네 번째").statusCode());
-            assertEquals(2, countChatNotifications());
-        } finally {
-            disconnect(pc);
-            disconnect(mobile);
-            client.stop();
-        }
+        HttpResponse<String> history = getMessageHistory(receiverToken);
+        assertEquals(200, history.statusCode());
+        assertThat(history.body())
+            .contains("\"messageType\":\"IMAGE\"")
+            .contains("\"imageFileId\":" + fileId);
     }
 
     @Test
@@ -472,28 +455,12 @@ class ChatMessageFlowIntegrationTest {
     }
 
     @Test
-    void 알림_생성이_실패하면_메시지와_Outbox도_함께_롤백한다() throws Exception {
-        jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_notification "
-            + "CHECK (type <> 'CHAT_MESSAGE')");
-        try {
-            HttpResponse<String> response = postMessage(
-                jwtService.createServiceAuthToken(SENDER_USER_ID), UUID.randomUUID(), MESSAGE_TEXT);
-
-            assertEquals(500, response.statusCode(), response.body());
-            assertEquals(0, countMessages());
-            assertEquals(0, countOutboxes());
-            assertEquals(0, countChatNotifications());
-        } finally {
-            jdbcTemplate.execute("ALTER TABLE notifications DROP CHECK test_reject_chat_notification");
-        }
-    }
-
-    @Test
     void 알림_읽음_갱신이_실패하면_채팅_읽음_위치도_롤백한다() throws Exception {
         assertEquals(201, postMessage(jwtService.createServiceAuthToken(SENDER_USER_ID),
             UUID.randomUUID(), MESSAGE_TEXT).statusCode());
         Long messageId = jdbcTemplate.queryForObject(
             "select id from chat_messages where chat_room_id = ?", Long.class, CHAT_ROOM_ID);
+        insertChatNotification(messageId);
         jdbcTemplate.execute("ALTER TABLE notifications ADD CONSTRAINT test_reject_chat_read "
             + "CHECK (type <> 'CHAT_MESSAGE' OR read_at IS NULL)");
         try {
@@ -520,20 +487,14 @@ class ChatMessageFlowIntegrationTest {
         assertThat(completedPresenceRequests.poll(3, TimeUnit.SECONDS)).isEqualTo(request);
     }
 
-    private boolean awaitCondition(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            Thread.sleep(10);
-        }
-        return false;
-    }
-
-    private int countChatNotifications() {
-        return jdbcTemplate.queryForObject(
-            "select count(*) from notifications where type = 'CHAT_MESSAGE'", Integer.class);
+    private void insertChatNotification(Long messageId) {
+        jdbcTemplate.update("""
+            insert into notifications
+                (source_event_id, user_id, type, title, body, target_type, target_id, created_at)
+            values (?, ?, 'CHAT_MESSAGE', '새로운 메시지', '새로운 메시지가 도착했어요.',
+                'CHAT_ROOM', ?, ?)
+            """, "CHAT_MESSAGE_SENT:" + messageId, RECEIVER_USER_ID, CHAT_ROOM_ID,
+            Timestamp.valueOf(BASE_TIME));
     }
 
     private StompSession connectAndSubscribe(
@@ -578,6 +539,22 @@ class ChatMessageFlowIntegrationTest {
             @Override
             public void handleFrame(StompHeaders stompHeaders, Object payload) {
                 receivedEvents.add((ChatMessageReadReceiptEvent) payload);
+            }
+        });
+    }
+
+    private void subscribeToAiPracticeUpdates(
+        StompSession session,
+        BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents) {
+        session.subscribe(AI_PRACTICE_DESTINATION, new StompFrameHandler() {
+            @Override
+            public java.lang.reflect.Type getPayloadType(StompHeaders stompHeaders) {
+                return AiPracticeChatUpdatedEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders stompHeaders, Object payload) {
+                receivedEvents.add((AiPracticeChatUpdatedEvent) payload);
             }
         });
     }
@@ -714,11 +691,11 @@ class ChatMessageFlowIntegrationTest {
         {
             SecurityConfig.class,
             ChatWebSocketConfig.class,
+            ChatRealtimeRedisConfiguration.class,
             ChatRoomPresenceController.class,
             ChatRoomPresenceService.class,
             ChatRoomPresenceRegistry.class,
             ChatRoomPresenceDisconnectListener.class,
-            NotificationCreateService.class,
             ChatNotificationReadService.class,
             ChatMessageSendController.class,
             ChatMessageListController.class,
@@ -728,6 +705,10 @@ class ChatMessageFlowIntegrationTest {
             ChatMessageListService.class,
             ChatMessageReadService.class,
             ChatMessageReadReceiptPublisher.class,
+            ChatMessageReadReceiptRedisSubscriber.class,
+            ChatMessageRedisSubscriber.class,
+            AiPracticeRedisEventPublisher.class,
+            AiPracticeRedisEventSubscriber.class,
             ChatRoomParticipantDisplayService.class,
             JpaFileRepositoryAdapter.class,
             ChatMessageRateLimiter.class,

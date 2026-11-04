@@ -29,13 +29,15 @@ class AiSimulationWorkerTest {
     private AiSimulationAiClient aiClient;
     private AiSimulationResponseValidator validator;
     private AiSimulationWorker worker;
+    private AiSimulationNotificationService notifications;
 
     @BeforeEach
     void setUp() {
         persistenceService = mock(AiSimulationPersistenceService.class);
         aiClient = mock(AiSimulationAiClient.class);
         validator = mock(AiSimulationResponseValidator.class);
-        worker = new AiSimulationWorker(persistenceService, aiClient, validator);
+        notifications = mock(AiSimulationNotificationService.class);
+        worker = new AiSimulationWorker(persistenceService, aiClient, validator, notifications);
     }
 
     @Test
@@ -49,6 +51,28 @@ class AiSimulationWorkerTest {
         order.verify(aiClient).run(request());
         order.verify(validator).validate(aiResponse(), USER_ID, TARGET_ID);
         order.verify(persistenceService).complete(SESSION_ID, aiResponse());
+        verify(persistenceService, never()).fail(SESSION_ID);
+        verify(notifications).completed(SESSION_ID, USER_ID, TARGET_ID, USER_ID);
+        verify(notifications).completed(SESSION_ID, USER_ID, TARGET_ID, TARGET_ID);
+    }
+
+    @Test
+    void 한쪽_완료_알림이_실패해도_다른_알림과_완료_상태를_유지한다() {
+        givenInputAndResponse();
+        doThrow(new IllegalStateException()).when(notifications)
+            .completed(SESSION_ID, USER_ID, TARGET_ID, USER_ID);
+        worker.generate(SESSION_ID);
+        verify(notifications).completed(SESSION_ID, USER_ID, TARGET_ID, TARGET_ID);
+        verify(persistenceService, never()).fail(SESSION_ID);
+    }
+
+    @Test
+    void B의_완료_알림이_실패해도_A의_완료_알림과_완료_상태를_유지한다() {
+        givenInputAndResponse();
+        doThrow(new IllegalStateException()).when(notifications)
+            .completed(SESSION_ID, USER_ID, TARGET_ID, TARGET_ID);
+        worker.generate(SESSION_ID);
+        verify(notifications).completed(SESSION_ID, USER_ID, TARGET_ID, USER_ID);
         verify(persistenceService, never()).fail(SESSION_ID);
     }
 
@@ -82,6 +106,7 @@ class AiSimulationWorkerTest {
         assertThatCode(() -> worker.generate(SESSION_ID)).doesNotThrowAnyException();
 
         verify(persistenceService, times(1)).fail(SESSION_ID);
+        verifyNoInteractions(notifications);
         verify(aiClient, times(stage.equals("load") ? 0 : 1)).run(request());
         if (!stage.equals("complete")) {
             verify(persistenceService, never()).complete(SESSION_ID, aiResponse());

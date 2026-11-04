@@ -67,9 +67,6 @@ jobs:
                   aws-region: ${{ env.AWS_REGION }}
 
             - name: Deploy to DEV EC2 via SSM
-              env:
-                  DEV_EC2_INSTANCE_ID: ${{ secrets.DEV_EC2_INSTANCE_ID }}
-
               run: |
                   set -euo pipefail
                   IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
@@ -81,23 +78,40 @@ jobs:
                     '{commands: [
                       "set -eu",
                       (
-                        "sudo -iu ubuntu bash -lc " +
+                        "sudo -H -u ubuntu bash -lc " +
                         ((
                           "cd /home/ubuntu/app && " +
                           "aws ecr get-login-password --region " + ($region | @sh) +
                           " | docker login --username AWS --password-stdin " + ($registry | @sh) +
                           " && sed -i " + (("s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=" + $image + "|") | @sh) + " .env" +
                           " && docker compose pull backend" +
-                          " && docker compose up -d --no-deps backend"
+                          " && docker compose up -d --no-deps backend" +
+                          # 새 컨테이너가 healthy가 될 때까지 기다린 뒤에만 이 EC2를 성공으로 보고한다.
+                          # be-1은 8080을 호스트에 publish하지 않으므로 컨테이너 IP로 확인한다.
+                          " && { for i in $(seq 1 60); do" +
+                          " CID=$(docker compose ps -a -q backend);" +
+                          " IP=\"\"; OUT=\"\";" +
+                          " if [ -n \"$CID\" ]; then" +
+                          " IP=$(docker inspect -f \"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\" \"$CID\");" +
+                          " fi;" +
+                          " if [ -n \"$IP\" ] && OUT=$(curl -fsS -m 3 \"http://$IP:8080/actuator/health/service\" 2>&1); then echo backend healthy; exit 0; fi;" +
+                          " echo \"attempt $i cid=$CID ip=$IP last=$OUT\";" +
+                          " sleep 3; done;" +
+                          " echo backend health check failed; docker compose ps -a; docker compose logs --tail 50 backend; exit 1; }"
                         ) | @sh)
                       )
                     ]}')
 
+                  # Environment=dev 태그가 붙은 SSM 관리 EC2에 한 대씩 순서대로 실행한다.
+                  # 앞 서버가 healthy가 된 뒤에 다음 서버를 재시작하므로 배포 중에도 한 대는 요청을 받는다.
+                  # 한 대라도 실패하면 남은 서버에는 배포하지 않고 전체 명령을 실패 처리한다.
                   COMMAND_ID=$(aws ssm send-command \
-                    --instance-ids "$DEV_EC2_INSTANCE_ID" \
+                    --targets "Key=tag:Environment,Values=dev" \
                     --document-name "AWS-RunShellScript" \
                     --comment "Deploy backend image $IMAGE_TAG to DEV" \
                     --timeout-seconds 600 \
+                    --max-concurrency "1" \
+                    --max-errors "0" \
                     --parameters "$PARAMETERS" \
                     --region "$AWS_REGION" \
                     --query 'Command.CommandId' \
@@ -105,22 +119,24 @@ jobs:
 
                   echo "SSM command ID: $COMMAND_ID"
 
-                  for attempt in $(seq 1 120); do
-                    STATUS=$(aws ssm get-command-invocation \
+                  # 여러 EC2에 순서대로 실행된 SSM 명령의 전체 상태가 종료될 때까지 기다린다(최대 20분).
+                  for attempt in $(seq 1 240); do
+                    COMMAND=$(aws ssm list-commands \
                       --command-id "$COMMAND_ID" \
-                      --instance-id "$DEV_EC2_INSTANCE_ID" \
                       --region "$AWS_REGION" \
-                      --query 'Status' \
-                      --output text 2>/dev/null || true)
+                      --output json)
+
+                    STATUS=$(jq -r '.Commands[0].Status // empty' <<< "$COMMAND")
+                    TARGET_COUNT=$(jq -r '.Commands[0].TargetCount // 0' <<< "$COMMAND")
 
                     case "$STATUS" in
                       Success)
                         break
                         ;;
                       Failed|Cancelled|TimedOut|Cancelling)
-                        aws ssm get-command-invocation \
+                        aws ssm list-command-invocations \
                           --command-id "$COMMAND_ID" \
-                          --instance-id "$DEV_EC2_INSTANCE_ID" \
+                          --details \
                           --region "$AWS_REGION"
                         exit 1
                         ;;
@@ -135,18 +151,39 @@ jobs:
                   done
 
                   if [ "${STATUS:-}" != "Success" ]; then
-                    echo "SSM command did not complete within 10 minutes. Last status: ${STATUS:-unknown}"
-                    aws ssm get-command-invocation \
+                    echo "SSM command did not complete within 20 minutes. Last status: ${STATUS:-unknown}"
+                    aws ssm list-command-invocations \
                       --command-id "$COMMAND_ID" \
-                      --instance-id "$DEV_EC2_INSTANCE_ID" \
+                      --details \
                       --region "$AWS_REGION" || true
                     exit 1
                   fi
 
-                  aws ssm get-command-invocation \
+                  # 태그 오타 등으로 배포 대상이 0대인 경우 성공으로 오인하지 않도록 실패시킨다.
+                  if [ "${TARGET_COUNT:-0}" -eq 0 ]; then
+                    echo "No SSM managed instances matched Environment=dev"
+                    exit 1
+                  fi
+
+                  INVOCATIONS=$(aws ssm list-command-invocations \
                     --command-id "$COMMAND_ID" \
-                    --instance-id "$DEV_EC2_INSTANCE_ID" \
-                    --region "$AWS_REGION"
+                    --details \
+                    --region "$AWS_REGION" \
+                    --output json)
+
+                  jq . <<< "$INVOCATIONS"
+
+                  # 대상 EC2의 개별 실행 결과가 모두 성공했는지 확인한다.
+                  if ! jq -e \
+                    '(.CommandInvocations | length) > 0 and
+                     all(.CommandInvocations[]; .Status == "Success")' \
+                    <<< "$INVOCATIONS" > /dev/null; then
+                    echo "One or more DEV EC2 deployments failed"
+                    exit 1
+                  fi
+
+                  SUCCESS_COUNT=$(jq '.CommandInvocations | length' <<< "$INVOCATIONS")
+                  echo "Successfully deployed to $SUCCESS_COUNT DEV EC2 instance(s)"
 
             # 기존 SSH 배포 방식
             # - name: Configure SSH
@@ -184,5 +221,3 @@ jobs:
             #         sed -i 's|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE_URL|' .env && \
             #         docker compose pull backend && \
             #         docker compose up -d --no-deps backend"
-
-

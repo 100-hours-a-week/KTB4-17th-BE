@@ -2,6 +2,7 @@ package com.team.dating_backend.matching.repository;
 
 import com.team.dating_backend.matching.entity.Like;
 import com.team.dating_backend.matching.enums.LikeStatus;
+import com.team.dating_backend.profile.repository.PopularProfileRow;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +13,21 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface LikeRepository extends JpaRepository<Like, Long> {
+
+    @Query("""
+        SELECT new com.team.dating_backend.profile.repository.PopularProfileRow(
+            receiver.id, profile.nickname, region.provinceName, region.regionName,
+            COUNT(DISTINCT userLike.senderId))
+        FROM UserLike userLike
+        JOIN User receiver ON receiver.id = userLike.receiverId
+        JOIN Profile profile ON profile.user = receiver AND profile.deletedAt IS NULL
+        LEFT JOIN profile.activityRegion region
+        WHERE receiver.status = com.team.dating_backend.user.enums.UserStatus.ACTIVE
+          AND receiver.faceVerificationStatus = com.team.dating_backend.user.enums.FaceVerificationStatus.VERIFIED
+        GROUP BY receiver.id, profile.nickname, region.provinceName, region.regionName
+        ORDER BY COUNT(DISTINCT userLike.senderId) DESC, receiver.id ASC
+        """)
+    List<PopularProfileRow> findPopularProfiles(Pageable pageable);
 
     @Query("""
         select count(userLike) > 0
@@ -26,6 +42,9 @@ public interface LikeRepository extends JpaRepository<Like, Long> {
     boolean hasProfileViewAccessBetween(
         @Param("viewerUserId") Long viewerUserId,
         @Param("targetUserId") Long targetUserId);
+
+    boolean existsBySenderIdAndReceiverIdAndStatus(
+        Long senderId, Long receiverId, LikeStatus status);
 
     Optional<Like> findFirstBySenderIdAndReceiverIdAndStatusOrderByIdDesc(
         Long senderId, Long receiverId, LikeStatus status);

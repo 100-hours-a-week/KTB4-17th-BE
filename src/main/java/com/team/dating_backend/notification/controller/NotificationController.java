@@ -1,6 +1,8 @@
 package com.team.dating_backend.notification.controller;
 
 import com.team.dating_backend.common.dto.response.SuccessResponse;
+import com.team.dating_backend.notification.cursor.NotificationCursorCodec;
+import com.team.dating_backend.notification.dto.read.NotificationCursor;
 import com.team.dating_backend.notification.dto.response.NotificationListResponse;
 import com.team.dating_backend.notification.dto.response.NotificationUnreadCountResponse;
 import com.team.dating_backend.notification.enums.NotificationCategory;
@@ -34,6 +36,7 @@ public class NotificationController {
     private final NotificationListService notificationListService;
     private final NotificationUnreadCountService notificationUnreadCountService;
     private final NotificationReadService notificationReadService;
+    private final NotificationCursorCodec notificationCursorCodec;
 
     @GetMapping
     public ResponseEntity<SuccessResponse<NotificationListResponse>> getNotifications(
@@ -42,7 +45,7 @@ public class NotificationController {
         @RequestParam(value = "cursor", required = false) String cursor,
         @RequestParam(value = "size", required = false) String size) {
         NotificationCategory parsedCategory = parseCategory(category);
-        Long parsedCursor = parseCursor(cursor);
+        NotificationCursor parsedCursor = parseCursor(cursor);
         int parsedSize = parseSize(size);
 
         NotificationListResponse response = notificationListService.getNotifications(
@@ -89,21 +92,12 @@ public class NotificationController {
         }
     }
 
-    private Long parseCursor(String cursor) {
+    private NotificationCursor parseCursor(String cursor) {
         if (cursor == null) {
             return null;
         }
 
-        try {
-            long parsedCursor = Long.parseLong(cursor);
-            if (parsedCursor <= 0) {
-                throw new NotificationBusinessException(
-                    NotificationErrorCode.INVALID_NOTIFICATION_CURSOR);
-            }
-            return parsedCursor;
-        } catch (NumberFormatException exception) {
-            throw new NotificationBusinessException(NotificationErrorCode.INVALID_NOTIFICATION_CURSOR);
-        }
+        return notificationCursorCodec.decode(cursor);
     }
 
     private int parseSize(String size) {

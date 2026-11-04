@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.auth.controller.AuthCookieFactory;
 import com.team.dating_backend.auth.dto.IssuedAuthTokens;
 import com.team.dating_backend.auth.exception.PendingRegistrationAccessDeniedException;
@@ -34,6 +35,9 @@ class UserRegistrationControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private UserRegistrationService userRegistrationService;

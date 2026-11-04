@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.jayway.jsonpath.JsonPath;
 import com.team.dating_backend.chat.dto.read.ChatRoomCursor;
 import com.team.dating_backend.chat.dto.read.ChatRoomPage;
@@ -69,6 +70,9 @@ class ChatRoomListControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private ChatRoomListService chatRoomListService;

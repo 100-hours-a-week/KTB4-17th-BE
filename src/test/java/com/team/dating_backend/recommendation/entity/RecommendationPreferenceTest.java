@@ -24,6 +24,7 @@ class RecommendationPreferenceTest {
 
         assertThat(preference.getCreatedAt()).isEqualTo(CREATED_AT);
         assertThat(preference.getUpdatedAt()).isEqualTo(CREATED_AT);
+        assertThat(preference.getPreferredGenders()).containsExactly(Gender.FEMALE);
     }
 
     @Test

@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.auth.dto.OAuthIdentity;
 import com.team.dating_backend.auth.dto.SocialLoginResult;
 import com.team.dating_backend.auth.enums.AuthProvider;
@@ -46,6 +47,9 @@ class OAuthControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private OAuthProviderClientRegistry oauthProviderClientRegistry;

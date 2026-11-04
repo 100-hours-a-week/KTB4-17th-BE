@@ -28,16 +28,24 @@ public class AiPracticeOutboxResultService {
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
-    public void attachAiSessionId(Long outboxId, String aiSessionId) {
-        AiPracticeOutbox outbox = requireOutbox(outboxId);
+    public boolean attachAiSessionId(Long outboxId, String token, String aiSessionId) {
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
         AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
         attachAiSessionId(session, aiSessionId);
+        return true;
     }
 
     @Transactional
-    public void markGenerationCompleted(Long outboxId, String aiSessionId, String aiResponse) {
-        AiPracticeOutbox outbox = requireOutbox(outboxId);
+    public boolean markGenerationCompleted(
+        Long outboxId, String token, String aiSessionId, String aiResponse) {
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
         AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
         attachAiSessionId(session, aiSessionId);
@@ -62,16 +70,20 @@ public class AiPracticeOutboxResultService {
 
         outbox.markPublished(AiPracticeTime.now());
         endCommandQueue.enqueueIfReady(session);
+        return true;
     }
 
     @Transactional
-    public void markGenerationFailed(Long outboxId, String failureCode) {
-        AiPracticeOutbox outbox = requireOutbox(outboxId);
+    public boolean markGenerationFailed(Long outboxId, String token, String failureCode) {
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
         AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
             .orElse(null);
         outbox.markFailed(AiPracticeTime.now(), failureCode);
         if (session == null) {
-            return;
+            return true;
         }
 
         AiPracticeChat chat = outbox.getChatId() == null
@@ -92,31 +104,45 @@ public class AiPracticeOutboxResultService {
                 null));
         }
         endCommandQueue.enqueueIfReady(session);
+        return true;
     }
 
     @Transactional
-    public void markEndSubmitted(Long outboxId) {
-        requireOutbox(outboxId).markPublished(AiPracticeTime.now());
+    public boolean markEndSubmitted(Long outboxId, String token) {
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
+        outbox.markPublished(AiPracticeTime.now());
+        return true;
     }
 
     @Transactional
-    public void markSkipped(Long outboxId) {
-        requireOutbox(outboxId).markPublished(AiPracticeTime.now());
+    public boolean markSkipped(Long outboxId, String token) {
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
+        outbox.markPublished(AiPracticeTime.now());
+        return true;
     }
 
     @Transactional
-    public void recordFailure(Long outboxId, String failureType, int maxFailures,
+    public boolean recordFailure(Long outboxId, String token, String failureType, int maxFailures,
         LocalDateTime nextAttemptAt) {
-        AiPracticeOutbox outbox = requireOutbox(outboxId);
+        AiPracticeOutbox outbox = findClaimedOutbox(outboxId, token);
+        if (outbox == null) {
+            return false;
+        }
         int nextFailureCount = outbox.getFailureCount() + 1;
         if (nextFailureCount < maxFailures) {
             outbox.scheduleRetry(nextAttemptAt, failureType);
-            return;
+            return true;
         }
 
         outbox.markFailed(AiPracticeTime.now(), failureType);
         if (outbox.getCommandType() != AiPracticeOutboxCommandType.GENERATE) {
-            return;
+            return true;
         }
 
         AiPracticeSession session = sessionRepository.findByIdForUpdate(outbox.getSessionId())
@@ -141,11 +167,11 @@ public class AiPracticeOutboxResultService {
                 endCommandQueue.enqueueIfReady(session);
             }
         }
+        return true;
     }
 
-    private AiPracticeOutbox requireOutbox(Long outboxId) {
-        return outboxRepository.findById(outboxId)
-            .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.SESSION_NOT_FOUND));
+    private AiPracticeOutbox findClaimedOutbox(Long outboxId, String token) {
+        return outboxRepository.findClaimedByIdForUpdate(outboxId, token).orElse(null);
     }
 
     private void attachAiSessionId(AiPracticeSession session, String aiSessionId) {

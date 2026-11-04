@@ -1,6 +1,7 @@
 package com.team.dating_backend.notification.config;
 
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -17,4 +18,13 @@ public class NotificationSseProperties {
 
     @Positive
     private long heartbeatDelayMs = 30_000L;
+
+    @PositiveOrZero
+    private long drainTimeoutMs = 10_000L;
+
+    @Positive
+    private long closeTimeoutMs = 5_000L;
+
+    @Positive
+    private long consumerStopTimeoutMs = 10_000L;
 }

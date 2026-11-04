@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.Religion;
 import com.team.dating_backend.profile.enums.Smoking;
+import com.team.dating_backend.user.enums.Gender;
 import java.util.List;
 
 public record RecommendationPreferenceSaveRequest(
@@ -13,4 +14,17 @@ public record RecommendationPreferenceSaveRequest(
     @JsonProperty(required = true) Integer maxHeight,
     @JsonProperty(required = true) List<Religion> religion,
     @JsonProperty(required = true) List<Drinking> drinking,
-    @JsonProperty(required = true) List<Smoking> smoking) {}
+    @JsonProperty(required = true) List<Smoking> smoking,
+    List<Gender> preferredGenders) {
+
+    public RecommendationPreferenceSaveRequest(
+        Integer minAge,
+        Integer maxAge,
+        Integer minHeight,
+        Integer maxHeight,
+        List<Religion> religion,
+        List<Drinking> drinking,
+        List<Smoking> smoking) {
+        this(minAge, maxAge, minHeight, maxHeight, religion, drinking, smoking, null);
+    }
+}

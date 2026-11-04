@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import com.team.dating_backend.user.dto.response.UserBlockResult;
 import com.team.dating_backend.user.dto.response.UserBlockResponse;
@@ -54,6 +55,9 @@ class UserBlockControllerTest {
 
     @MockitoBean
     private NotificationEmitterRegistry notificationEmitterRegistry;
+
+    @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
 
     @MockitoBean
     private UserBlockService userBlockService;

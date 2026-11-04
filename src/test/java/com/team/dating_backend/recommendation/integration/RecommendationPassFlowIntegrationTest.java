@@ -14,7 +14,8 @@ import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.matching.service.LikeSendService;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.recommendation.controller.RecommendationBatchController;
 import com.team.dating_backend.recommendation.controller.RecommendationPassController;
@@ -148,8 +149,12 @@ class RecommendationPassFlowIntegrationTest {
     private String token;
     private String targetToken;
 
+    @Autowired
+    private StoredRequests storedRequests;
+
     @BeforeEach
     void setUp() {
+        storedRequests.clear();
         given(userAuthenticationService.isAuthenticationAllowed(anyLong())).willReturn(true);
         jdbcTemplate.update("delete from notifications");
         jdbcTemplate.update("delete from recommendation_passes");
@@ -205,7 +210,7 @@ class RecommendationPassFlowIntegrationTest {
         assertThat(itemRepository.existsEligibleCandidateInActiveBatch(targetId, userId)).isTrue();
         assertThat(itemRepository.count()).isEqualTo(3);
 
-        Long newBatchId = batchCreateService.createRecommendationBatch(userId).orElseThrow().batchId();
+        Long newBatchId = batchCreateService.refreshRecommendationBatch(userId).orElseThrow().batchId();
         assertThat(jdbcTemplate.queryForList(
             "select candidate_user_id from recommendation_items where recommendation_batch_id = ?",
             Long.class, newBatchId)).containsExactly(nextId);
@@ -539,7 +544,7 @@ class RecommendationPassFlowIntegrationTest {
             RecommendationBatchGetService.class,
             RecommendationItemGetService.class,
             LikeSendService.class,
-            NotificationCreateService.class,
+            NotificationRequestTestConfiguration.class,
             UserPairLockRepository.class,
             ChatRoomCreateService.class,
             GlobalExceptionHandler.class,

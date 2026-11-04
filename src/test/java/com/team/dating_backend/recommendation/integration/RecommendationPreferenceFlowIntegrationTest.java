@@ -34,6 +34,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -184,7 +185,7 @@ class RecommendationPreferenceFlowIntegrationTest {
         assertThat(stored.get("created_at")).isEqualTo(stored.get("updated_at"));
         assertThat(storedPreference()).isEqualTo(stored);
         assertPreferenceResponse(getPreferences(jwtService.createServiceAuthToken(otherUserId)),
-            UNRESTRICTED_PREFERENCE);
+            UNRESTRICTED_PREFERENCE, Gender.MALE);
         assertThat(recommendationPreferenceRepository.existsById(otherUserId)).isFalse();
         assertThat(recommendationPreferenceRepository.count()).isEqualTo(1);
     }
@@ -227,12 +228,23 @@ class RecommendationPreferenceFlowIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"item_insert", "batch_update"})
+    @ValueSource(strings = {"item_insert", "item_delete"})
     void 추천_갱신_중간_실패는_조건과_추천_결과를_함께_롤백한다(String failureStage)
         throws Exception {
         assertNoContent(putPreferences(token, SAVED_PREFERENCE));
         Map<String, Object> before = storedPreference();
         Long batchId = activeBatchId();
+        if (failureStage.equals("item_insert")) {
+            Long addedUserId = createActiveUser("추가회원");
+            jdbcTemplate.update("update users set gender = 'FEMALE' where id = ?", addedUserId);
+            jdbcTemplate.update("""
+                insert into profiles (user_id, nickname, height, religion, drinking, smoking,
+                    created_at, updated_at)
+                values (?, '추가상대', 185, 'NONE', 'NEVER', 'NON_SMOKER', now(6), now(6))
+                """, addedUserId);
+        } else {
+            jdbcTemplate.update("update profiles set height = 150 where user_id = ?", otherUserId);
+        }
         ObjectNode replacement = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
         replacement.put("maxHeight", 190);
         String trigger = failureStage.equals("item_insert") ? """
@@ -242,9 +254,9 @@ class RecommendationPreferenceFlowIntegrationTest {
             signal sqlstate '45000' set message_text = 'forced recommendation item failure'
             """ : """
             create trigger test_recommendation_write_failure
-            before update on recommendation_batches
+            before delete on recommendation_items
             for each row
-            signal sqlstate '45000' set message_text = 'forced recommendation batch update failure'
+            signal sqlstate '45000' set message_text = 'forced recommendation item delete failure'
             """;
 
         try {
@@ -262,12 +274,12 @@ class RecommendationPreferenceFlowIntegrationTest {
         }
 
         assertNoContent(putPreferences(token, replacement.toString()));
-        assertThat(activeBatchId()).isNotEqualTo(batchId);
-        assertThat(batchCount()).isEqualTo(2);
+        assertThat(activeBatchId()).isEqualTo(batchId);
+        assertThat(batchCount()).isEqualTo(1);
     }
 
     @Test
-    void 후보가_없으면_조건_저장과_기존_배치_종료를_정상_커밋한다() throws Exception {
+    void 후보가_없으면_Item을_삭제하고_빈_목록을_유지한다() throws Exception {
         assertNoContent(putPreferences(token, SAVED_PREFERENCE));
         assertThat(activeBatchId()).isNotNull();
         jdbcTemplate.update("update users set status = 'WITHDRAWN' where id = ?", otherUserId);
@@ -277,19 +289,23 @@ class RecommendationPreferenceFlowIntegrationTest {
         assertNoContent(putPreferences(token, replacement.toString()));
 
         assertPreferenceResponse(getPreferences(token), replacement.toString());
-        assertThat(activeBatchId()).isNull();
+        assertThat(activeBatchId()).isNotNull();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from recommendation_items", Long.class)).isZero();
         assertThat(batchCount()).isEqualTo(1);
     }
 
     @Test
     void 초기화는_행을_유지하고_null_배열을_빈_배열로_저장한다() throws Exception {
-        assertNoContent(putPreferences(token, SAVED_PREFERENCE));
+        ObjectNode selectedBothGenders = (ObjectNode) objectMapper.readTree(SAVED_PREFERENCE);
+        selectedBothGenders.set("preferredGenders", objectMapper.readTree("[\"MALE\", \"FEMALE\"]"));
+        assertNoContent(putPreferences(token, selectedBothGenders.toString()));
         assertThat(activeBatchGenerationType()).isEqualTo("PREFERENCE");
         Map<String, Object> before = storedPreference();
         ObjectNode reset = (ObjectNode) objectMapper.readTree(UNRESTRICTED_PREFERENCE);
         reset.putNull("religion");
         reset.putNull("drinking");
         reset.putNull("smoking");
+        reset.set("preferredGenders", objectMapper.readTree("[]"));
 
         assertNoContent(putPreferences(token, reset.toString()));
         assertThat(activeBatchGenerationType()).isEqualTo("DEFAULT");
@@ -356,14 +372,15 @@ class RecommendationPreferenceFlowIntegrationTest {
         HttpResponse<String> response = getPreferences(token);
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         assertThat(objectMapper.readTree(response.body()).at("/data/preference"))
-            .isIn(objectMapper.readTree(SAVED_PREFERENCE), objectMapper.readTree(secondBody));
+            .isIn(objectMapper.readTree(expectedPreference(SAVED_PREFERENCE)),
+                objectMapper.readTree(expectedPreference(secondBody)));
         assertThat(storedPreference().get("user_id")).isEqualTo(userId);
         assertThat(recommendationPreferenceRepository.count()).isEqualTo(1);
         if (sameConditions) {
             Map<String, Object> stored = storedPreference();
             assertThat(stored.get("updated_at")).isEqualTo(stored.get("created_at"));
         }
-        assertThat(batchCount()).isEqualTo(sameConditions ? 1L : 2L);
+        assertThat(batchCount()).isEqualTo(1L);
         assertThat(jdbcTemplate.queryForObject("""
             select count(*) from recommendation_batches
             where user_id = ? and deleted_at is null
@@ -542,12 +559,35 @@ class RecommendationPreferenceFlowIntegrationTest {
                 "select JSON_LENGTH(" + column + ") from recommendation_preferences where user_id = ?",
                 Integer.class, userId)).isZero();
         }
+        assertThat(jdbcTemplate.queryForObject("""
+            select JSON_UNQUOTE(JSON_EXTRACT(preferred_genders, '$[0]'))
+            from recommendation_preferences where user_id = ?
+            """, String.class, userId)).isEqualTo(Gender.FEMALE.name());
     }
 
     private void assertPreferenceResponse(HttpResponse<String> response, String preference) {
+        assertPreferenceResponse(response, preference, Gender.FEMALE);
+    }
+
+    private void assertPreferenceResponse(
+        HttpResponse<String> response, String preference, Gender defaultTargetGender) {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
-        assertThat(objectMapper.readTree(response.body())).isEqualTo(objectMapper.readTree(
-            "{\"message\":\"preference_get_success\",\"data\":{\"preference\":" + preference + "}}"));
+        assertThat(objectMapper.readTree(response.body()).at("/data/preference"))
+            .isEqualTo(objectMapper.readTree(expectedPreference(preference, defaultTargetGender)));
+    }
+
+    private String expectedPreference(String requestedPreference) {
+        return expectedPreference(requestedPreference, Gender.FEMALE);
+    }
+
+    private String expectedPreference(String requestedPreference, Gender defaultTargetGender) {
+        ObjectNode expected = (ObjectNode) objectMapper.readTree(requestedPreference);
+        var preferredGenders = expected.get("preferredGenders");
+        if (preferredGenders == null || preferredGenders.isNull()
+            || preferredGenders.isArray() && preferredGenders.size() == 0) {
+            expected.set("preferredGenders", objectMapper.valueToTree(List.of(defaultTargetGender)));
+        }
+        return expected.toString();
     }
 
     private void assertNoContent(HttpResponse<String> response) {

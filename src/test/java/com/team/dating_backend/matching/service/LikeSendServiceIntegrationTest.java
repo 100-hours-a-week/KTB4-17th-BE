@@ -2,8 +2,6 @@ package com.team.dating_backend.matching.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doThrow;
 
 import com.team.dating_backend.chat.service.ChatRoomCreateService;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
@@ -16,7 +14,8 @@ import com.team.dating_backend.matching.repository.LikeRepository;
 import com.team.dating_backend.notification.entity.Notification;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.repository.NotificationRepository;
-import com.team.dating_backend.notification.service.NotificationCreateService;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.user.entity.User;
@@ -40,10 +39,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataAccessResourceFailureException;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,8 +59,8 @@ import org.testcontainers.mysql.MySQLContainer;
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
-    {LikeSendService.class, ChatRoomCreateService.class,
-        UserPairLockRepository.class, NotificationCreateService.class}
+    {LikeSendService.class, LikeRejectService.class, ChatRoomCreateService.class,
+        UserPairLockRepository.class, NotificationRequestTestConfiguration.class}
 )
 @Testcontainers
 class LikeSendServiceIntegrationTest {
@@ -76,6 +75,9 @@ class LikeSendServiceIntegrationTest {
     private LikeSendService service;
 
     @Autowired
+    private LikeRejectService rejectService;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -84,7 +86,7 @@ class LikeSendServiceIntegrationTest {
     @Autowired
     private LikeRepository likeRepository;
 
-    @MockitoSpyBean
+    @Autowired
     private NotificationRepository notificationRepository;
 
     @Autowired
@@ -97,8 +99,12 @@ class LikeSendServiceIntegrationTest {
     private Long senderId;
     private Long receiverId;
 
+    @Autowired
+    private StoredRequests storedRequests;
+
     @BeforeEach
     void setUp() {
+        storedRequests.clear();
         transaction = new TransactionTemplate(transactionManager);
         senderId = saveUser("봄날", Gender.MALE);
         receiverId = saveUser("여름", Gender.FEMALE);
@@ -119,12 +125,83 @@ class LikeSendServiceIntegrationTest {
     }
 
     @Test
+    void 거절된_좋아요는_같은_방향으로_재전송할_수_없지만_반대_방향은_보낼_수_있다() {
+        LikeCreateResponse original = service.sendLike(senderId, receiverId);
+        rejectService.rejectLike(receiverId, original.likeId());
+        var requestsBefore = storedRequests.snapshot();
+        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+
+        assertError(senderId, receiverId, LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
+        assertThat(likeRepository.count()).isEqualTo(1);
+        assertThat(storedRequests.snapshot()).isEqualTo(requestsBefore);
+        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+            .isEqualTo(outboxesBefore);
+
+        LikeCreateResponse reverse = service.sendLike(receiverId, senderId);
+        assertThat(reverse.status()).isEqualTo(LikeStatus.PENDING);
+        assertThat(likeRepository.findById(original.likeId()).orElseThrow().getStatus())
+            .isEqualTo(LikeStatus.REJECTED);
+        assertThat(likeRepository.count()).isEqualTo(2);
+        assertThat(storedRequests.snapshot()).hasSize(2);
+    }
+
+    @Test
+    void 거절과_재전송이_동시에_요청되어도_중복_좋아요를_생성하지_않는다() throws Exception {
+        LikeCreateResponse original = service.sendLike(senderId, receiverId);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> rejection = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("동시 요청 시작 대기 초과");
+                }
+                rejectService.rejectLike(receiverId, original.likeId());
+                return null;
+            });
+            Future<String> resend = executor.submit(
+                () -> sendAfterStart(senderId, receiverId, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            rejection.get(15, TimeUnit.SECONDS);
+            assertThat(resend.get(15, TimeUnit.SECONDS))
+                .isIn("DUPLICATE_PENDING_LIKE", "LIKE_PREVIOUSLY_REJECTED");
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(likeRepository.count()).isEqualTo(1);
+        assertThat(likeRepository.findById(original.likeId()).orElseThrow().getStatus())
+            .isEqualTo(LikeStatus.REJECTED);
+        assertThat(storedRequests.snapshot()).hasSize(1);
+        assertError(senderId, receiverId, LikeErrorCode.LIKE_PREVIOUSLY_REJECTED);
+    }
+
+    @Test
     void 일반_좋아요는_닉네임_문구를_저장하고_닉네임_변경과_중복_요청에도_기존_알림을_유지한다() {
         LikeCreateResponse response = service.sendLike(senderId, receiverId);
 
         assertThat(response.status()).isEqualTo(LikeStatus.PENDING);
         assertThat(likeRepository.findById(response.likeId()).orElseThrow().getStatus())
             .isEqualTo(LikeStatus.PENDING);
+        assertThat(notificationRepository.count()).isZero();
+        assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
+            assertThat(request.sourceEventId()).isEqualTo("LIKE_SENT:" + response.likeId());
+            assertThat(request.recipientUserId()).isEqualTo(receiverId);
+        });
+        var originalRequest = storedRequests.snapshot().getFirst();
+        var originalOutboxes = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+        assertThat(originalRequest.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
+        assertThat(originalRequest.type()).isEqualTo(NotificationType.LIKE);
+        assertThat(originalRequest.title()).isEqualTo("새로운 좋아요");
+        assertThat(originalRequest.body()).isEqualTo("봄날님이 당신에게 마음을 전했어요.");
+        assertThat(originalRequest.targetType()).isEqualTo("PROFILE");
+        assertThat(originalRequest.targetId()).isEqualTo(senderId);
+        assertThat(originalRequest.requestedAt()).isNotNull();
+        storedRequests.createNotificationsFromStoredRequests();
         List<Notification> notifications = notificationRepository.findAll();
         assertThat(notifications).hasSize(1);
         Notification notification = notifications.getFirst();
@@ -150,17 +227,22 @@ class LikeSendServiceIntegrationTest {
         assertThat(notificationRow(notification.getId())).isEqualTo(before);
         assertThat(notificationRepository.count()).isEqualTo(1L);
         assertThat(likeRepository.count()).isEqualTo(1L);
+        assertThat(storedRequests.snapshot()).containsExactly(originalRequest);
+        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+            .isEqualTo(originalOutboxes);
     }
 
     @Test
     void 상호_좋아요는_양쪽에_매칭_알림만_추가하고_기존_좋아요_알림을_보존한다() {
         service.sendLike(senderId, receiverId);
+        storedRequests.createNotificationsFromStoredRequests();
         Long originalId = notificationRepository.findAll().getFirst().getId();
         transaction.executeWithoutResult(status -> notificationRepository.findById(originalId)
             .orElseThrow().markAsRead(NOW));
         Map<String, Object> before = notificationRow(originalId);
 
         assertThat(service.sendLike(receiverId, senderId).status()).isEqualTo(LikeStatus.MATCHED);
+        storedRequests.createNotificationsFromStoredRequests();
 
         assertThat(likeRepository.findAll()).hasSize(2)
             .extracting(Like::getStatus).containsOnly(LikeStatus.MATCHED);
@@ -179,29 +261,44 @@ class LikeSendServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void 알림_저장이_실패하면_해당_요청의_좋아요와_매칭과_채팅방과_알림을_함께_롤백한다(boolean matching) {
+    @ValueSource(strings = {"LIKE", "MATCH_FIRST", "MATCH_SECOND"})
+    void 실제_Outbox_저장_실패시_신규_업무와_요청을_롤백하고_기존_데이터를_보존한다(String scenario) {
+        boolean matching = !scenario.equals("LIKE");
         if (matching) {
             service.sendLike(senderId, receiverId);
+            storedRequests.createNotificationsFromStoredRequests();
         }
-        List<Map<String, Object>> likesBefore = jdbc.queryForList("SELECT * FROM likes ORDER BY id");
-        List<Map<String, Object>> notificationsBefore = jdbc.queryForList(
-            "SELECT * FROM notifications ORDER BY id");
+        var requestsBefore = storedRequests.snapshot();
+        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
+        var likesBefore = jdbc.queryForList("SELECT * FROM likes ORDER BY id");
+        var notificationsBefore = jdbc.queryForList("SELECT * FROM notifications ORDER BY id");
         NotificationType failingType = matching ? NotificationType.MATCH : NotificationType.LIKE;
-        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("알림 저장 실패");
-        doThrow(failure).when(notificationRepository)
-            .save(argThat((Notification notification) -> notification.getUserId().equals(receiverId)
-                && notification.getType() == failingType));
+        Long failingRecipient = scenario.equals("MATCH_FIRST") ? senderId : receiverId;
+        jdbc.execute("""
+            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_matching_outbox
+            CHECK (type <> '%s' OR recipient_user_id <> %d)
+            """.formatted(failingType.name(), failingRecipient));
+        try {
+            assertThatThrownBy(() -> service.sendLike(
+                matching ? receiverId : senderId, matching ? senderId : receiverId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("test_reject_matching_outbox");
 
-        assertThatThrownBy(() -> service.sendLike(
-            matching ? receiverId : senderId, matching ? senderId : receiverId)).isSameAs(failure);
+            assertThat(storedRequests.snapshot()).containsExactlyElementsOf(requestsBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
+                .isEqualTo(outboxesBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM likes ORDER BY id")).isEqualTo(likesBefore);
+            assertThat(jdbc.queryForList("SELECT * FROM notifications ORDER BY id")).isEqualTo(notificationsBefore);
+            assertThat(count("matches")).isZero();
+            assertThat(count("chat_rooms")).isZero();
+            assertThat(count("chat_participants")).isZero();
+        } finally {
+            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_matching_outbox");
+        }
 
-        assertThat(jdbc.queryForList("SELECT * FROM likes ORDER BY id")).isEqualTo(likesBefore);
-        assertThat(jdbc.queryForList("SELECT * FROM notifications ORDER BY id"))
-            .isEqualTo(notificationsBefore);
-        assertThat(count("matches")).isZero();
-        assertThat(count("chat_rooms")).isZero();
-        assertThat(count("chat_participants")).isZero();
+        assertThat(service.sendLike(matching ? receiverId : senderId, matching ? senderId : receiverId).status())
+            .isEqualTo(matching ? LikeStatus.MATCHED : LikeStatus.PENDING);
+        assertThat(storedRequests.snapshot()).hasSize(matching ? 3 : 1);
     }
 
     @ParameterizedTest
@@ -225,6 +322,9 @@ class LikeSendServiceIntegrationTest {
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
 
+        assertThat(notificationRepository.count()).isZero();
+        storedRequests.createNotificationsFromStoredRequests();
+        assertThat(storedRequests.snapshot()).hasSize(reciprocal ? 3 : 1);
         if (reciprocal) {
             assertThat(outcomes).containsExactlyInAnyOrder("PENDING", "MATCHED");
             assertThat(likeRepository.findAll()).hasSize(2)
@@ -246,6 +346,21 @@ class LikeSendServiceIntegrationTest {
     }
 
     private void assertMatchNotifications() {
+        var matchRequests = storedRequests.snapshot().stream()
+            .filter(request -> request.type() == NotificationType.MATCH).toList();
+        Long matchId = jdbc.queryForObject("SELECT id FROM matches", Long.class);
+        assertThat(matchRequests).hasSize(2).extracting(NotificationCreateRequested::sourceEventId)
+            .containsOnly("MATCH_CREATED:" + matchId);
+        assertThat(matchRequests).extracting(NotificationCreateRequested::recipientUserId)
+            .containsExactlyInAnyOrder(senderId, receiverId);
+        assertThat(matchRequests).allSatisfy(request -> {
+            assertThat(request.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
+            assertThat(request.title()).isEqualTo("매칭 성사");
+            assertThat(request.body()).isEqualTo("서로의 마음이 연결되었어요. 채팅을 시작해 보세요.");
+            assertThat(request.targetType()).isEqualTo("CHAT_ROOM");
+            assertThat(request.requestedAt()).isNotNull();
+        });
+        assertThat(matchRequests.getFirst().requestedAt()).isEqualTo(matchRequests.getLast().requestedAt());
         List<Notification> notifications = notificationRepository.findAll();
         assertThat(notifications).hasSize(3);
         assertThat(notifications).filteredOn(notification -> notification.getType() == NotificationType.LIKE)
@@ -255,6 +370,7 @@ class LikeSendServiceIntegrationTest {
         assertThat(matches).extracting(Notification::getUserId)
             .containsExactlyInAnyOrder(senderId, receiverId);
         Long roomId = jdbc.queryForObject("SELECT id FROM chat_rooms", Long.class);
+        assertThat(matchRequests).extracting(NotificationCreateRequested::targetId).containsOnly(roomId);
         assertThat(matches).allSatisfy(notification -> {
             assertThat(notification.getTargetType()).isEqualTo("CHAT_ROOM");
             assertThat(notification.getTargetId()).isEqualTo(roomId);

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
+import com.team.dating_backend.notification.sse.NotificationSseObservation;
 import com.team.dating_backend.profile.dto.response.UserProfileResponse;
 import com.team.dating_backend.profile.enums.JobCategory;
 import com.team.dating_backend.profile.service.UserProfileGetService;
@@ -49,10 +50,13 @@ class UserProfileControllerTest {
     private NotificationEmitterRegistry notificationEmitterRegistry;
 
     @MockitoBean
+    private NotificationSseObservation notificationSseObservation;
+
+    @MockitoBean
     private UserProfileGetService userProfileGetService;
 
     @Test
-    void 추천_회원_프로필을_반환한다() throws Exception {
+    void 회원_프로필을_기존_응답_형식으로_반환한다() throws Exception {
         given(userProfileGetService.getUserProfile(5L, 21L))
             .willReturn(new UserProfileResponse(
                 21L,
