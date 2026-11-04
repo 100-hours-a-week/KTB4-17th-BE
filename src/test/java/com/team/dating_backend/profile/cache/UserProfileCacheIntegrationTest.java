@@ -73,6 +73,33 @@ class UserProfileCacheIntegrationTest {
     }
 
     @Test
+    void 독립된_두_애플리케이션_컨텍스트가_캐시를_공유하고_서로의_무효화를_확인한다() {
+        runner().run(first -> runner().run(second -> {
+            assertThat(first).hasNotFailed();
+            assertThat(second).hasNotFailed();
+            UserProfileCache firstCache = first.getBean(UserProfileCache.class);
+            UserProfileCache secondCache = second.getBean(UserProfileCache.class);
+            assertThat(firstCache).isNotSameAs(secondCache);
+            StringRedisTemplate firstRedis = first.getBean("profileCacheStringRedisTemplate",
+                StringRedisTemplate.class);
+            StringRedisTemplate secondRedis = second.getBean("profileCacheStringRedisTemplate",
+                StringRedisTemplate.class);
+            assertThat(firstRedis.getConnectionFactory()).isNotSameAs(secondRedis.getConnectionFactory());
+            String key = "profile:detail:27";
+
+            firstCache.put(27L, profile(27L), Instant.now().plusSeconds(180));
+            long beforeRead = firstRedis.getExpire(key, TimeUnit.MILLISECONDS);
+
+            assertThat(secondCache.get(27L).profile()).isEqualTo(profile(27L));
+            assertThat(secondRedis.getExpire(key, TimeUnit.MILLISECONDS)).isPositive().isLessThanOrEqualTo(beforeRead);
+            secondCache.evict(27L);
+            assertThat(firstCache.get(27L).status()).isEqualTo(ProfileCacheLookupResult.Status.MISS);
+            secondCache.put(27L, profile(27L), Instant.now().plusSeconds(180));
+            assertThat(firstCache.get(27L).profile()).isEqualTo(profile(27L));
+        }));
+    }
+
+    @Test
     void 일반_조회는_TTL을_연장하지_않고_만료_후에는_미적중을_반환한다() {
         runner().run(context -> {
             UserProfileCache cache = context.getBean(UserProfileCache.class);
