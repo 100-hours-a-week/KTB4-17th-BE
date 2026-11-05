@@ -55,7 +55,7 @@ public class ChatWebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.setPreserveReceiveOrder(true);
+        registry.setPreserveReceiveOrder(false);
         registry.addEndpoint("/ws/chat")
             .setAllowedOrigins(
                 securityProperties.getAllowedOrigins().toArray(String[]::new));
