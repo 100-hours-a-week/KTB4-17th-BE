@@ -1,32 +1,27 @@
 package com.team.dating_backend.notification.config;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
+import com.team.dating_backend.common.kafka.KafkaRetryPolicy;
+import com.team.dating_backend.common.kafka.config.KafkaRetryInfrastructureConfiguration;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.exception.NotificationRetryableCreationException;
 import com.team.dating_backend.notification.kafka.NotificationRecoveryReporter;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Consumer;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.context.annotation.Import;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
-import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.retrytopic.DeadLetterPublishingRecovererFactory;
 import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.kafka.retrytopic.RetryTopicConfigurationBuilder;
-import org.springframework.kafka.retrytopic.RetryTopicConfigurationSupport;
 import org.springframework.kafka.retrytopic.SameIntervalTopicReuseStrategy;
-import org.springframework.util.backoff.FixedBackOff;
 
-@EnableKafka
 @Configuration(proxyBeanMethods = false)
+@Import(KafkaRetryInfrastructureConfiguration.class)
 @RequiredArgsConstructor
-public class NotificationRetryConfiguration extends RetryTopicConfigurationSupport {
+public class NotificationRetryConfiguration implements KafkaRetryPolicy {
 
     private final NotificationRetryProperties retryProperties;
     private final NotificationRecoveryReporter recoveryReporter;
@@ -61,40 +56,23 @@ public class NotificationRetryConfiguration extends RetryTopicConfigurationSuppo
     }
 
     @Override
-    protected void configureBlockingRetries(BlockingRetriesConfigurer blockingRetries) {
-        blockingRetries.backOff(new FixedBackOff(0L, 0L));
+    public Set<String> listenerIds() {
+        return Set.of("notificationCreationConsumer");
     }
 
     @Override
-    protected void manageNonBlockingFatalExceptions(List<Class<? extends Throwable>> nonBlockingFatalExceptions) {
-        nonBlockingFatalExceptions.add(NotificationInvalidCreateRequestException.class);
+    public long publishResultTimeoutMs() {
+        return retryProperties.getPublishResultTimeoutMs();
     }
 
     @Override
-    protected Consumer<DeadLetterPublishingRecovererFactory> configureDeadLetterPublishingContainerFactory() {
-        return factory -> {
-            factory.setDeadLetterPublisherCreator(recoveryReporter::createRecoverer);
-            factory.neverLogListenerException();
-        };
+    public Set<Class<? extends Exception>> fatalExceptions() {
+        return Set.of(NotificationInvalidCreateRequestException.class);
     }
 
     @Override
-    protected void configureCustomizers(CustomizersConfigurer customizersConfigurer) {
-        customizersConfigurer.customizeDeadLetterPublishingRecoverer(recoverer -> {
-            recoverer.setFailIfSendResultIsError(true);
-            recoverer.setWaitForSendResultTimeout(Duration.ofMillis(retryProperties.getPublishResultTimeoutMs()));
-            recoverer.setThrowIfNoDestinationReturned(true);
-            recoverer.setLogRecoveryRecord(false);
-        });
-        customizersConfigurer.customizeErrorHandler(errorHandler -> errorHandler.setAckAfterHandle(true));
-        customizersConfigurer.customizeListenerContainer(container -> {
-            var stoppingErrorHandler = new CommonContainerStoppingErrorHandler();
-            var errorHandler = new CommonDelegatingErrorHandler(container.getCommonErrorHandler());
-            errorHandler.setCauseChainTraversing(true);
-            errorHandler.setErrorHandlers(Map.of(
-                InterruptedException.class, stoppingErrorHandler,
-                Error.class, stoppingErrorHandler));
-            container.setCommonErrorHandler(errorHandler);
-        });
+    public void customizeRecovererFactory(DeadLetterPublishingRecovererFactory factory) {
+        factory.setDeadLetterPublisherCreator(recoveryReporter::createRecoverer);
+        factory.neverLogListenerException();
     }
 }

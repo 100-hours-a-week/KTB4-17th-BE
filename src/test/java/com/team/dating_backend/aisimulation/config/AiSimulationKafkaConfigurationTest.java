@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationCompletedEvent;
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
-import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
+import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -98,7 +98,7 @@ class AiSimulationKafkaConfigurationTest {
             var mapper = context.getBean(JsonMapper.class);
             var producerFactory = new DefaultKafkaProducerFactory<Object, Object>(Map.of(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092"));
-            new NotificationKafkaConfiguration().notificationKafkaProducerFactoryCustomizer(mapper)
+            new KafkaProducerConfiguration().kafkaProducerFactoryCustomizer(mapper)
                 .customize(producerFactory);
             var event = new AiSimulationEventFactory().requested(10L, LocalDateTime.of(2026, 11, 6, 10, 5));
             var key = producerFactory.getKeySerializer().serialize("requested", 10L);

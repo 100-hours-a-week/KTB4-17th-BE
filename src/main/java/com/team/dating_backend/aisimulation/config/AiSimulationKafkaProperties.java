@@ -5,6 +5,8 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.util.stream.Stream;
 import lombok.Getter;
@@ -32,6 +34,16 @@ public class AiSimulationKafkaProperties {
 
     @Positive
     private int partitions = 4;
+
+    @Positive
+    @Max(Short.MAX_VALUE)
+    private int replicationFactor = 3;
+
+    @Positive
+    private int minInSyncReplicas = 2;
+
+    @Min(-1)
+    private Long retentionMs;
 
     @Positive
     private int concurrency = 2;

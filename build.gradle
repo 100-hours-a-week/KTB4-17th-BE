@@ -61,6 +61,7 @@ dependencies {
 def notificationMultiProcessTag = 'notification-multiprocess'
 
 tasks.named('test') {
+	maxHeapSize = '1g'
 	useJUnitPlatform {
 		excludeTags notificationMultiProcessTag
 		if (!project.hasProperty('runS3IntegrationTest')) {
