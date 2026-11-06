@@ -12,7 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.alert.NotificationFailureReporter;
-import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
+import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.config.NotificationOutboxRelayConfiguration;
 import com.team.dating_backend.notification.config.NotificationOutboxRelayProperties;
@@ -365,8 +365,8 @@ class NotificationOutboxPublishJobIntegrationTest {
     static class KafkaConfiguration {
 
         @Bean
-        DefaultKafkaProducerFactoryCustomizer notificationKafkaProducerFactoryCustomizer(JsonMapper mapper) {
-            return new NotificationKafkaConfiguration().notificationKafkaProducerFactoryCustomizer(mapper);
+        DefaultKafkaProducerFactoryCustomizer kafkaProducerFactoryCustomizer(JsonMapper mapper) {
+            return new KafkaProducerConfiguration().kafkaProducerFactoryCustomizer(mapper);
         }
     }
 }
