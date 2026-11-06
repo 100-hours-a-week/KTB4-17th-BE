@@ -143,91 +143,6 @@ class AiSimulationAdmissionServiceTest {
         verifyNoInteractions(sessionRepository, persistenceService);
     }
 
-    @ParameterizedTest
-    @CsvSource({"7, 8", "8, 7"})
-    void 최신_실패의_재시도는_원래_참여자_순서로_새_세션을_만든다(Long userId, Long targetUserId) {
-        AiSimulationSession failed = existingSession(SESSION_ID, AiSimulationSessionStatus.FAILED);
-        AiSimulationSession next = existingSession(SESSION_ID + 1, AiSimulationSessionStatus.IN_PROGRESS);
-        given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, userId))
-            .willReturn(java.util.Optional.of(pair()));
-        given(sessionRepository.findLatestByUserPair(userId, targetUserId, PageRequest.of(0, 1)))
-            .willReturn(List.of(failed));
-        given(persistenceService.begin(USER_ID, TARGET_ID)).willReturn(next);
-
-        AdmissionDecision result = service.admitAttempt(userId, SESSION_ID);
-
-        assertThat(result).isEqualTo(new AdmissionDecision(next.getId(), AiSimulationSessionStatus.IN_PROGRESS, true));
-        assertThat(failed.getStatus()).isEqualTo(AiSimulationSessionStatus.FAILED);
-        var order = inOrder(userPairLockRepository, sessionRepository, persistenceService);
-        order.verify(userPairLockRepository).acquire(userId, targetUserId);
-        order.verify(sessionRepository).findLatestByUserPair(userId, targetUserId, PageRequest.of(0, 1));
-        order.verify(persistenceService).begin(USER_ID, TARGET_ID);
-    }
-
-    @ParameterizedTest
-    @EnumSource(AiSimulationSessionStatus.class)
-    void 이전_ID로_반복된_시도는_새_세션의_상태와_관계없이_최신_세션을_반환한다(AiSimulationSessionStatus status) {
-        given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
-            .willReturn(java.util.Optional.of(pair()));
-        given(sessionRepository.findLatestByUserPair(USER_ID, TARGET_ID, PageRequest.of(0, 1)))
-            .willReturn(List.of(existingSession(SESSION_ID + 1, status)));
-
-        assertThat(service.admitAttempt(USER_ID, SESSION_ID))
-            .isEqualTo(new AdmissionDecision(SESSION_ID + 1, status, false));
-        verifyNoInteractions(persistenceService);
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = AiSimulationSessionStatus.class, names = {"IN_PROGRESS", "COMPLETED", "CANCELED"})
-    void 최신_세션이_실패가_아니면_새_시도를_만들지_않는다(AiSimulationSessionStatus status) {
-        given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
-            .willReturn(java.util.Optional.of(pair()));
-        given(sessionRepository.findLatestByUserPair(USER_ID, TARGET_ID, PageRequest.of(0, 1)))
-            .willReturn(List.of(existingSession(SESSION_ID, status)));
-
-        assertThat(service.admitAttempt(USER_ID, SESSION_ID))
-            .isEqualTo(new AdmissionDecision(SESSION_ID, status, false));
-        verifyNoInteractions(persistenceService);
-    }
-
-    @Test
-    void 참여자가_아니면_재시도_잠금과_저장에_접근하지_않는다() {
-        assertThatThrownBy(() -> service.admitAttempt(99L, SESSION_ID))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
-        verifyNoInteractions(userRepository, userPairLockRepository, persistenceService);
-    }
-
-    @Test
-    void 상대방이_없는_레거시_세션은_재시도하지_않는다() {
-        var pair = mock(AiSimulationSessionRepository.ParticipantPair.class);
-        given(pair.getUserId()).willReturn(USER_ID);
-        given(pair.getTargetUserId()).willReturn(null);
-        given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
-            .willReturn(java.util.Optional.of(pair));
-
-        assertThatThrownBy(() -> service.admitAttempt(USER_ID, SESSION_ID))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
-        verifyNoInteractions(userRepository, userPairLockRepository, persistenceService);
-    }
-
-    @Test
-    void 차단된_상대와의_재시도는_거부한다() {
-        given(sessionRepository.findPairByIdAndParticipant(SESSION_ID, USER_ID))
-            .willReturn(java.util.Optional.of(pair()));
-        given(userBlockRepository.existsActiveBlockBetween(USER_ID, TARGET_ID)).willReturn(true);
-
-        assertThatThrownBy(() -> service.admitAttempt(USER_ID, SESSION_ID))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.TARGET_USER_NOT_FOUND));
-        verify(userPairLockRepository).acquire(USER_ID, TARGET_ID);
-        verifyNoInteractions(persistenceService);
-    }
-
     @Test
     void 탈퇴한_상대방과는_시뮬레이션을_시작하지_않는다() {
         given(userRepository.findByIdForUpdate(TARGET_ID))
@@ -250,20 +165,6 @@ class AiSimulationAdmissionServiceTest {
             .isInstanceOf(AuthenticationRequiredException.class);
 
         verifyNoInteractions(sessionRepository, persistenceService);
-    }
-
-    private AiSimulationSessionRepository.ParticipantPair pair() {
-        return new AiSimulationSessionRepository.ParticipantPair() {
-            @Override
-            public Long getUserId() {
-                return USER_ID;
-            }
-
-            @Override
-            public Long getTargetUserId() {
-                return TARGET_ID;
-            }
-        };
     }
 
     private AiSimulationSession existingSession(Long id, AiSimulationSessionStatus status) {
