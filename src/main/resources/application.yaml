@@ -216,6 +216,9 @@ app:
       requested-topic: ${AI_SIMULATION_KAFKA_REQUESTED_TOPIC:${spring.profiles.active:local}-ai-simulation-requested}
       completed-topic: ${AI_SIMULATION_KAFKA_COMPLETED_TOPIC:${spring.profiles.active:local}-ai-simulation-completed}
       partitions: ${AI_SIMULATION_KAFKA_PARTITIONS:4}
+      replication-factor: ${AI_SIMULATION_KAFKA_REPLICATION_FACTOR:3}
+      min-in-sync-replicas: ${AI_SIMULATION_KAFKA_MIN_INSYNC_REPLICAS:2}
+      retention-ms: ${AI_SIMULATION_KAFKA_RETENTION_MS:}
       concurrency: ${AI_SIMULATION_KAFKA_CONCURRENCY:2}
       publish-result-timeout-ms: ${AI_SIMULATION_KAFKA_PUBLISH_RESULT_TIMEOUT_MS:15000}
       generation:
