@@ -17,15 +17,6 @@ public interface RecommendationItemRepository extends JpaRepository<Recommendati
     int deleteItems(@Param("batchId") Long batchId, @Param("ids") List<Long> ids);
 
     @Query("""
-        SELECT item.id FROM RecommendationItem item
-        WHERE item.recommendationBatchId = :batchId
-        ORDER BY item.id ASC
-        """)
-    List<Long> findItemIds(@Param("batchId") Long batchId, Pageable pageable);
-
-    boolean existsByRecommendationBatchId(Long recommendationBatchId);
-
-    @Query("""
         SELECT count(item) > 0
         FROM RecommendationItem item
         JOIN RecommendationBatch batch ON batch.id = item.recommendationBatchId

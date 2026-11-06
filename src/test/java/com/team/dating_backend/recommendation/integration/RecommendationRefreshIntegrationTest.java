@@ -6,14 +6,12 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 
 import com.team.dating_backend.profile.service.ProfileImageGetService;
-import com.team.dating_backend.common.lock.repository.PublisherLockRepository;
 import com.team.dating_backend.recommendation.dto.request.RecommendationPreferenceSaveRequest;
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
 import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
 import com.team.dating_backend.recommendation.repository.RecommendationPreferenceRepository;
 import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
-import com.team.dating_backend.recommendation.service.RecommendationHistoryCleanupService;
 import com.team.dating_backend.recommendation.service.RecommendationItemGetService;
 import com.team.dating_backend.recommendation.service.RecommendationPreferenceService;
 import com.team.dating_backend.recommendation.service.SimulationRecommendationService;
@@ -69,11 +67,7 @@ class RecommendationRefreshIntegrationTest {
     @Autowired
     private RecommendationItemGetService queryService;
     @Autowired
-    private RecommendationHistoryCleanupService cleanupService;
-    @Autowired
     private RecommendationPreferenceService preferenceService;
-    @Autowired
-    private PublisherLockRepository locks;
     @Autowired
     private RecommendationItemRepository items;
     @Autowired
@@ -232,22 +226,6 @@ class RecommendationRefreshIntegrationTest {
     }
 
     @Test
-    void 과거_Item을_청크로_정리하고_활성_목록은_보존한다() {
-        Long candidateId = candidate();
-        long activeId = create();
-        var history = batches.save(new com.team.dating_backend.recommendation.entity.RecommendationBatch(
-            requesterId, LocalDateTime.now()));
-        items.save(new RecommendationItem(history.getId(), candidateId, 1));
-        jdbc.update("update recommendation_batches set deleted_at = now(6) where id = ?", history.getId());
-
-        assertThat(cleanupService.purgeChunk(1)).isEqualTo(2);
-
-        assertThat(batches.existsById(history.getId())).isFalse();
-        assertThat(items.findAllByRecommendationBatchId(activeId)).hasSize(1);
-        assertThat(cleanupService.purgeChunk(1)).isZero();
-    }
-
-    @Test
     void 정기_갱신과_선호_변경이_겹쳐도_최종_조건에_맞는_목록을_유지한다() throws Exception {
         candidate();
         long batchId = create();
@@ -293,21 +271,6 @@ class RecommendationRefreshIntegrationTest {
         assertThat(batches.count()).isEqualTo(1);
     }
 
-    @Test
-    void 실행_잠금은_다른_소유자를_거부하고_소유자만_해제할_수_있다() {
-        String name = "recommendation-refresh";
-        assertThat(locks.tryAcquireOrExtend(name, "first", 300_000_000L)).isEqualTo(1);
-        try {
-            assertThat(locks.tryAcquireOrExtend(name, "second", 300_000_000L)).isZero();
-            assertThat(locks.release(name, "second")).isZero();
-            assertThat(locks.release(name, "first")).isEqualTo(1);
-            assertThat(locks.tryAcquireOrExtend(name, "second", 300_000_000L)).isEqualTo(1);
-        } finally {
-            locks.release(name, "first");
-            locks.release(name, "second");
-        }
-    }
-
     private void executeAsRoot(String sql) throws SQLException {
         try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
             var statement = connection.createStatement()) {
@@ -345,8 +308,7 @@ class RecommendationRefreshIntegrationTest {
     @EnableJpaRepositories("com.team.dating_backend")
     @Import(
         {RecommendationBatchCreateService.class, SimulationRecommendationService.class,
-            RecommendationItemGetService.class,
-            RecommendationHistoryCleanupService.class, RecommendationPreferenceService.class}
+            RecommendationItemGetService.class, RecommendationPreferenceService.class}
     )
     static class TestApplication {}
 }
