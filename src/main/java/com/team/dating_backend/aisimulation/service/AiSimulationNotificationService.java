@@ -1,6 +1,7 @@
 package com.team.dating_backend.aisimulation.service;
 
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationRecipient;
 import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
@@ -64,20 +65,46 @@ public class AiSimulationNotificationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void completed(Long sessionId, Long requesterId, Long targetId, Long recipientId) {
+        recordCompleted(sessionId, requesterId, targetId, recipientId, Instant.now());
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public AiSimulationNotificationResult completed(Long sessionId, AiSimulationNotificationRecipient recipient) {
+        var session = sessions.findById(sessionId)
+            .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+        if (session.getStatus() != AiSimulationSessionStatus.COMPLETED) {
+            return AiSimulationNotificationResult.SKIPPED;
+        }
+        Long recipientId = recipient == AiSimulationNotificationRecipient.REQUESTER
+            ? session.getUserId()
+            : session.getTargetUserId();
+        if (recipientId == null) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING);
+        }
+        if (session.getFinishedAt() == null) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_EVENT_INVALID);
+        }
+        return recordCompleted(sessionId, session.getUserId(), session.getTargetUserId(), recipientId,
+            session.getFinishedAt().toInstant(ZoneOffset.UTC));
+    }
+
+    private AiSimulationNotificationResult recordCompleted(Long sessionId, Long requesterId, Long targetId,
+        Long recipientId, Instant completedAt) {
         if (recipientId.equals(requesterId)) {
             if (!users.existsByIdAndStatus(requesterId, UserStatus.ACTIVE)) {
-                return;
+                return AiSimulationNotificationResult.SKIPPED;
             }
         } else if (!recipientId.equals(targetId) || !eligiblePair(requesterId, targetId)
             || passed(requesterId, targetId)) {
-            return;
+            return AiSimulationNotificationResult.SKIPPED;
         }
         var template = AiNotificationTemplate.SIMULATION_COMPLETED;
         notifications.requestNotification(new NotificationCreateRequested(
             NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
             "AI_SIMULATION_COMPLETED:" + sessionId + (recipientId.equals(requesterId) ? "" : ":" + recipientId),
             recipientId, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
-            template.getTitle(), template.getBody(), template.getTargetType(), sessionId, Instant.now()));
+            template.getTitle(), template.getBody(), template.getTargetType(), sessionId, completedAt));
+        return AiSimulationNotificationResult.RECORDED;
     }
 
     private boolean passed(Long requesterId, Long targetId) {

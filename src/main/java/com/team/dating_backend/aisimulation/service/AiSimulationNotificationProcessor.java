@@ -1,6 +1,8 @@
 package com.team.dating_backend.aisimulation.service;
 
 import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
+import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationRecipient;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -18,8 +20,17 @@ public class AiSimulationNotificationProcessor {
 
     @Transactional(propagation = Propagation.NEVER)
     public AiSimulationNotificationResult requested(Long sessionId) {
+        return recordNotification(() -> notifications.requested(sessionId));
+    }
+
+    @Transactional(propagation = Propagation.NEVER)
+    public AiSimulationNotificationResult completed(Long sessionId, AiSimulationNotificationRecipient recipient) {
+        return recordNotification(() -> notifications.completed(sessionId, recipient));
+    }
+
+    private AiSimulationNotificationResult recordNotification(Supplier<AiSimulationNotificationResult> action) {
         try {
-            return notifications.requested(sessionId);
+            return action.get();
         } catch (DataIntegrityViolationException exception) {
             if (!isOutboxDuplicate(exception)) {
                 throw exception;
