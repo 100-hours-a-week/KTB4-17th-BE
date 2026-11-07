@@ -1,6 +1,7 @@
 package com.team.dating_backend.aisimulation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -9,6 +10,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
+import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.service.NotificationRequestService;
@@ -18,9 +24,14 @@ import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.util.Optional;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AiSimulationNotificationServiceTest {
     private final UserRepository users = mock(UserRepository.class);
@@ -28,8 +39,9 @@ class AiSimulationNotificationServiceTest {
     private final ChatRoomRepository rooms = mock(ChatRoomRepository.class);
     private final RecommendationPassRepository passes = mock(RecommendationPassRepository.class);
     private final NotificationRequestService notifications = mock(NotificationRequestService.class);
+    private final AiSimulationSessionRepository sessions = mock(AiSimulationSessionRepository.class);
     private final AiSimulationNotificationService service = new AiSimulationNotificationService(users, blocks, rooms,
-        passes, notifications);
+        passes, notifications, sessions);
 
     @BeforeEach
     void setUp() {
@@ -102,5 +114,76 @@ class AiSimulationNotificationServiceTest {
         verify(notifications, times(2)).requestNotification(captor.capture());
         assertThat(captor.getAllValues()).extracting(NotificationCreateRequested::recipientUserId)
             .containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 세션에서_참여자를_읽고_기존_문구와_세션_생성_시각으로_요청을_기록한다() {
+        var createdAt = LocalDateTime.of(2026, 11, 7, 10, 5);
+        given(sessions.findByIdForUpdate(100L))
+            .willReturn(Optional.of(new AiSimulationSession(1L, 2L, createdAt)));
+
+        assertThat(service.requested(100L)).isEqualTo(AiSimulationNotificationResult.RECORDED);
+
+        var request = ArgumentCaptor.forClass(NotificationCreateRequested.class);
+        verify(notifications).requestNotification(request.capture());
+        assertThat(request.getValue().sourceEventId()).isEqualTo("AI_SIMULATION_REQUESTED:100");
+        assertThat(request.getValue().recipientUserId()).isEqualTo(2L);
+        assertThat(request.getValue().title()).isEqualTo("시뮬레이션 요청");
+        assertThat(request.getValue().body()).isEqualTo("누군가 회원님과의 AI 시뮬레이션을 진행 중이에요.");
+        assertThat(request.getValue().requestedAt()).isEqualTo(createdAt.toInstant(ZoneOffset.UTC));
+    }
+
+    @Test
+    void 이미_완료된_세션의_늦은_요청_알림은_생략한다() {
+        var session = new AiSimulationSession(1L, 2L, LocalDateTime.now());
+        session.complete(LocalDateTime.now());
+        given(sessions.findByIdForUpdate(100L)).willReturn(Optional.of(session));
+
+        assertThat(service.requested(100L)).isEqualTo(AiSimulationNotificationResult.SKIPPED);
+
+        verifyNoInteractions(notifications);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pass", "block", "withdrawn", "left"})
+    void Kafka_요청도_기존_수신_제외_정책을_적용한다(String policy) {
+        given(sessions.findByIdForUpdate(100L))
+            .willReturn(Optional.of(new AiSimulationSession(1L, 2L, LocalDateTime.now())));
+        switch (policy) {
+            case "pass" -> given(passes.findByPasserUserIdAndPassedUserId(2L, 1L))
+                .willReturn(Optional.of(mock(RecommendationPass.class)));
+            case "block" -> given(blocks.existsActiveBlockBetween(1L, 2L)).willReturn(true);
+            case "withdrawn" -> given(users.existsByIdAndStatusNot(2L, UserStatus.WITHDRAWN)).willReturn(false);
+            case "left" -> given(rooms.existsLeftParticipantBetweenUsers(1L, 2L)).willReturn(true);
+            default -> throw new IllegalArgumentException(policy);
+        }
+
+        assertThat(service.requested(100L)).isEqualTo(AiSimulationNotificationResult.SKIPPED);
+
+        verifyNoInteractions(notifications);
+    }
+
+    @Test
+    void 존재하지_않는_세션은_조회_오류를_전달한다() {
+        given(sessions.findByIdForUpdate(100L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requested(100L))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+        verifyNoInteractions(notifications);
+    }
+
+    @Test
+    void 상대_ID가_없는_세션은_에러코드를_전달한다() {
+        var session = new AiSimulationSession(1L, 2L, LocalDateTime.now());
+        ReflectionTestUtils.setField(session, "targetUserId", null);
+        given(sessions.findByIdForUpdate(100L)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.requested(100L))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING));
+        verifyNoInteractions(notifications);
     }
 }
