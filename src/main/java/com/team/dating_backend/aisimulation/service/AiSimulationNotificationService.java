@@ -1,5 +1,10 @@
 package com.team.dating_backend.aisimulation.service;
 
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
+import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.chat.repository.ChatRoomRepository;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.AiNotificationTemplate;
@@ -10,6 +15,7 @@ import com.team.dating_backend.user.enums.UserStatus;
 import com.team.dating_backend.user.repository.UserBlockRepository;
 import com.team.dating_backend.user.repository.UserRepository;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -23,22 +29,45 @@ public class AiSimulationNotificationService {
     private final ChatRoomRepository rooms;
     private final RecommendationPassRepository passes;
     private final NotificationRequestService notifications;
+    private final AiSimulationSessionRepository sessions;
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public AiSimulationNotificationResult requested(Long sessionId) {
+        var session = sessions.findByIdForUpdate(sessionId)
+            .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+        if (session.getStatus() == AiSimulationSessionStatus.COMPLETED) {
+            return AiSimulationNotificationResult.SKIPPED;
+        }
+        if (session.getTargetUserId() == null) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING);
+        }
+        return recordRequested(sessionId, session.getUserId(), session.getTargetUserId(),
+            session.getCreatedAt().toInstant(ZoneOffset.UTC));
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void requested(Long sessionId, Long requesterId, Long targetId) {
-        if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId))
-            return;
+        recordRequested(sessionId, requesterId, targetId, Instant.now());
+    }
+
+    private AiSimulationNotificationResult recordRequested(Long sessionId, Long requesterId, Long targetId,
+        Instant requestedAt) {
+        if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId)) {
+            return AiSimulationNotificationResult.SKIPPED;
+        }
         notifications.requestNotification(new NotificationCreateRequested(
             NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "AI_SIMULATION_REQUESTED:" + sessionId,
             targetId, NotificationType.AI_SIMULATION_REQUESTED, "시뮬레이션 요청",
-            "누군가 회원님과의 AI 시뮬레이션을 진행 중이에요.", null, null, Instant.now()));
+            "누군가 회원님과의 AI 소개팅을 시작했어요", null, null, requestedAt));
+        return AiSimulationNotificationResult.RECORDED;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void completed(Long sessionId, Long requesterId, Long targetId, Long recipientId) {
         if (recipientId.equals(requesterId)) {
-            if (!users.existsByIdAndStatus(requesterId, UserStatus.ACTIVE))
+            if (!users.existsByIdAndStatus(requesterId, UserStatus.ACTIVE)) {
                 return;
+            }
         } else if (!recipientId.equals(targetId) || !eligiblePair(requesterId, targetId)
             || passed(requesterId, targetId)) {
             return;
