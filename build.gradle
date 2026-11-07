@@ -1,3 +1,11 @@
+import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.services.BuildService
+import org.gradle.api.services.BuildServiceParameters
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.1'
@@ -5,6 +13,51 @@ plugins {
     id 'com.diffplug.spotless' version '8.10.2'
 	id 'org.owasp.dependencycheck' version '13.0.0'
 	id 'checkstyle'
+}
+
+abstract class WorkspaceBuildLock implements BuildService<WorkspaceBuildLock.Parameters>, AutoCloseable {
+	interface Parameters extends BuildServiceParameters {
+		RegularFileProperty getLockFile()
+	}
+
+	private final FileChannel channel
+	private final FileLock lock
+
+	WorkspaceBuildLock() {
+		def path = parameters.lockFile.get().asFile.toPath()
+		Files.createDirectories(path.parent)
+		channel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+		try {
+			lock = channel.tryLock()
+			if (lock == null) {
+				throw new GradleException('WORKSPACE_BUILD_ALREADY_RUNNING: Wait for the other Gradle build in this checkout to finish before retrying.')
+			}
+		} catch (Exception failure) {
+			channel.close()
+			throw failure
+		}
+	}
+
+	@Override
+	void close() {
+		try {
+			lock.release()
+		} finally {
+			channel.close()
+		}
+	}
+}
+
+def workspaceBuildLock = gradle.sharedServices.registerIfAbsent('workspaceBuildLock', WorkspaceBuildLock) {
+	parameters.lockFile = layout.projectDirectory.file('.gradle/workspace-build.lock')
+}
+workspaceBuildLock.get()
+
+tasks.configureEach {
+	usesService(workspaceBuildLock)
+	doFirst {
+		workspaceBuildLock.get()
+	}
 }
 
 group = 'com.team'
