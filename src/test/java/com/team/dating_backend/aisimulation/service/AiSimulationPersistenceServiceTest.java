@@ -262,6 +262,88 @@ class AiSimulationPersistenceServiceTest {
         verifyNoInteractions(reportRepository, messageRepository);
     }
 
+    @ParameterizedTest
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 생성_상태_조회는_참여자와_상태와_저장된_종료_시각을_반환한다(AiSimulationSessionStatus status) {
+        AiSimulationSession session = endedSession(status);
+        ReflectionTestUtils.setField(session, "id", SESSION_ID);
+        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
+
+        var state = service.loadGenerationState(SESSION_ID);
+
+        assertThat(state.simulationId()).isEqualTo(SESSION_ID);
+        assertThat(state.userId()).isEqualTo(USER_ID);
+        assertThat(state.targetUserId()).isEqualTo(TARGET_ID);
+        assertThat(state.status()).isEqualTo(status);
+        assertThat(state.finishedAt()).isEqualTo(session.getFinishedAt());
+        verifyNoInteractions(reportRepository, messageRepository);
+    }
+
+    @Test
+    void 생성_상태_조회에서_상대가_없는_진행중_세션은_거부한다() {
+        AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
+        ReflectionTestUtils.setField(session, "targetUserId", null);
+        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> service.loadGenerationState(SESSION_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING));
+    }
+
+    @Test
+    void 생성_상태_조회에서_없는_세션은_조회_오류를_반환한다() {
+        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.loadGenerationState(SESSION_ID))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+    }
+
+    @Test
+    void 생성_결과_저장은_완료_시각을_반환하고_재처리해도_기존_결과를_유지한다() {
+        AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
+        ReflectionTestUtils.setField(session, "id", SESSION_ID);
+        AiSimulationReport report = new AiSimulationReport(session, LocalDateTime.now());
+        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
+        given(reportRepository.findBySessionId(SESSION_ID)).willReturn(Optional.of(report));
+
+        var first = service.completeGeneration(SESSION_ID, aiResponse());
+        var replayed = service.completeGeneration(SESSION_ID, null);
+
+        assertThat(first.status()).isEqualTo(AiSimulationSessionStatus.COMPLETED);
+        assertThat(first.finishedAt()).isNotNull().isEqualTo(report.getCompletedAt());
+        assertThat(replayed).isEqualTo(first);
+        verify(sessionRepository, times(2)).findByIdForUpdate(SESSION_ID);
+        verify(messageRepository, times(1)).saveAll(org.mockito.ArgumentMatchers.any());
+        verify(reportRepository, times(1)).findBySessionId(SESSION_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
+    void 결과_저장_전에_종료된_세션은_저장없이_현재_상태를_반환한다(AiSimulationSessionStatus status) {
+        AiSimulationSession session = endedSession(status);
+        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
+
+        var result = service.completeGeneration(SESSION_ID, null);
+
+        assertThat(result.status()).isEqualTo(status);
+        assertThat(result.finishedAt()).isEqualTo(session.getFinishedAt());
+        verifyNoInteractions(reportRepository, messageRepository);
+    }
+
+    @Test
+    void 생성_결과_저장에서_없는_세션은_조회_오류를_반환한다() {
+        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.completeGeneration(SESSION_ID, aiResponse()))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
+        verifyNoInteractions(reportRepository, messageRepository);
+    }
+
     private AiSimulationSession endedSession(AiSimulationSessionStatus status) {
         AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
         ReflectionTestUtils.setField(session, "status", status);

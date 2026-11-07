@@ -2,6 +2,7 @@ package com.team.dating_backend.aisimulation.service;
 
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationResponse;
 import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.GenerationInput;
+import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.GenerationState;
 import com.team.dating_backend.aisimulation.entity.AiSimulationMessage;
 import com.team.dating_backend.aisimulation.entity.AiSimulationReport;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
@@ -13,6 +14,7 @@ import com.team.dating_backend.aisimulation.repository.AiSimulationReportReposit
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,9 +54,28 @@ public class AiSimulationPersistenceService {
             });
     }
 
+    @Transactional(readOnly = true)
+    public GenerationState loadGenerationState(Long sessionId) {
+        return generationState(sessionRepository.findById(sessionId).orElseThrow(this::notFound));
+    }
+
     @Transactional
     public void complete(Long sessionId, SimulationResponse response) {
         AiSimulationSession session = requireInProgressSession(sessionId);
+        storeResult(sessionId, session, response);
+    }
+
+    @Transactional
+    public GenerationState completeGeneration(Long sessionId, SimulationResponse response) {
+        AiSimulationSession session = sessionRepository.findByIdForUpdate(sessionId)
+            .orElseThrow(this::notFound);
+        if (session.getStatus() == AiSimulationSessionStatus.IN_PROGRESS) {
+            storeResult(sessionId, session, response);
+        }
+        return generationState(session);
+    }
+
+    private void storeResult(Long sessionId, AiSimulationSession session, SimulationResponse response) {
         AiSimulationReport report = reportRepository.findBySessionId(sessionId)
             .orElseThrow(this::notFound);
         LocalDateTime completedAt = now();
@@ -72,6 +93,14 @@ public class AiSimulationPersistenceService {
             toMap(response),
             completedAt);
         session.complete(completedAt);
+    }
+
+    private GenerationState generationState(AiSimulationSession session) {
+        if (session.getStatus() == AiSimulationSessionStatus.IN_PROGRESS && session.getTargetUserId() == null) {
+            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING);
+        }
+        return new GenerationState(session.getId(), session.getUserId(), session.getTargetUserId(),
+            session.getStatus(), session.getFinishedAt());
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -111,7 +140,7 @@ public class AiSimulationPersistenceService {
     }
 
     private LocalDateTime now() {
-        return LocalDateTime.now(ZoneOffset.UTC);
+        return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 
     private AiSimulationBusinessException notFound() {
