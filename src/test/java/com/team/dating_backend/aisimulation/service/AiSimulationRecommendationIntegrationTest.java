@@ -9,6 +9,7 @@ import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationRecommendationConsumer;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
 import com.team.dating_backend.recommendation.enums.SimulationRecommendationResult;
@@ -52,7 +53,8 @@ import org.testcontainers.mysql.MySQLContainer;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
     {AiSimulationRecommendationConsumer.class, AiSimulationRecommendationService.class,
-        SimulationRecommendationService.class, RecommendationBatchCreateService.class}
+        SimulationRecommendationService.class, RecommendationBatchCreateService.class,
+        AiSimulationFailureClassifier.class}
 )
 @Testcontainers
 @Timeout(30)

@@ -8,6 +8,7 @@ import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationRequestNotificationConsumer;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
@@ -54,7 +55,8 @@ import org.testcontainers.mysql.MySQLContainer;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(
     {AiSimulationNotificationService.class, AiSimulationNotificationProcessor.class,
-        AiSimulationRequestNotificationConsumer.class, NotificationRequestService.class,
+        AiSimulationRequestNotificationConsumer.class, AiSimulationFailureClassifier.class,
+        NotificationRequestService.class,
         NotificationRequestOutboxService.class, NotificationRequestOutboxCodec.class,
         NotificationCreateRequestedValidator.class}
 )

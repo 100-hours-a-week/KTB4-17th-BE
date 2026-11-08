@@ -2,6 +2,7 @@ package com.team.dating_backend.aisimulation.kafka;
 
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationCompletedEvent;
 import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationRecipient;
+import com.team.dating_backend.aisimulation.exception.AiSimulationRetryableProcessingException;
 import com.team.dating_backend.aisimulation.service.AiSimulationNotificationProcessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class AiSimulationCompletedNotificationConsumer {
 
     private final AiSimulationNotificationProcessor processor;
+    private final AiSimulationFailureClassifier failureClassifier;
 
     @AiSimulationKafkaListeners.RequesterNotification
     public void consumeForRequester(ConsumerRecord<Long, AiSimulationCompletedEvent> record) {
@@ -39,6 +41,10 @@ public class AiSimulationCompletedNotificationConsumer {
                 "Simulation completion notification failed: simulationId={}, eventId={}, recipient={}, topic={}, partition={}, offset={}",
                 event.simulationId(), event.eventId(), recipient, record.topic(), record.partition(), record.offset(),
                 exception);
+            if (failureClassifier.isRetryable(exception)
+                && !(exception instanceof AiSimulationRetryableProcessingException)) {
+                throw new AiSimulationRetryableProcessingException(exception);
+            }
             throw exception;
         }
     }

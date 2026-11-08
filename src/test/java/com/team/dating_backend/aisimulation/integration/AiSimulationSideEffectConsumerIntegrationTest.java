@@ -10,7 +10,7 @@ import com.team.dating_backend.aisimulation.config.AiSimulationRetryConfiguratio
 import com.team.dating_backend.aisimulation.entity.AiSimulationReport;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationResult;
-import com.team.dating_backend.aisimulation.exception.AiSimulationRetryableProcessingException;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationCompletedNotificationConsumer;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationRecommendationConsumer;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationRequestNotificationConsumer;
@@ -42,7 +42,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -68,6 +67,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.EmbeddedKafkaBroker;
@@ -101,6 +101,7 @@ import tools.jackson.databind.json.JsonMapper;
 )
 @Import(
     {AiSimulationRequestNotificationConsumer.class, AiSimulationRecommendationConsumer.class,
+        AiSimulationFailureClassifier.class,
         AiSimulationCompletedNotificationConsumer.class, AiSimulationNotificationProcessor.class,
         AiSimulationNotificationService.class, AiSimulationRecommendationService.class,
         SimulationRecommendationService.class, RecommendationBatchCreateService.class,
@@ -236,7 +237,7 @@ class AiSimulationSideEffectConsumerIntegrationTest {
             var result = (AiSimulationNotificationResult) invocation.callRealMethod();
             results.add(result);
             if (results.size() == 1) {
-                throw new AiSimulationRetryableProcessingException(new TimeoutException());
+                throw new QueryTimeoutException(null);
             }
             return result;
         }).when(notifications).requested(sessionId);

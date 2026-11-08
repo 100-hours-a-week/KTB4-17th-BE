@@ -22,7 +22,9 @@ import com.team.dating_backend.aisimulation.config.AiSimulationRetryConfiguratio
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationCompletedEvent;
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
-import com.team.dating_backend.aisimulation.exception.AiSimulationRetryableProcessingException;
+import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationGenerationConsumer;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationKafkaListeners;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
@@ -103,7 +105,7 @@ import tools.jackson.databind.json.JsonMapper;
         TaskSchedulingAutoConfiguration.class}
 )
 @Import(
-    {AiSimulationGenerationConsumer.class, AiSimulationGenerationService.class,
+    {AiSimulationGenerationConsumer.class, AiSimulationFailureClassifier.class, AiSimulationGenerationService.class,
         AiSimulationPersistenceService.class, AiSimulationResponseValidator.class,
         AiSimulationEventPublisher.class, AiSimulationEventFactory.class,
         KafkaProducerConfiguration.class, AiSimulationKafkaConfiguration.class,
@@ -225,7 +227,8 @@ class AiSimulationGenerationConsumerIntegrationTest {
         var attempts = new AtomicInteger();
         when(ai.run(any())).thenAnswer(invocation -> {
             if (attempts.incrementAndGet() < 3) {
-                throw new AiSimulationRetryableProcessingException(new TimeoutException());
+                throw new AiSimulationBusinessException(AiSimulationErrorCode.AI_SERVER_UNAVAILABLE,
+                    new java.net.SocketTimeoutException());
             }
             return aiResponse();
         });
@@ -251,7 +254,8 @@ class AiSimulationGenerationConsumerIntegrationTest {
             assertThat(persistence.loadGenerationState(session.getId()).status())
                 .isEqualTo(AiSimulationSessionStatus.COMPLETED);
             if (attempts.incrementAndGet() == 1) {
-                throw new AiSimulationRetryableProcessingException(new TimeoutException());
+                throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_EVENT_PUBLISH_FAILED,
+                    new TimeoutException());
             }
             return invocation.callRealMethod();
         }).when(publisher).publishCompleted(eq(session.getId()), any());
