@@ -27,7 +27,6 @@ import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessExcept
 import com.team.dating_backend.aisimulation.service.AiSimulationAdmissionService;
 import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
-import com.team.dating_backend.aisimulation.service.AiSimulationRecoveryJob;
 import com.team.dating_backend.aisimulation.service.AiSimulationResponseMapper;
 import com.team.dating_backend.aisimulation.service.AiSimulationResponseValidator;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
@@ -102,7 +101,7 @@ import tools.jackson.databind.ObjectMapper;
     {AiSimulationAsyncConfig.class, AiSimulationService.class, AiSimulationAdmissionService.class,
         AiSimulationWorker.class, AiSimulationPersistenceService.class, AiSimulationQueryService.class,
         AiSimulationTargetValidator.class, AiSimulationResponseMapper.class, AiSimulationResponseValidator.class,
-        AiSimulationRecoveryJob.class, AiSimulationNotificationService.class,
+        AiSimulationNotificationService.class,
         SimulationRecommendationService.class, RecommendationBatchCreateService.class, UserProfileGetService.class,
         UserProfileSourceLoader.class, ProfileAvailabilityValidator.class,
         UserPairLockRepository.class, NotificationRequestTestConfiguration.class,
@@ -125,8 +124,6 @@ class AiSimulationFlowIntegrationTest {
     private AiSimulationPersistenceService persistence;
     @Autowired
     private AiSimulationQueryService query;
-    @Autowired
-    private AiSimulationRecoveryJob recovery;
     @Autowired
     private AiSimulationAiClient client;
     @Autowired
@@ -582,24 +579,28 @@ class AiSimulationFlowIntegrationTest {
     }
 
     @Test
-    void 복구는_기한을_넘긴_진행중_세션만_실패시키고_늦은_완료를_막는다() {
-        var expired = admission.admit(7L, 8L);
-        var fresh = admission.admit(7L, 9L);
-        var completed = admission.admit(7L, 10L);
-        persistence.complete(completed.simulationId(), responseFor(new SimulationRequest("7", "10", 10)));
+    void 생성_시각이_오래된_진행중_세션도_재사용하고_정상_완료할_수_있다() {
+        var admitted = admission.admit(7L, 8L);
+        var createdAt = LocalDateTime.now(ZoneOffset.UTC).minusDays(1).withNano(0);
         jdbc.update("UPDATE ai_simulation_sessions SET created_at=? WHERE id=?",
-            LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1000), expired.simulationId());
-        recovery.recoverExpired();
-        assertThat(query.getState(7L, expired.simulationId()).status().name()).isEqualTo("FAILED");
-        assertThat(query.getState(7L, fresh.simulationId()).status().name()).isEqualTo("IN_PROGRESS");
-        assertThat(query.getState(7L, completed.simulationId()).status().name()).isEqualTo("COMPLETED");
-        var finished = query.getState(7L, expired.simulationId()).finishedAt();
-        recovery.recoverExpired();
-        assertThat(query.getState(7L, expired.simulationId()).finishedAt()).isEqualTo(finished);
-        assertThatThrownBy(() -> persistence.complete(expired.simulationId(), aiResponse()))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
+            createdAt, admitted.simulationId());
+
+        var reused = admission.admit(8L, 7L);
+
+        assertThat(reused.simulationId()).isEqualTo(admitted.simulationId());
+        assertThat(reused.created()).isFalse();
+        assertThat(reused.createdAt()).isEqualTo(createdAt);
+        assertThat(reused.status().name()).isEqualTo("IN_PROGRESS");
+        assertThat(query.getState(7L, admitted.simulationId()).finishedAt()).isNull();
+
+        var completed = persistence.completeGeneration(admitted.simulationId(),
+            responseFor(new SimulationRequest("7", "8", 10)));
+
+        assertThat(completed.status().name()).isEqualTo("COMPLETED");
+        assertThat(count("ai_simulation_sessions")).isEqualTo(1);
+        assertThat(count("ai_simulation_messages")).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, admitted.simulationId())).isEqualTo("COMPLETED");
     }
 
     @Test
