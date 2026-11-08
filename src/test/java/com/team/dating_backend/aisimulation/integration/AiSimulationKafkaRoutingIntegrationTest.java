@@ -1,6 +1,7 @@
 package com.team.dating_backend.aisimulation.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.team.dating_backend.aisimulation.config.AiSimulationKafkaConfiguration;
 import com.team.dating_backend.aisimulation.config.AiSimulationKafkaProperties;
@@ -11,6 +12,7 @@ import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent
 import com.team.dating_backend.aisimulation.exception.AiSimulationRetryableProcessingException;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationKafkaListeners;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
+import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
 import java.time.Duration;
@@ -75,6 +77,7 @@ class AiSimulationKafkaRoutingIntegrationTest {
                     AiSimulationKafkaConfiguration.class, AiSimulationRetryConfiguration.class,
                     AiSimulationKafkaTopicConfiguration.class, PropertiesConfiguration.class)
                 .withBean(ProbeListeners.class, () -> listeners)
+                .withBean(AiSimulationPersistenceService.class, () -> mock(AiSimulationPersistenceService.class))
                 .withPropertyValues(
                     "spring.kafka.bootstrap-servers=" + broker.getBrokersAsString(),
                     "spring.kafka.admin.auto-create=false",
