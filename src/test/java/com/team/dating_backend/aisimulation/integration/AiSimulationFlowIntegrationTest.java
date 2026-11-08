@@ -5,77 +5,96 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.reset;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.team.dating_backend.aisimulation.client.AiSimulationAiClient;
-import com.team.dating_backend.aisimulation.config.AiSimulationAsyncConfig;
-import com.team.dating_backend.aisimulation.config.AiSimulationProperties;
+import com.team.dating_backend.aisimulation.config.AiSimulationKafkaProperties;
 import com.team.dating_backend.aisimulation.controller.AiSimulationController;
+import com.team.dating_backend.aisimulation.controller.AiSimulationExceptionHandler;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.PersonaBrief;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationRequest;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationResponse;
+import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent;
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
-import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
-import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.service.AiSimulationAdmissionService;
+import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
+import com.team.dating_backend.aisimulation.service.AiSimulationEventPublisher;
+import com.team.dating_backend.aisimulation.service.AiSimulationNotificationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
 import com.team.dating_backend.aisimulation.service.AiSimulationResponseMapper;
 import com.team.dating_backend.aisimulation.service.AiSimulationResponseValidator;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationTargetValidator;
-import com.team.dating_backend.aisimulation.service.AiSimulationWorker;
-import com.team.dating_backend.aisimulation.service.AiSimulationNotificationService;
-import com.team.dating_backend.recommendation.service.SimulationRecommendationService;
-import com.team.dating_backend.recommendation.service.RecommendationBatchCreateService;
+import com.team.dating_backend.common.exception.GlobalExceptionHandler;
+import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
+import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
+import com.team.dating_backend.notification.enums.NotificationType;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
+import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
+import com.team.dating_backend.profile.cache.ProfileCacheExpirationPolicy;
+import com.team.dating_backend.profile.cache.UserProfileCache;
+import com.team.dating_backend.profile.config.ProfileCacheProperties;
+import com.team.dating_backend.profile.controller.UserProfileController;
+import com.team.dating_backend.profile.service.PopularProfileRankingService;
+import com.team.dating_backend.profile.service.ProfileAvailabilityValidator;
+import com.team.dating_backend.profile.service.ProfileImageGetService;
 import com.team.dating_backend.profile.service.UserProfileGetService;
 import com.team.dating_backend.profile.service.UserProfileSourceLoader;
-import com.team.dating_backend.profile.service.ProfileAvailabilityValidator;
-import com.team.dating_backend.profile.cache.UserProfileCache;
-import com.team.dating_backend.profile.cache.ProfileCacheExpirationPolicy;
-import com.team.dating_backend.profile.config.ProfileCacheProperties;
-import com.team.dating_backend.profile.service.ProfileImageGetService;
-import com.team.dating_backend.profile.service.PopularProfileRankingService;
-import com.team.dating_backend.profile.controller.UserProfileController;
-import com.team.dating_backend.common.exception.GlobalExceptionHandler;
-import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
-import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.repository.NotificationRepository;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration;
-import com.team.dating_backend.notification.support.NotificationRequestTestConfiguration.StoredRequests;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.IntStream;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
+import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.MethodParameter;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
+import org.springframework.kafka.test.EmbeddedKafkaBroker;
+import org.springframework.kafka.test.context.EmbeddedKafka;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Propagation;
@@ -91,23 +110,46 @@ import org.testcontainers.mysql.MySQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 @DataJpaTest(
-    properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate",
-        "app.ai-simulation.async-pool-size=1", "app.ai-simulation.async-queue-capacity=1",
-        "app.ai-simulation.async-shutdown-wait-seconds=1", "app.profile-cache.enabled=false"}
+    showSql = false, properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.kafka.admin.auto-create=false", "app.profile-cache.enabled=false",
+        "app.ai-simulation.kafka.requested-topic=admission-test-requested",
+        "app.ai-simulation.kafka.completed-topic=admission-test-completed",
+        "app.ai-simulation.kafka.replication-factor=1", "app.ai-simulation.kafka.min-in-sync-replicas=1"}
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext
+@Timeout(45)
+@EmbeddedKafka(
+    partitions = 4, topics = "admission-test-requested",
+    brokerProperties = "auto.create.topics.enable=false"
+)
+@ImportAutoConfiguration({KafkaAutoConfiguration.class, JacksonAutoConfiguration.class})
 @Import(
-    {AiSimulationAsyncConfig.class, AiSimulationService.class, AiSimulationAdmissionService.class,
-        AiSimulationWorker.class, AiSimulationPersistenceService.class, AiSimulationQueryService.class,
+    {AiSimulationService.class, AiSimulationAdmissionService.class,
+        AiSimulationPersistenceService.class, AiSimulationQueryService.class,
         AiSimulationTargetValidator.class, AiSimulationResponseMapper.class, AiSimulationResponseValidator.class,
         AiSimulationNotificationService.class,
-        SimulationRecommendationService.class, RecommendationBatchCreateService.class, UserProfileGetService.class,
+        AiSimulationEventPublisher.class, AiSimulationEventFactory.class, KafkaProducerConfiguration.class,
+        UserProfileGetService.class,
         UserProfileSourceLoader.class, ProfileAvailabilityValidator.class,
         UserPairLockRepository.class, NotificationRequestTestConfiguration.class,
         AiSimulationFlowIntegrationTest.Config.class}
 )
 class AiSimulationFlowIntegrationTest {
+    private static final String REQUESTED = "admission-test-requested";
+
+    @MockitoSpyBean(name = "kafkaTemplate")
+    private KafkaTemplate<?, ?> faultTemplate;
+    @Autowired
+    private KafkaTemplate<Object, Object> template;
+    @Autowired
+    private EmbeddedKafkaBroker broker;
+    @Autowired
+    private AiSimulationKafkaProperties kafkaProperties;
+    @Autowired
+    private ObjectMapper mapper;
+
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
@@ -125,10 +167,6 @@ class AiSimulationFlowIntegrationTest {
     @Autowired
     private AiSimulationQueryService query;
     @Autowired
-    private AiSimulationAiClient client;
-    @Autowired
-    private NotificationRepository notificationRepository;
-    @Autowired
     private JdbcTemplate jdbc;
     private MockMvc mvc;
     private Long viewer = 7L;
@@ -139,7 +177,7 @@ class AiSimulationFlowIntegrationTest {
     @BeforeEach
     void setUp() {
         storedRequests.clear();
-        reset(client);
+        kafkaProperties.setPublishResultTimeoutMs(5_000);
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ai_simulation_messages");
         jdbc.update("DELETE FROM ai_simulation_reports");
@@ -161,7 +199,7 @@ class AiSimulationFlowIntegrationTest {
         }
         mvc = MockMvcBuilders
             .standaloneSetup(new AiSimulationController(service, query), new UserProfileController(profileService))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(), new AiSimulationExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalResolver()).build();
     }
 
@@ -179,56 +217,6 @@ class AiSimulationFlowIntegrationTest {
         mvc.perform(get("/api/v1/users/7/profile")).andExpect(status().isOk());
         jdbc.update("insert into user_blocks (blocker_user_id, blocked_user_id, blocked_at) values (7, 8, now(6))");
         mvc.perform(get("/api/v1/users/7/profile")).andExpect(status().isOk());
-    }
-
-    @Test
-    void 신규_요청은_B에게_알리고_B의_목록에_A를_추가하며_재사용시_반복하지_않는다() throws Exception {
-        jdbc.update(
-            "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
-        CountDownLatch release = new CountDownLatch(1);
-        given(client.run(any())).willAnswer(invocation -> {
-            if (!release.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("timeout");
-            }
-            return responseFor(invocation.getArgument(0));
-        });
-        try {
-            Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            assertThat(jdbc.queryForObject("""
-                select count(*) from recommendation_items i join recommendation_batches b
-                on b.id=i.recommendation_batch_id
-                where b.user_id=8 and i.candidate_user_id=7 and i.simulation_requested=true
-                """, Long.class)).isEqualTo(1L);
-            assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
-                assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED);
-                assertThat(request.recipientUserId()).isEqualTo(8L);
-            });
-            service.request(8L, new AiSimulationCreateRequest(7L));
-            assertThat(storedRequests.snapshot()).hasSize(1);
-            release.countDown();
-            waitFor(id, "COMPLETED");
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(storedRequests.snapshot()).hasSize(3));
-        } finally {
-            release.countDown();
-        }
-    }
-
-    @Test
-    void B가_A를_패스했다면_B의_알림과_추천은_없고_A의_완료_알림은_남는다() {
-        jdbc.update(
-            "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
-        jdbc.update(
-            "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
-        given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
-        Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-        waitFor(id, "COMPLETED");
-        await().atMost(Duration.ofSeconds(5))
-            .untilAsserted(() -> assertThat(storedRequests.snapshot()).singleElement().satisfies(request -> {
-                assertThat(request.recipientUserId()).isEqualTo(7L);
-                assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
-            }));
-        assertThat(count("recommendation_items")).isZero();
-        assertThat(count("recommendation_passes")).isEqualTo(1);
     }
 
     @ParameterizedTest
@@ -300,7 +288,7 @@ class AiSimulationFlowIntegrationTest {
         }
 
         assertThat(count("ai_simulation_sessions")).isEqualTo(existingResult ? 1 : 0);
-        verify(client, org.mockito.Mockito.never()).run(any());
+        verify(template, org.mockito.Mockito.never()).send(any(String.class), any(Long.class), any());
         jdbc.update("UPDATE user_blocks SET unblocked_at = NOW(6)");
         assertThat(query.getPair(7L, 8L).simulationId()).isEqualTo(existingId);
         if (existingResult) {
@@ -330,7 +318,7 @@ class AiSimulationFlowIntegrationTest {
         mvc.perform(get("/api/v1/ai-simulations/targets/999"))
             .andExpect(status().isNotFound());
         assertThat(count("ai_simulation_sessions")).isEqualTo(1);
-        verify(client, org.mockito.Mockito.never()).run(any());
+        verify(template, org.mockito.Mockito.never()).send(any(String.class), any(Long.class), any());
     }
 
     @Test
@@ -339,11 +327,11 @@ class AiSimulationFlowIntegrationTest {
         try (var callers = Executors.newFixedThreadPool(2)) {
             var first = callers.submit(() -> {
                 gate.await(10, TimeUnit.SECONDS);
-                return admission.admit(7L, 8L);
+                return service.request(7L, new AiSimulationCreateRequest(8L));
             });
             var second = callers.submit(() -> {
                 gate.await(10, TimeUnit.SECONDS);
-                return admission.admit(8L, 7L);
+                return service.request(8L, new AiSimulationCreateRequest(7L));
             });
             var a = first.get(10, TimeUnit.SECONDS);
             var b = second.get(10, TimeUnit.SECONDS);
@@ -355,226 +343,7 @@ class AiSimulationFlowIntegrationTest {
             assertThat(b.createdAt()).isEqualTo(savedAt);
             assertThat(count("ai_simulation_sessions")).isEqualTo(1);
             assertThat(count("ai_simulation_reports")).isEqualTo(1);
-        }
-    }
-
-    @Test
-    void 접수_API는_AI보다_먼저_반환되고_양쪽이_동일_결과를_조회한다() throws Exception {
-        CountDownLatch started = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        given(client.run(any())).willAnswer(invocation -> {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            started.countDown();
-            if (!release.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("AI release timed out");
-            }
-            return responseFor(invocation.getArgument(0));
-        });
-        Long id;
-        try {
-            mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetUserId\":8}"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
-            assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
-            id = query.getPair(7L, 8L).simulationId();
-            assertThat(query.getState(7L, id).status().name()).isEqualTo("IN_PROGRESS");
-            viewer = 8L;
-            mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetUserId\":7}"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.simulationId").value(id));
-            mvc.perform(get("/api/v1/ai-simulations/{id}/status", id)).andExpect(status().isOk());
-            mvc.perform(get("/api/v1/ai-simulations/{id}", id)).andExpect(status().isConflict());
-            viewer = 9L;
-            mvc.perform(get("/api/v1/ai-simulations/{id}/status", id)).andExpect(status().isNotFound());
-            mvc.perform(get("/api/v1/ai-simulations/{id}", id)).andExpect(status().isNotFound());
-            assertThat(count("ai_simulation_sessions")).isEqualTo(1);
-        } finally {
-            release.countDown();
-        }
-        waitFor(id, "COMPLETED");
-        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(storedRequests.snapshot()).hasSize(3));
-        var requests = storedRequests.snapshot();
-        assertThat(requests).anySatisfy(request -> {
-            assertThat(request.recipientUserId()).isEqualTo(8L);
-            assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED);
-            assertThat(request.targetId()).isNull();
-        });
-        assertThat(
-            requests.stream().filter(request -> request.type() == NotificationType.AI_SIMULATION_REPORT_COMPLETED)
-                .map(NotificationCreateRequested::recipientUserId))
-            .containsExactlyInAnyOrder(7L, 8L);
-        var outboxesBefore = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
-        storedRequests.createNotificationsFromStoredRequests();
-        assertThat(notificationRepository.count()).isEqualTo(3L);
-        assertThat(notificationRepository.countVisibleUnreadByUserId(7L)).isEqualTo(1L);
-        assertThat(notificationRepository.countVisibleUnreadByUserId(8L)).isEqualTo(2L);
-        viewer = 8L;
-        mvc.perform(get("/api/v1/ai-simulations/{id}", id)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.transcript.length()").value(20))
-            .andExpect(jsonPath("$.data.me.userId").value(7));
-        mvc.perform(get("/api/v1/ai-simulations/{id}/report", id)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.overall.score").value(78));
-        mvc.perform(get("/api/v1/ai-simulations")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.length()").value(1));
-        mvc.perform(
-            post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON).content("{\"targetUserId\":7}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.simulationId").value(id));
-        assertThat(query.get(7L, id)).isEqualTo(query.get(8L, id));
-        assertThatThrownBy(() -> persistence.complete(id, aiResponse()))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
-        assertThat(notificationRepository.count()).isEqualTo(3L);
-        assertThat(storedRequests.snapshot()).containsExactlyElementsOf(requests);
-        assertThat(jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id"))
-            .isEqualTo(outboxesBefore);
-        assertThat(count("ai_simulation_messages")).isEqualTo(20);
-        verify(client, times(1)).run(any());
-        jdbc.update("UPDATE ai_simulation_reports SET deleted_at=NOW(6) WHERE session_id=?", id);
-        assertThat(query.list(7L)).isEmpty();
-        assertThat(query.list(8L)).isEmpty();
-    }
-
-    @Test
-    void 대기열_초과는_503과_실패_상태로_남고_기존_작업은_완료된다() throws Exception {
-        CountDownLatch started = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        given(client.run(any())).willAnswer(invocation -> {
-            started.countDown();
-            if (!release.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("AI release timed out");
-            }
-            return responseFor(invocation.getArgument(0));
-        });
-        Long first;
-        Long second;
-        try {
-            first = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
-            second = service.request(7L, new AiSimulationCreateRequest(9L)).simulationId();
-            mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"targetUserId\":10}"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.errorCode").value("SIMULATION_CAPACITY_EXCEEDED"));
-            Long rejected = query.getPair(7L, 10L).simulationId();
-            assertThat(query.getState(7L, rejected).status().name()).isEqualTo("FAILED");
-        } finally {
-            release.countDown();
-        }
-        waitFor(first, "COMPLETED");
-        waitFor(second, "COMPLETED");
-        assertThat(count("ai_simulation_sessions")).isEqualTo(3);
-        assertThat(count("ai_simulation_messages")).isEqualTo(40);
-        verify(client, times(2)).run(any());
-    }
-
-    @Test
-    void AI_실패는_조회에_반영되고_다시_요청해도_재실행하지_않는다() {
-        given(client.run(any())).willThrow(new IllegalStateException("AI unavailable"));
-        var handle = service.request(7L, new AiSimulationCreateRequest(8L));
-        waitFor(handle.simulationId(), "FAILED");
-        assertThat(service.request(8L, new AiSimulationCreateRequest(7L)).simulationId())
-            .isEqualTo(handle.simulationId());
-        verify(client, times(1)).run(any());
-        assertThat(count("ai_simulation_messages")).isZero();
-        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
-            handle.simulationId())).isEqualTo("FAILED");
-        assertThat(notificationRepository.count()).isZero();
-        assertThat(storedRequests.snapshot()).singleElement()
-            .satisfies(request -> assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED));
-    }
-
-    @Test
-    void 잘못된_AI_응답은_메시지나_완료_결과를_저장하지_않는다() {
-        var r = aiResponse();
-        given(client.run(any())).willReturn(new SimulationResponse(r.simulationId(), r.me(), r.partner(), r.turns(),
-            List.of(), r.report(), r.createdAt()));
-        Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-        waitFor(id, "FAILED");
-        assertThat(count("ai_simulation_messages")).isZero();
-        assertThat(notificationRepository.count()).isZero();
-        assertThat(storedRequests.snapshot()).singleElement()
-            .satisfies(request -> assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED));
-    }
-
-    @Test
-    void 결과_저장_DB_오류는_롤백되고_실패만_별도_커밋된다() {
-        jdbc.execute(
-            "ALTER TABLE ai_simulation_messages ADD CONSTRAINT test_reject_message CHECK (JSON_EXTRACT(content, '$.index') < 5)");
-        try {
-            given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
-            Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            waitFor(id, "FAILED");
-            assertThat(count("ai_simulation_messages")).isZero();
-            assertThat(jdbc.queryForObject("SELECT detail_result IS NULL FROM ai_simulation_reports WHERE session_id=?",
-                Boolean.class, id)).isTrue();
-            assertThat(
-                jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class, id))
-                .isEqualTo("FAILED");
-        } finally {
-            jdbc.execute("ALTER TABLE ai_simulation_messages DROP CHECK test_reject_message");
-        }
-    }
-
-    @Test
-    void 완료_알림_Outbox_오류에도_AI_결과는_완료된다() {
-        jdbc.execute("""
-            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_simulation_outbox
-            CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED')
-            """);
-        try {
-            given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
-            Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            waitFor(id, "COMPLETED");
-            await().atMost(Duration.ofSeconds(5))
-                .untilAsserted(() -> assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED"));
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_messages WHERE session_id = ?",
-                Long.class, id)).isEqualTo(20L);
-        } finally {
-            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_simulation_outbox");
-        }
-    }
-
-    @Test
-    void A의_완료_알림_기록에_실패해도_B의_알림과_결과_완료는_유지된다() {
-        jdbc.execute("""
-            ALTER TABLE notification_request_outbox ADD CONSTRAINT test_reject_requester_completion
-            CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED' OR recipient_user_id <> 7)
-            """);
-        try {
-            given(client.run(any())).willAnswer(invocation -> responseFor(invocation.getArgument(0)));
-            Long id = service.request(7L, new AiSimulationCreateRequest(8L)).simulationId();
-            await().atMost(Duration.ofSeconds(10))
-                .untilAsserted(() -> assertThat(storedRequests.snapshot()).anySatisfy(request -> {
-                    assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
-                    assertThat(request.recipientUserId()).isEqualTo(8L);
-                }));
-            assertThat(storedRequests.snapshot()).noneSatisfy(request -> {
-                assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
-                assertThat(request.recipientUserId()).isEqualTo(7L);
-            });
-            assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");
-        } finally {
-            jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_reject_requester_completion");
-        }
-    }
-
-    @Test
-    void 알림_생성_DB_오류에도_완료된_결과를_유지한다() {
-        Long id = persistence.begin(7L, 8L).getId();
-        persistence.complete(id, aiResponse());
-        simulationNotifications.completed(id, 7L, 8L, 7L);
-        jdbc.execute("""
-            ALTER TABLE notifications ADD CONSTRAINT test_reject_simulation_notification
-            CHECK (type <> 'AI_SIMULATION_REPORT_COMPLETED')
-            """);
-        try {
-            assertThatThrownBy(storedRequests::createNotificationsFromStoredRequests)
-                .isInstanceOf(DataIntegrityViolationException.class);
-            assertThat(query.getState(7L, id).status().name()).isEqualTo("COMPLETED");
-            assertThat(count("ai_simulation_messages")).isEqualTo(20);
-        } finally {
-            jdbc.execute("ALTER TABLE notifications DROP CHECK test_reject_simulation_notification");
+            verify(template, times(1)).send(eq(REQUESTED), eq(a.simulationId()), any());
         }
     }
 
@@ -594,7 +363,7 @@ class AiSimulationFlowIntegrationTest {
         assertThat(query.getState(7L, admitted.simulationId()).finishedAt()).isNull();
 
         var completed = persistence.completeGeneration(admitted.simulationId(),
-            responseFor(new SimulationRequest("7", "8", 10)));
+            aiResponse());
 
         assertThat(completed.status().name()).isEqualTo("COMPLETED");
         assertThat(count("ai_simulation_sessions")).isEqualTo(1);
@@ -620,9 +389,184 @@ class AiSimulationFlowIntegrationTest {
         assertThat(query.get(7L, second.getId()).me().userId()).isEqualTo(8L);
     }
 
-    private void waitFor(Long id, String expected) {
-        await().atMost(Duration.ofSeconds(10))
-            .untilAsserted(() -> assertThat(query.getState(7L, id).status().name()).isEqualTo(expected));
+    @Test
+    void 신규_접수는_저장된_정보로_Kafka에_발행하고_업무_효과를_직접_실행하지_않는다() throws Exception {
+        var result = mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetUserId\":8}"))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.message").value("ai_simulation_accepted"))
+            .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.created").doesNotExist())
+            .andExpect(jsonPath("$.data.createdAt").doesNotExist())
+            .andReturn();
+        long id = mapper.readTree(result.getResponse().getContentAsString()).get("data").get("simulationId").asLong();
+
+        var record = requestedRecord(id);
+        var event = mapper.readValue(record.value(), AiSimulationRequestedEvent.class);
+        var savedAt = jdbc.queryForObject("SELECT created_at FROM ai_simulation_sessions WHERE id=?",
+            LocalDateTime.class, id);
+
+        assertThat(record.key()).isEqualTo(id);
+        assertThat(event.simulationId()).isEqualTo(id);
+        assertThat(event.eventId()).isEqualTo("ai-simulation:" + id + ":requested");
+        assertThat(event.occurredAt()).isEqualTo(savedAt.toInstant(ZoneOffset.UTC));
+        assertThat(query.getState(7L, id).status()).isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+        assertThat(count("ai_simulation_reports")).isEqualTo(1);
+        assertThat(count("ai_simulation_messages")).isZero();
+        assertThat(count("notification_request_outbox")).isZero();
+        assertThat(count("recommendation_items")).isZero();
+    }
+
+    @ParameterizedTest
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 기존_세션은_상태와_무관하게_200으로_반환하고_재발행하지_않는다(AiSimulationSessionStatus sessionStatus)
+        throws Exception {
+        long id = persistence.begin(7L, 8L).getId();
+        switch (sessionStatus) {
+            case COMPLETED -> persistence.completeGeneration(id, aiResponse());
+            case FAILED -> persistence.fail(id);
+            case CANCELED -> jdbc.update(
+                "UPDATE ai_simulation_sessions SET status='CANCELED', finished_at=UTC_TIMESTAMP(6) WHERE id=?", id);
+            case IN_PROGRESS -> {}
+        }
+        viewer = 8L;
+
+        mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetUserId\":7}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("ai_simulation_existing"))
+            .andExpect(jsonPath("$.data.simulationId").value(id))
+            .andExpect(jsonPath("$.data.status").value(sessionStatus.name()));
+
+        verify(template, org.mockito.Mockito.never()).send(any(String.class), any(Long.class), any());
+        assertThat(count("ai_simulation_sessions")).isEqualTo(1);
+        assertThat(count("notification_request_outbox")).isZero();
+        assertThat(count("recommendation_items")).isZero();
+    }
+
+    @Test
+    void DB_커밋_이후_발행하며_Kafka_성공_확인_전에는_202를_반환하지_않는다() throws Exception {
+        var sent = new CountDownLatch(1);
+        var releaseAck = new CompletableFuture<Void>();
+        doAnswer(invocation -> {
+            var event = invocation.getArgument(2, AiSimulationRequestedEvent.class);
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_sessions WHERE id=?",
+                String.class, event.simulationId())).isEqualTo("IN_PROGRESS");
+            assertThat(count("ai_simulation_reports")).isEqualTo(1);
+            var actual = (CompletableFuture<?>) invocation.callRealMethod();
+            sent.countDown();
+            return actual.thenCompose(metadata -> releaseAck.thenApply(ignored -> metadata));
+        }).when(template).send(eq(REQUESTED), any(Long.class), any());
+
+        try (var callers = Executors.newSingleThreadExecutor()) {
+            var response = callers.submit(() -> mvc.perform(post("/api/v1/ai-simulations")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"targetUserId\":8}"))
+                .andExpect(status().isAccepted()));
+            try {
+                assertThat(sent.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThatThrownBy(() -> response.get(100, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+                releaseAck.complete(null);
+                response.get(5, TimeUnit.SECONDS);
+            } finally {
+                releaseAck.complete(null);
+            }
+        }
+    }
+
+    @Test
+    void Kafka에_기록돼도_확인_시간이_초과되면_503과_세션_ID를_반환하고_접수를_보존한다() throws Exception {
+        kafkaProperties.setPublishResultTimeoutMs(20);
+        var unconfirmed = new CompletableFuture<SendResult<Object, Object>>();
+        doAnswer(invocation -> {
+            var actual = (CompletableFuture<?>) invocation.callRealMethod();
+            actual.get(5, TimeUnit.SECONDS);
+            return unconfirmed;
+        }).when(template).send(eq(REQUESTED), any(Long.class), any());
+
+        var result = mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetUserId\":8}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.errorCode").value("SIMULATION_REQUEST_PUBLISH_UNCONFIRMED"))
+            .andExpect(jsonPath("$.status").doesNotExist())
+            .andReturn();
+        long id = mapper.readTree(result.getResponse().getContentAsString()).get("simulationId").asLong();
+
+        assertThat(requestedRecord(id).key()).isEqualTo(id);
+        assertThat(unconfirmed.isCancelled()).isFalse();
+        assertThat(query.getState(7L, id).status()).isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+        assertThat(query.getState(7L, id).finishedAt()).isNull();
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, id)).isEqualTo("GENERATING");
+
+        mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetUserId\":8}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.simulationId").value(id));
+        verify(template, times(1)).send(eq(REQUESTED), eq(id), any());
+        assertThat(count("ai_simulation_sessions")).isEqualTo(1);
+        assertThat(count("notification_request_outbox")).isZero();
+        assertThat(count("recommendation_items")).isZero();
+    }
+
+    @Test
+    void send_호출_실패도_세션을_실패시키지_않고_발행_미확인_오류로_반환한다() throws Exception {
+        doThrow(new org.apache.kafka.common.KafkaException("test send failure"))
+            .when(template).send(eq(REQUESTED), any(Long.class), any());
+
+        mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetUserId\":8}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.errorCode").value("SIMULATION_REQUEST_PUBLISH_UNCONFIRMED"))
+            .andExpect(jsonPath("$.simulationId").isNumber());
+
+        assertThat(jdbc.queryForList("SELECT status FROM ai_simulation_sessions", String.class))
+            .containsExactly("IN_PROGRESS");
+        assertThat(jdbc.queryForList("SELECT status FROM ai_simulation_reports", String.class))
+            .containsExactly("GENERATING");
+    }
+
+    @Test
+    void 접수_DB_저장_실패는_롤백하고_Kafka에_발행하지_않는다() throws Exception {
+        jdbc.execute(
+            "ALTER TABLE ai_simulation_reports ADD CONSTRAINT reject_test_admission CHECK (status <> 'GENERATING')");
+        try {
+            mvc.perform(post("/api/v1/ai-simulations").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"targetUserId\":8}"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().string("{\"errorCode\":\"INTERNAL_SERVER_ERROR\"}"));
+
+            assertThat(count("ai_simulation_sessions")).isZero();
+            assertThat(count("ai_simulation_reports")).isZero();
+            verify(template, org.mockito.Mockito.never()).send(any(String.class), any(Long.class), any());
+        } finally {
+            jdbc.execute("ALTER TABLE ai_simulation_reports DROP CHECK reject_test_admission");
+        }
+    }
+
+    private ConsumerRecord<Long, byte[]> requestedRecord(long id) {
+        try (var consumer = new KafkaConsumer<Long, byte[]>(Map.of(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker.getBrokersAsString(),
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, LongDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class,
+            ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false))) {
+            var partitions = IntStream.range(0, 4).mapToObj(partition -> new TopicPartition(REQUESTED, partition))
+                .toList();
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
+            var records = new java.util.ArrayList<ConsumerRecord<Long, byte[]>>();
+            await().atMost(Duration.ofSeconds(10)).until(() -> {
+                consumer.poll(Duration.ofMillis(100)).forEach(record -> {
+                    if (record.key() != null && record.key() == id) {
+                        records.add(record);
+                    }
+                });
+                return !records.isEmpty();
+            });
+            assertThat(records).hasSize(1);
+            return records.getFirst();
+        }
     }
 
     private int count(String table) {
@@ -653,7 +597,7 @@ class AiSimulationFlowIntegrationTest {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({AiSimulationProperties.class, ProfileCacheProperties.class})
+    @EnableConfigurationProperties({AiSimulationKafkaProperties.class, ProfileCacheProperties.class})
     static class Config {
         @Bean
         UserProfileCache userProfileCache() {
@@ -670,14 +614,6 @@ class AiSimulationFlowIntegrationTest {
         @Bean
         PopularProfileRankingService popularProfileRankingService() {
             return org.mockito.Mockito.mock(PopularProfileRankingService.class);
-        }
-        @Bean
-        AiSimulationAiClient aiClient() {
-            return org.mockito.Mockito.mock(AiSimulationAiClient.class);
-        }
-        @Bean
-        ObjectMapper objectMapper() {
-            return new ObjectMapper();
         }
     }
 }
