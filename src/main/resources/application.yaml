@@ -204,6 +204,17 @@ app:
     read-timeout-ms: ${AI_KAKAO_READ_TIMEOUT_MS:30000}
 
   ai-simulation:
+    alert:
+      enabled: ${AI_SIMULATION_DISCORD_ENABLED:false}
+      environment: ${AI_SIMULATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
+      webhook-url: ${AI_SIMULATION_DISCORD_WEBHOOK_URL:${NOTIFICATION_DISCORD_WEBHOOK_URL:}}
+      pool-size: ${AI_SIMULATION_ALERT_POOL_SIZE:1}
+      queue-capacity: ${AI_SIMULATION_ALERT_QUEUE_CAPACITY:20}
+      shutdown-wait-seconds: ${AI_SIMULATION_ALERT_SHUTDOWN_WAIT_SECONDS:10}
+      connect-timeout-ms: ${AI_SIMULATION_ALERT_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${AI_SIMULATION_ALERT_READ_TIMEOUT_MS:3000}
+      max-messages-per-window: ${AI_SIMULATION_ALERT_MAX_MESSAGES_PER_WINDOW:5}
+      rate-limit-window-ms: ${AI_SIMULATION_ALERT_RATE_LIMIT_WINDOW_MS:60000}
     base-url: ${AI_SIMULATION_BASE_URL:}
     simulation-path: ${AI_SIMULATION_PATH:/ai/api/v2/simulation}
     connect-timeout-ms: ${AI_SIMULATION_CONNECT_TIMEOUT_MS:3000}
