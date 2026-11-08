@@ -352,6 +352,10 @@ class AiSimulationFlowIntegrationTest {
             var b = second.get(10, TimeUnit.SECONDS);
             assertThat(a.simulationId()).isEqualTo(b.simulationId());
             assertThat(List.of(a.created(), b.created())).containsExactlyInAnyOrder(true, false);
+            var savedAt = jdbc.queryForObject("SELECT created_at FROM ai_simulation_sessions WHERE id=?",
+                LocalDateTime.class, a.simulationId());
+            assertThat(a.createdAt()).isEqualTo(savedAt);
+            assertThat(b.createdAt()).isEqualTo(savedAt);
             assertThat(count("ai_simulation_sessions")).isEqualTo(1);
             assertThat(count("ai_simulation_reports")).isEqualTo(1);
         }

@@ -10,7 +10,8 @@ public final class AiSimulationExecutionDtos {
     public record AdmissionDecision(
         Long simulationId,
         AiSimulationSessionStatus status,
-        boolean created) {}
+        boolean created,
+        LocalDateTime createdAt) {}
 
     public record GenerationInput(Long simulationId, Long userId, Long targetUserId) {}
 

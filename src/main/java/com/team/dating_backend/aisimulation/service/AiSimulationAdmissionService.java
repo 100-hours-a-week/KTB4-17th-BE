@@ -43,6 +43,6 @@ public class AiSimulationAdmissionService {
     }
 
     private AdmissionDecision decision(AiSimulationSession session, boolean created) {
-        return new AdmissionDecision(session.getId(), session.getStatus(), created);
+        return new AdmissionDecision(session.getId(), session.getStatus(), created, session.getCreatedAt());
     }
 }

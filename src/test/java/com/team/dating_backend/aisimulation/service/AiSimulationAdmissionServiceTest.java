@@ -73,7 +73,7 @@ class AiSimulationAdmissionServiceTest {
         AdmissionDecision result = service.admit(userId, targetUserId);
 
         assertThat(result).isEqualTo(new AdmissionDecision(
-            SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS, true));
+            SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS, true, CREATED_AT));
         assertThat(session.getUserId()).isEqualTo(userId);
         assertThat(session.getTargetUserId()).isEqualTo(targetUserId);
         var order = inOrder(userPairLockRepository, sessionRepository, persistenceService);
@@ -96,7 +96,7 @@ class AiSimulationAdmissionServiceTest {
         AdmissionDecision original = service.admit(USER_ID, TARGET_ID);
         AdmissionDecision reversed = service.admit(TARGET_ID, USER_ID);
 
-        assertThat(original).isEqualTo(new AdmissionDecision(SESSION_ID, status, false));
+        assertThat(original).isEqualTo(new AdmissionDecision(SESSION_ID, status, false, CREATED_AT));
         assertThat(reversed).isEqualTo(original);
         assertThat(session.getUserId()).isEqualTo(USER_ID);
         assertThat(session.getTargetUserId()).isEqualTo(TARGET_ID);
