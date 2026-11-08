@@ -11,7 +11,6 @@ import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateReques
 import com.team.dating_backend.aisimulation.service.AiSimulationAdmissionService;
 import com.team.dating_backend.aisimulation.service.AiSimulationNotificationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
-import com.team.dating_backend.aisimulation.service.AiSimulationRecoveryJob;
 import com.team.dating_backend.aisimulation.service.AiSimulationResponseValidator;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationTargetValidator;
@@ -64,10 +63,6 @@ public final class AiSimulationFaultProbe {
                 switch (command[0]) {
                     case "request" -> result = context.getBean(AiSimulationService.class).request(
                         Long.valueOf(command[1]), new AiSimulationCreateRequest(Long.valueOf(command[2])));
-                    case "recover" -> {
-                        context.getBean(AiSimulationRecoveryJob.class).recoverExpired();
-                        result = Map.of("recovered", true);
-                    }
                     case "stats" -> {
                         var executor = context.getBean("aiSimulationExecutor", ThreadPoolTaskExecutor.class);
                         result = Map.of("aiCalls", context.getBean(ControlledAi.class).calls.size(),
@@ -135,7 +130,7 @@ public final class AiSimulationFaultProbe {
     @Import(
         {AiSimulationAsyncConfig.class, AiSimulationService.class, AiSimulationAdmissionService.class,
             AiSimulationWorker.class, AiSimulationPersistenceService.class, AiSimulationResponseValidator.class,
-            AiSimulationRecoveryJob.class, AiSimulationNotificationService.class, AiSimulationTargetValidator.class,
+            AiSimulationNotificationService.class, AiSimulationTargetValidator.class,
             SimulationRecommendationService.class, RecommendationBatchCreateService.class, UserPairLockRepository.class,
             NotificationRequestService.class, NotificationRequestOutboxService.class,
             NotificationRequestOutboxCodec.class, NotificationCreateRequestedValidator.class}

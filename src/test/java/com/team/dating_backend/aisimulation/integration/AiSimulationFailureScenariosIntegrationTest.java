@@ -115,11 +115,12 @@ class AiSimulationFailureScenariosIntegrationTest {
 
     @Test
     void acceptedQueuedWorkIsNotResubmittedAfterActualProcessKillAndRestart() throws Exception {
+        long runningId;
         long queuedId;
         Map<String, Object> beforeKill;
         try (var first = new ProbeProcess("before-kill")) {
             first.start(true);
-            long runningId = first.command("request 7 8").get("simulationId").asLong();
+            runningId = first.command("request 7 8").get("simulationId").asLong();
             await().atMost(Duration.ofSeconds(5))
                 .untilAsserted(() -> assertThat(first.command("stats").get("aiCalls").asInt()).isEqualTo(1));
             queuedId = first.command("request 7 9").get("simulationId").asLong();
@@ -133,19 +134,17 @@ class AiSimulationFailureScenariosIntegrationTest {
                 "recommendations", recommendationCount());
             first.kill();
         }
+        jdbc.update("UPDATE ai_simulation_sessions SET created_at=UTC_TIMESTAMP(6)-INTERVAL 1 DAY");
         try (var restarted = new ProbeProcess("after-restart")) {
             restarted.start(false);
             assertThat(restarted.command("stats").get("aiCalls").asInt()).isZero();
+            assertThat(state(runningId)).isEqualTo("IN_PROGRESS");
             assertThat(state(queuedId)).isEqualTo("IN_PROGRESS");
             assertThat(restarted.command("request 7 9").get("simulationId").asLong()).isEqualTo(queuedId);
             assertThat(restarted.command("stats").get("aiCalls").asInt()).isZero();
-            jdbc.update("UPDATE ai_simulation_sessions SET created_at=UTC_TIMESTAMP(6)-INTERVAL 1000 SECOND");
-            restarted.command("recover");
-            assertThat(state(queuedId)).isEqualTo("FAILED");
-            assertThat(restarted.command("stats").get("aiCalls").asInt()).isZero();
             evidence("process-restart", Map.of("beforeKill", beforeKill,
-                "afterRestart", "same ID remains IN_PROGRESS, no AI call",
-                "afterExpiryScan", "FAILED, no AI call", "forcedExit", true));
+                "afterRestart", "day-old sessions remain IN_PROGRESS, same ID reused, no AI call",
+                "forcedExit", true));
         }
     }
 

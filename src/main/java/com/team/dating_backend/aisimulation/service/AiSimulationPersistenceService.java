@@ -114,17 +114,6 @@ public class AiSimulationPersistenceService {
         });
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void failIfExpired(Long sessionId, LocalDateTime deadline) {
-        sessionRepository.findByIdForUpdate(sessionId).ifPresent(session -> {
-            if (session.getStatus() == AiSimulationSessionStatus.IN_PROGRESS
-                && session.getCreatedAt().isBefore(deadline)) {
-                session.fail(now());
-                reportRepository.findBySessionId(sessionId).ifPresent(AiSimulationReport::fail);
-            }
-        });
-    }
-
     private AiSimulationSession requireInProgressSession(Long sessionId) {
         AiSimulationSession session = sessionRepository.findByIdForUpdate(sessionId)
             .orElseThrow(this::notFound);
