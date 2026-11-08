@@ -90,7 +90,7 @@ class AiPracticeOutboxPublishJobTest {
         given(resultService.attachAiSessionId(
             OUTBOX_ID, PROCESSING_TOKEN, "ai-session-42")).willReturn(true);
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-        given(chatRepository.findByIdAndSession_Id(CHAT_ID, SESSION_ID))
+        given(chatRepository.findByIdAndSessionId(CHAT_ID, SESSION_ID))
             .willReturn(Optional.of(chat));
     }
 

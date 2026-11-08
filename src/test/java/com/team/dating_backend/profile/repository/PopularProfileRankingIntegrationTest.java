@@ -105,8 +105,9 @@ class PopularProfileRankingIntegrationTest {
 
     private User user(boolean active, boolean verified) {
         User user = User.create("회원", LocalDate.of(2000, 1, 1), Gender.MALE, NOW);
-        if (active)
+        if (active) {
             user.activate(NOW);
+        }
         user.updateFaceVerificationStatus(verified, NOW);
         users.saveAndFlush(user);
         profiles.saveAndFlush(new Profile(user));
