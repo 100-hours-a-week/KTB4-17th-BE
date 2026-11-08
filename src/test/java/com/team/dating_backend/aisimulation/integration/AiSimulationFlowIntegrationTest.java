@@ -190,8 +190,9 @@ class AiSimulationFlowIntegrationTest {
             "insert into profiles (user_id, nickname, created_at, updated_at) values (7, '요청자', now(6), now(6))");
         CountDownLatch release = new CountDownLatch(1);
         given(client.run(any())).willAnswer(invocation -> {
-            if (!release.await(10, TimeUnit.SECONDS))
+            if (!release.await(10, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("timeout");
+            }
             return responseFor(invocation.getArgument(0));
         });
         try {

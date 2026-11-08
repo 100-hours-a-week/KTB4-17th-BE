@@ -24,7 +24,7 @@ public class AiPracticeWithdrawalTerminationService {
     public void terminateForUser(Long userId, LocalDateTime endedAt) {
         for (AiPracticeSession session : sessionRepository.findAllForUserByStatusForUpdate(
             userId, AiPracticeSessionStatus.ACTIVE)) {
-            chatRepository.findAllBySession_IdAndStatus(
+            chatRepository.findAllBySessionIdAndStatus(
                 session.getId(), AiPracticeChatStatus.GENERATING)
                 .forEach(chat -> chat.fail(AiPracticeFailureCode.USER_WITHDRAWN.name()));
             session.end(endedAt);

@@ -20,7 +20,7 @@ public class AiPracticeEndCommandQueue {
     public void enqueueIfReady(AiPracticeSession session) {
         if (session.getStatus() != AiPracticeSessionStatus.ENDED
             || session.getAiSessionId() == null
-            || chatRepository.existsBySession_IdAndStatus(
+            || chatRepository.existsBySessionIdAndStatus(
                 session.getId(), AiPracticeChatStatus.GENERATING)
             || !session.markEndCommandEnqueued()) {
             return;

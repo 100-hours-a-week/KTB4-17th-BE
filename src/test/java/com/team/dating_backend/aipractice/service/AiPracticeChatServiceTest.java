@@ -73,9 +73,9 @@ class AiPracticeChatServiceTest {
         given(sessionRepository.findAccessibleByIdAndUserIdForUpdate(
             SESSION_ID, USER_ID, UserStatus.WITHDRAWN))
             .willReturn(Optional.of(session));
-        given(chatRepository.findBySession_IdAndClientMessageId(
+        given(chatRepository.findBySessionIdAndClientMessageId(
             SESSION_ID, request.clientMessageId())).willReturn(Optional.empty());
-        given(chatRepository.existsBySession_IdAndStatus(
+        given(chatRepository.existsBySessionIdAndStatus(
             SESSION_ID, AiPracticeChatStatus.GENERATING)).willReturn(false);
         given(chatRepository.countReservedAndCompletedUsage(
             eq(USER_ID), any(LocalDate.class), anySet())).willReturn(0L);
@@ -116,7 +116,7 @@ class AiPracticeChatServiceTest {
             session, request.clientMessageId(), request.userMessage(),
             AiPracticeTime.today(), CREATED_AT);
         ReflectionTestUtils.setField(existing, "id", CHAT_ID);
-        given(chatRepository.findBySession_IdAndClientMessageId(
+        given(chatRepository.findBySessionIdAndClientMessageId(
             SESSION_ID, request.clientMessageId())).willReturn(Optional.of(existing));
 
         AiPracticeChatAcceptedResponse response = service.sendMessage(USER_ID, SESSION_ID, request);
@@ -132,7 +132,7 @@ class AiPracticeChatServiceTest {
             session, request.clientMessageId(), "다른 메시지",
             AiPracticeTime.today(), CREATED_AT);
         ReflectionTestUtils.setField(existing, "id", CHAT_ID);
-        given(chatRepository.findBySession_IdAndClientMessageId(
+        given(chatRepository.findBySessionIdAndClientMessageId(
             SESSION_ID, request.clientMessageId())).willReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> service.sendMessage(USER_ID, SESSION_ID, request))
@@ -184,7 +184,7 @@ class AiPracticeChatServiceTest {
             AiPracticeTime.today(), CREATED_AT);
         failedChat.fail("AI_GENERATION_FAILED");
         ReflectionTestUtils.setField(failedChat, "id", CHAT_ID);
-        given(chatRepository.findByIdAndSession_Id(CHAT_ID, SESSION_ID))
+        given(chatRepository.findByIdAndSessionId(CHAT_ID, SESSION_ID))
             .willReturn(Optional.of(failedChat));
 
         AiPracticeChatAcceptedResponse response = service.retry(USER_ID, SESSION_ID, CHAT_ID);
