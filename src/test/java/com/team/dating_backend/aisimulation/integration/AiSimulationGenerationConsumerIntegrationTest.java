@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -285,6 +286,60 @@ class AiSimulationGenerationConsumerIntegrationTest {
         verify(publisher, never()).publishCompleted(any(), any());
         assertThat(messageCount(session.getId())).isZero();
         assertThat(persistence.loadGenerationState(session.getId()).status()).isEqualTo(status);
+    }
+
+    @Test
+    void 생성_재시도_소진은_DLT_확인_후_세션과_리포트를_실패_처리한다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        var requested = events.requested(session.getId(), session.getCreatedAt());
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_SERVER_UNAVAILABLE));
+
+        assertCommitted(GROUP, send(requested));
+        var dlt = records(REQUESTED + "-generation-dlt", session.getId(), 1).getFirst();
+        assertRetryCommitted(records(RETRY, session.getId(), 3).getLast());
+
+        assertThat(mapper.readValue(dlt.value(), AiSimulationRequestedEvent.class)).isEqualTo(requested);
+        assertThat(dlt.partition()).isEqualTo(3);
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.FAILED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, session.getId())).isEqualTo("FAILED");
+        verify(ai, times(4)).run(any());
+        assertThat(messageCount(session.getId())).isZero();
+    }
+
+    @Test
+    void 완료_전달_재시도가_소진돼도_완료_결과를_유지하고_AI를_재호출하지_않는다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        doThrow(new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_EVENT_PUBLISH_FAILED,
+            new TimeoutException())).when(publisher).publishCompleted(eq(session.getId()), any());
+
+        assertCommitted(GROUP, send(events.requested(session.getId(), session.getCreatedAt())));
+        records(REQUESTED + "-generation-dlt", session.getId(), 1);
+        assertRetryCommitted(records(RETRY, session.getId(), 3).getLast());
+
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.COMPLETED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, session.getId())).isEqualTo("COMPLETED");
+        assertThat(messageCount(session.getId())).isEqualTo(20);
+        verify(ai, times(1)).run(any());
+        verify(publisher, times(4)).publishCompleted(eq(session.getId()), any());
+    }
+
+    @Test
+    void 재시도_불가_생성_오류도_DLT_전달_후_실패_처리한다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_REQUEST_REJECTED));
+
+        assertCommitted(GROUP, send(events.requested(session.getId(), session.getCreatedAt())));
+        records(REQUESTED + "-generation-dlt", session.getId(), 1);
+
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.FAILED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, session.getId())).isEqualTo("FAILED");
+        verify(ai, times(1)).run(any());
     }
 
     private RecordMetadata send(AiSimulationRequestedEvent event) throws Exception {
