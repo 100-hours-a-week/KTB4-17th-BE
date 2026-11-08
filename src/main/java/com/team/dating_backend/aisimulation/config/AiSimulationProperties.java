@@ -1,7 +1,6 @@
 package com.team.dating_backend.aisimulation.config;
 
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.Setter;
@@ -27,16 +26,4 @@ public class AiSimulationProperties {
 
     @PositiveOrZero
     private int asyncShutdownWaitSeconds = 30;
-
-    @Positive
-    private int maxProcessingAgeSeconds = 900;
-
-    @AssertTrue(message = "Processing age must exceed the full queue HTTP timeout budget by at least 30 seconds")
-    public boolean isProcessingAgeSufficient() {
-        if (asyncPoolSize <= 0 || asyncQueueCapacity < 0) {
-            return true;
-        }
-        long batches = ((long) asyncQueueCapacity + asyncPoolSize - 1) / asyncPoolSize + 1;
-        return maxProcessingAgeSeconds * 1_000L >= batches * ((long) connectTimeoutMs + readTimeoutMs) + 30_000L;
-    }
 }

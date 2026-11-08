@@ -222,7 +222,6 @@ app:
     async-pool-size: ${AI_SIMULATION_ASYNC_POOL_SIZE:1}
     async-queue-capacity: ${AI_SIMULATION_ASYNC_QUEUE_CAPACITY:4}
     async-shutdown-wait-seconds: ${AI_SIMULATION_ASYNC_SHUTDOWN_WAIT_SECONDS:30}
-    max-processing-age-seconds: ${AI_SIMULATION_MAX_PROCESSING_AGE_SECONDS:900}
     kafka:
       requested-topic: ${AI_SIMULATION_KAFKA_REQUESTED_TOPIC:${spring.profiles.active:local}-ai-simulation-requested}
       completed-topic: ${AI_SIMULATION_KAFKA_COMPLETED_TOPIC:${spring.profiles.active:local}-ai-simulation-completed}

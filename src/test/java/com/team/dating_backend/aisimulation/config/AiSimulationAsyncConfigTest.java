@@ -106,10 +106,7 @@ class AiSimulationAsyncConfigTest {
         for (String invalidProperty : new String[]{
             "app.ai-simulation.async-pool-size=0",
             "app.ai-simulation.async-queue-capacity=-1",
-            "app.ai-simulation.async-shutdown-wait-seconds=-1",
-            "app.ai-simulation.max-processing-age-seconds=0",
-            "app.ai-simulation.max-processing-age-seconds=600",
-            "app.ai-simulation.async-queue-capacity=8"
+            "app.ai-simulation.async-shutdown-wait-seconds=-1"
         }) {
             contextRunner.withPropertyValues(invalidProperty)
                 .run(context -> assertThat(context).hasFailed());
@@ -117,20 +114,10 @@ class AiSimulationAsyncConfigTest {
     }
 
     @Test
-    void 큐를_늘릴_때_만료_시간도_전체_대기_시간보다_길게_설정한다() {
+    void 큐_용량을_늘려도_생성_시각_만료_예산에_제한받지_않는다() {
         contextRunner.withPropertyValues(
-            "app.ai-simulation.async-queue-capacity=8",
-            "app.ai-simulation.max-processing-age-seconds=1500")
+            "app.ai-simulation.async-queue-capacity=8")
             .run(context -> assertThat(context).hasNotFailed());
-    }
-
-    @Test
-    void 대기열이_스레드_수보다_작아도_실행중_작업의_대기_시간을_포함한다() {
-        contextRunner.withPropertyValues(
-            "app.ai-simulation.async-pool-size=2",
-            "app.ai-simulation.async-queue-capacity=1",
-            "app.ai-simulation.max-processing-age-seconds=200")
-            .run(context -> assertThat(context).hasFailed());
     }
 
     private static void awaitRelease(CountDownLatch release) {
