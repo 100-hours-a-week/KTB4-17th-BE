@@ -52,7 +52,7 @@ public class AiPracticeOutboxResultService {
 
         AiPracticeChat chat = outbox.getChatId() == null
             ? null
-            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+            : chatRepository.findByIdAndSessionId(outbox.getChatId(), outbox.getSessionId())
                 .orElse(null);
         if (chat != null
             && chat.getGenerationAttempt() == outbox.getGenerationAttempt()
@@ -88,7 +88,7 @@ public class AiPracticeOutboxResultService {
 
         AiPracticeChat chat = outbox.getChatId() == null
             ? null
-            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+            : chatRepository.findByIdAndSessionId(outbox.getChatId(), outbox.getSessionId())
                 .orElse(null);
         if (chat != null
             && chat.getGenerationAttempt() == outbox.getGenerationAttempt()
@@ -149,7 +149,7 @@ public class AiPracticeOutboxResultService {
             .orElse(null);
         AiPracticeChat chat = outbox.getChatId() == null
             ? null
-            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+            : chatRepository.findByIdAndSessionId(outbox.getChatId(), outbox.getSessionId())
                 .orElse(null);
         if (chat != null
             && chat.getGenerationAttempt() == outbox.getGenerationAttempt()

@@ -2,8 +2,6 @@ package com.team.dating_backend.aisimulation.controller;
 
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
 import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
-import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
-import com.team.dating_backend.aisimulation.exception.AiSimulationSubmissionRejectedException;
 import com.team.dating_backend.aisimulation.service.AiSimulationQueryService;
 import com.team.dating_backend.aisimulation.service.AiSimulationService;
 import com.team.dating_backend.common.dto.response.SuccessResponse;
@@ -15,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,30 +31,12 @@ public class AiSimulationController {
     public ResponseEntity<SuccessResponse<AiSimulationResponses.Handle>> request(
         @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
         @Valid @RequestBody AiSimulationCreateRequest request) {
-        AiSimulationResponses.Handle response = simulationService.request(
+        var decision = simulationService.request(
             principal.userId(), request);
-        boolean processing = response.status() == AiSimulationSessionStatus.IN_PROGRESS;
-        return ResponseEntity.status(processing ? HttpStatus.ACCEPTED : HttpStatus.OK)
-            .body(SuccessResponse.of(processing ? "ai_simulation_accepted" : "ai_simulation_existing", response));
-    }
-
-    @PostMapping("/{simulationId}/attempts")
-    public ResponseEntity<SuccessResponse<AiSimulationResponses.Handle>> attempt(
-        @AuthenticationPrincipal ServiceAuthenticationPrincipal principal,
-        @PathVariable Long simulationId) {
-        AiSimulationResponses.Handle response = simulationService.attempt(principal.userId(), simulationId);
-        boolean processing = response.status() == AiSimulationSessionStatus.IN_PROGRESS;
-        return ResponseEntity.status(processing ? HttpStatus.ACCEPTED : HttpStatus.OK)
-            .body(SuccessResponse.of(processing ? "ai_simulation_attempt_accepted" : "ai_simulation_attempt_existing",
-                response));
-    }
-
-    @ExceptionHandler(AiSimulationSubmissionRejectedException.class)
-    public ResponseEntity<AiSimulationResponses.SubmissionFailure> handleSubmissionRejected(
-        AiSimulationSubmissionRejectedException exception) {
-        return ResponseEntity.status(exception.getErrorCode().status())
-            .body(new AiSimulationResponses.SubmissionFailure(exception.getErrorCode().name(),
-                exception.getSimulationId(), AiSimulationSessionStatus.FAILED));
+        var response = new AiSimulationResponses.Handle(decision.simulationId(), decision.status());
+        return ResponseEntity.status(decision.created() ? HttpStatus.ACCEPTED : HttpStatus.OK)
+            .body(
+                SuccessResponse.of(decision.created() ? "ai_simulation_accepted" : "ai_simulation_existing", response));
     }
 
     @GetMapping("/{simulationId}/status")

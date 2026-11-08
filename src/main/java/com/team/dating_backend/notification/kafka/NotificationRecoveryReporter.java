@@ -251,10 +251,18 @@ public class NotificationRecoveryReporter {
                 record.offset(),
                 failure == null ? null : failure.getClass().getSimpleName(),
                 failure == null || failure.getCause() == null ? null : failure.getCause().getClass().getSimpleName());
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (failure != null && failure != loggingFailure) {
+                failure.addSuppressed(loggingFailure);
+            }
+        }
         try {
             meterRegistry.counter("notification.reporting.failures", "operation", "RECOVERY_CONTEXT").increment();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException metricFailure) {
+            if (failure != null && failure != metricFailure) {
+                failure.addSuppressed(metricFailure);
+            }
+        }
     }
 
     private static class RecoveryAttempt {

@@ -21,7 +21,7 @@ import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
 import com.team.dating_backend.notification.service.NotificationOutboxClaimService;
-import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
+import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.config.NotificationPublishProperties;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
@@ -707,8 +707,8 @@ class NotificationOutboxRelayIntegrationTest {
     static class KafkaConfiguration {
 
         @Bean
-        DefaultKafkaProducerFactoryCustomizer notificationKafkaProducerFactoryCustomizer(JsonMapper mapper) {
-            return new NotificationKafkaConfiguration().notificationKafkaProducerFactoryCustomizer(mapper);
+        DefaultKafkaProducerFactoryCustomizer kafkaProducerFactoryCustomizer(JsonMapper mapper) {
+            return new KafkaProducerConfiguration().kafkaProducerFactoryCustomizer(mapper);
         }
     }
 }

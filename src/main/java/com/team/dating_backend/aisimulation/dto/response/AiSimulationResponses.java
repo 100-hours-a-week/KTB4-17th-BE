@@ -11,7 +11,7 @@ public final class AiSimulationResponses {
 
     public record Handle(Long simulationId, AiSimulationSessionStatus status) {}
 
-    public record SubmissionFailure(String errorCode, Long simulationId, AiSimulationSessionStatus status) {}
+    public record RequestPublishFailure(String errorCode, Long simulationId) {}
 
     public record State(Long simulationId, AiSimulationSessionStatus status,
         LocalDateTime createdAt, LocalDateTime finishedAt) {}

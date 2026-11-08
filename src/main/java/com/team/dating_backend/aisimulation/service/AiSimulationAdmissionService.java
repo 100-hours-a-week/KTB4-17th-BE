@@ -3,7 +3,6 @@ package com.team.dating_backend.aisimulation.service;
 import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.AdmissionDecision;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
-import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.common.lock.repository.UserPairLockRepository;
@@ -43,27 +42,7 @@ public class AiSimulationAdmissionService {
         return decision(session, true);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
-    public AdmissionDecision admitAttempt(Long userId, Long simulationId) {
-        var pair = sessionRepository.findPairByIdAndParticipant(simulationId, userId)
-            .filter(participants -> participants.getTargetUserId() != null)
-            .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
-        Long targetUserId = userId.equals(pair.getUserId()) ? pair.getTargetUserId() : pair.getUserId();
-
-        userPairLockRepository.acquire(userId, targetUserId);
-        targetValidator.validateForUpdate(userId, targetUserId);
-        AiSimulationSession latest = sessionRepository.findLatestByUserPair(
-            userId, targetUserId, PageRequest.of(0, 1)).stream().findFirst()
-            .orElseThrow(() -> new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
-        if (!latest.getId().equals(simulationId) || latest.getStatus() != AiSimulationSessionStatus.FAILED) {
-            return decision(latest, false);
-        }
-
-        AiSimulationSession session = persistenceService.begin(pair.getUserId(), pair.getTargetUserId());
-        return decision(session, true);
-    }
-
     private AdmissionDecision decision(AiSimulationSession session, boolean created) {
-        return new AdmissionDecision(session.getId(), session.getStatus(), created);
+        return new AdmissionDecision(session.getId(), session.getStatus(), created, session.getCreatedAt());
     }
 }

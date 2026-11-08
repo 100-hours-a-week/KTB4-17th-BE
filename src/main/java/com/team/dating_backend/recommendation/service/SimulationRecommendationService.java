@@ -1,6 +1,7 @@
 package com.team.dating_backend.recommendation.service;
 
 import com.team.dating_backend.recommendation.entity.RecommendationItem;
+import com.team.dating_backend.recommendation.enums.SimulationRecommendationResult;
 import com.team.dating_backend.recommendation.repository.RecommendationBatchRepository;
 import com.team.dating_backend.recommendation.repository.RecommendationCandidateRepository;
 import com.team.dating_backend.recommendation.repository.RecommendationItemRepository;
@@ -21,11 +22,11 @@ public class SimulationRecommendationService {
     private final RecommendationItemRepository items;
 
     @Transactional
-    public void add(Long ownerId, Long candidateId) {
+    public SimulationRecommendationResult add(Long ownerId, Long candidateId) {
         var owner = users.findByIdForUpdate(ownerId).orElse(null);
         if (owner == null || owner.getStatus() != UserStatus.ACTIVE
             || !candidates.isEligibleWithoutPreferences(ownerId, candidateId)) {
-            return;
+            return SimulationRecommendationResult.SKIPPED;
         }
         batches.createRecommendationBatch(ownerId);
         var batch = batchRepository.findByUserIdAndDeletedAtIsNull(ownerId).orElseThrow();
@@ -39,7 +40,11 @@ public class SimulationRecommendationService {
             item.markSimulationRequested();
             items.save(item);
         } else {
+            if (item.isSimulationRequested()) {
+                return SimulationRecommendationResult.ALREADY_APPLIED;
+            }
             item.markSimulationRequested();
         }
+        return SimulationRecommendationResult.APPLIED;
     }
 }

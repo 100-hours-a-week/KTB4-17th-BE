@@ -267,7 +267,11 @@ public class NotificationSseShutdownCoordinator implements ApplicationListener<C
                     ? null
                     : exception.getCause().getClass().getSimpleName(),
                 interrupted);
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (exception != null && exception != loggingFailure) {
+                exception.addSuppressed(loggingFailure);
+            }
+        }
     }
 
     private record CloseResult(int total, int completed, int incomplete, int failed, int skipped, long durationNanos) {}
