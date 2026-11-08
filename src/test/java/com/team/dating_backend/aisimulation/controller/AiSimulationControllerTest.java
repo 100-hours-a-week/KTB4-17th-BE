@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.controller;
 
+import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.CREATED_AT;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.SESSION_ID;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.TARGET_ID;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.USER_ID;
@@ -14,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.AdmissionDecision;
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
 import com.team.dating_backend.aisimulation.dto.response.AiSimulationResponses;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
@@ -39,12 +41,12 @@ import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 class AiSimulationControllerTest {
 
@@ -66,7 +68,7 @@ class AiSimulationControllerTest {
     @Test
     void 접수하면_202와_세션_ID_상태를_반환한다() throws Exception {
         given(simulationService.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
-            .willReturn(new AiSimulationResponses.Handle(SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS));
+            .willReturn(new AdmissionDecision(SESSION_ID, AiSimulationSessionStatus.IN_PROGRESS, true, CREATED_AT));
 
         mockMvc.perform(post("/api/v1/ai-simulations")
             .contentType(MediaType.APPLICATION_JSON)
@@ -77,16 +79,18 @@ class AiSimulationControllerTest {
             .andExpect(jsonPath("$.message").value("ai_simulation_accepted"))
             .andExpect(jsonPath("$.data.simulationId").value(SESSION_ID))
             .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-            .andExpect(jsonPath("$.data.transcript").doesNotExist());
+            .andExpect(jsonPath("$.data.transcript").doesNotExist())
+            .andExpect(jsonPath("$.data.created").doesNotExist())
+            .andExpect(jsonPath("$.data.createdAt").doesNotExist());
 
         verify(simulationService).request(USER_ID, new AiSimulationCreateRequest(TARGET_ID));
     }
 
     @ParameterizedTest
-    @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void 종료된_기존_세션은_200으로_반환한다(AiSimulationSessionStatus sessionStatus) throws Exception {
+    @EnumSource(AiSimulationSessionStatus.class)
+    void 기존_세션은_상태와_무관하게_200으로_반환한다(AiSimulationSessionStatus sessionStatus) throws Exception {
         given(simulationService.request(USER_ID, new AiSimulationCreateRequest(TARGET_ID)))
-            .willReturn(new AiSimulationResponses.Handle(SESSION_ID, sessionStatus));
+            .willReturn(new AdmissionDecision(SESSION_ID, sessionStatus, false, CREATED_AT));
         mockMvc.perform(post("/api/v1/ai-simulations")
             .contentType(MediaType.APPLICATION_JSON).content("{\"targetUserId\":8}"))
             .andExpect(status().isOk())
