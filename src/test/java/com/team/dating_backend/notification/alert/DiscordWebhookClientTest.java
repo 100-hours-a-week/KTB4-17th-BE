@@ -8,6 +8,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
+import com.team.dating_backend.common.alert.DiscordWebhookSender;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
@@ -46,7 +47,7 @@ class DiscordWebhookClientTest {
         properties.setEnabled(true);
         properties.setEnvironment("dev");
         properties.setWebhookUrl(WEBHOOK);
-        client = new DiscordWebhookClient(builder.build(), properties);
+        client = new DiscordWebhookClient(new DiscordWebhookSender(builder.build()), properties);
     }
 
     @Test
