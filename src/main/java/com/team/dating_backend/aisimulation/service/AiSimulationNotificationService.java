@@ -46,11 +46,6 @@ public class AiSimulationNotificationService {
             session.getCreatedAt().toInstant(ZoneOffset.UTC));
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void requested(Long sessionId, Long requesterId, Long targetId) {
-        recordRequested(sessionId, requesterId, targetId, Instant.now());
-    }
-
     private AiSimulationNotificationResult recordRequested(Long sessionId, Long requesterId, Long targetId,
         Instant requestedAt) {
         if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId)) {
@@ -61,11 +56,6 @@ public class AiSimulationNotificationService {
             targetId, NotificationType.AI_SIMULATION_REQUESTED, "시뮬레이션 요청",
             "누군가 회원님과의 AI 소개팅을 시작했어요", null, null, requestedAt));
         return AiSimulationNotificationResult.RECORDED;
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void completed(Long sessionId, Long requesterId, Long targetId, Long recipientId) {
-        recordCompleted(sessionId, requesterId, targetId, recipientId, Instant.now());
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

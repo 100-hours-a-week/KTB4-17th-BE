@@ -54,72 +54,6 @@ class AiSimulationNotificationServiceTest {
     }
 
     @Test
-    void 요청_알림은_B에게_이동_대상_없이_전송한다() {
-        service.requested(100L, 1L, 2L);
-        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
-        verify(notifications).requestNotification(captor.capture());
-        assertThat(captor.getValue().recipientUserId()).isEqualTo(2L);
-        assertThat(captor.getValue().type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED);
-        assertThat(captor.getValue().targetId()).isNull();
-        assertThat(captor.getValue().targetType()).isNull();
-    }
-
-    @Test
-    void B가_A를_패스했다면_B의_요청과_완료_알림은_없지만_A의_완료_알림은_있다() {
-        given(passes.findByPasserUserIdAndPassedUserId(2L, 1L))
-            .willReturn(Optional.of(mock(RecommendationPass.class)));
-        service.requested(100L, 1L, 2L);
-        service.completed(100L, 1L, 2L, 2L);
-        verifyNoInteractions(notifications);
-        service.completed(100L, 1L, 2L, 1L);
-        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
-        verify(notifications).requestNotification(captor.capture());
-        assertThat(captor.getValue().recipientUserId()).isEqualTo(1L);
-        assertThat(captor.getValue().targetId()).isEqualTo(100L);
-    }
-
-    @Test
-    void 차단_탈퇴_방나가기는_B의_요청과_완료_알림을_제외하지만_A의_완료_알림은_유지한다() {
-        given(blocks.existsActiveBlockBetween(1L, 2L)).willReturn(true);
-        service.requested(100L, 1L, 2L);
-        service.completed(100L, 1L, 2L, 1L);
-        service.completed(100L, 1L, 2L, 2L);
-        given(blocks.existsActiveBlockBetween(1L, 2L)).willReturn(false);
-        given(rooms.existsLeftParticipantBetweenUsers(1L, 2L)).willReturn(true);
-        service.requested(100L, 1L, 2L);
-        service.completed(100L, 1L, 2L, 1L);
-        service.completed(100L, 1L, 2L, 2L);
-        given(rooms.existsLeftParticipantBetweenUsers(1L, 2L)).willReturn(false);
-        given(users.existsByIdAndStatusNot(2L, UserStatus.WITHDRAWN)).willReturn(false);
-        service.requested(100L, 1L, 2L);
-        service.completed(100L, 1L, 2L, 1L);
-        service.completed(100L, 1L, 2L, 2L);
-        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
-        verify(notifications, times(3)).requestNotification(captor.capture());
-        assertThat(captor.getAllValues()).allSatisfy(request -> {
-            assertThat(request.recipientUserId()).isEqualTo(1L);
-            assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
-        });
-    }
-
-    @Test
-    void A가_활성_상태가_아니면_자신의_완료_알림은_요청하지_않는다() {
-        given(users.existsByIdAndStatus(1L, UserStatus.ACTIVE)).willReturn(false);
-        service.completed(100L, 1L, 2L, 1L);
-        verifyNoInteractions(notifications);
-    }
-
-    @Test
-    void 정상_완료시_양쪽에게_각각_완료_알림을_요청한다() {
-        service.completed(100L, 1L, 2L, 1L);
-        service.completed(100L, 1L, 2L, 2L);
-        var captor = ArgumentCaptor.forClass(NotificationCreateRequested.class);
-        verify(notifications, times(2)).requestNotification(captor.capture());
-        assertThat(captor.getAllValues()).extracting(NotificationCreateRequested::recipientUserId)
-            .containsExactly(1L, 2L);
-    }
-
-    @Test
     void 세션에서_참여자를_읽고_기존_문구와_세션_생성_시각으로_요청을_기록한다() {
         var createdAt = LocalDateTime.of(2026, 11, 7, 10, 5);
         given(sessions.findByIdForUpdate(100L))
@@ -131,6 +65,9 @@ class AiSimulationNotificationServiceTest {
         verify(notifications).requestNotification(request.capture());
         assertThat(request.getValue().sourceEventId()).isEqualTo("AI_SIMULATION_REQUESTED:100");
         assertThat(request.getValue().recipientUserId()).isEqualTo(2L);
+        assertThat(request.getValue().type()).isEqualTo(NotificationType.AI_SIMULATION_REQUESTED);
+        assertThat(request.getValue().targetId()).isNull();
+        assertThat(request.getValue().targetType()).isNull();
         assertThat(request.getValue().title()).isEqualTo("시뮬레이션 요청");
         assertThat(request.getValue().body()).isEqualTo("누군가 회원님과의 AI 소개팅을 시작했어요");
         assertThat(request.getValue().requestedAt()).isEqualTo(createdAt.toInstant(ZoneOffset.UTC));
@@ -203,6 +140,8 @@ class AiSimulationNotificationServiceTest {
         verify(notifications, times(2)).requestNotification(requests.capture());
         assertThat(requests.getAllValues()).extracting(NotificationCreateRequested::sourceEventId)
             .containsExactly("AI_SIMULATION_COMPLETED:100", "AI_SIMULATION_COMPLETED:100:2");
+        assertThat(requests.getAllValues()).extracting(NotificationCreateRequested::recipientUserId)
+            .containsExactly(1L, 2L);
         assertThat(requests.getAllValues()).allSatisfy(request -> {
             assertThat(request.type()).isEqualTo(NotificationType.AI_SIMULATION_REPORT_COMPLETED);
             assertThat(request.targetType()).isEqualTo("AI_SIMULATION");

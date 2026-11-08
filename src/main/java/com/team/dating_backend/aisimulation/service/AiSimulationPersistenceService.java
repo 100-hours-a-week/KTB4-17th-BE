@@ -1,7 +1,6 @@
 package com.team.dating_backend.aisimulation.service;
 
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.SimulationResponse;
-import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.GenerationInput;
 import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.GenerationState;
 import com.team.dating_backend.aisimulation.entity.AiSimulationMessage;
 import com.team.dating_backend.aisimulation.entity.AiSimulationReport;
@@ -17,7 +16,6 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -43,26 +41,8 @@ public class AiSimulationPersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<GenerationInput> loadGenerationInput(Long sessionId) {
-        return sessionRepository.findById(sessionId)
-            .filter(session -> session.getStatus() == AiSimulationSessionStatus.IN_PROGRESS)
-            .map(session -> {
-                if (session.getTargetUserId() == null) {
-                    throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING);
-                }
-                return new GenerationInput(session.getId(), session.getUserId(), session.getTargetUserId());
-            });
-    }
-
-    @Transactional(readOnly = true)
     public GenerationState loadGenerationState(Long sessionId) {
         return generationState(sessionRepository.findById(sessionId).orElseThrow(this::notFound));
-    }
-
-    @Transactional
-    public void complete(Long sessionId, SimulationResponse response) {
-        AiSimulationSession session = requireInProgressSession(sessionId);
-        storeResult(sessionId, session, response);
     }
 
     @Transactional
@@ -112,15 +92,6 @@ public class AiSimulationPersistenceService {
             session.fail(now());
             reportRepository.findBySessionId(sessionId).ifPresent(AiSimulationReport::fail);
         });
-    }
-
-    private AiSimulationSession requireInProgressSession(Long sessionId) {
-        AiSimulationSession session = sessionRepository.findByIdForUpdate(sessionId)
-            .orElseThrow(this::notFound);
-        if (session.getStatus() != AiSimulationSessionStatus.IN_PROGRESS) {
-            throw new AiSimulationBusinessException(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS);
-        }
-        return session;
     }
 
     @SuppressWarnings("unchecked")
