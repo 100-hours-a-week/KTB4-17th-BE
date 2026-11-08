@@ -17,6 +17,7 @@ import com.team.dating_backend.aisimulation.kafka.AiSimulationRequestNotificatio
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
+import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.aisimulation.service.AiSimulationNotificationProcessor;
 import com.team.dating_backend.aisimulation.service.AiSimulationNotificationService;
 import com.team.dating_backend.aisimulation.service.AiSimulationRecommendationService;
@@ -104,6 +105,7 @@ import tools.jackson.databind.json.JsonMapper;
         AiSimulationFailureClassifier.class,
         AiSimulationCompletedNotificationConsumer.class, AiSimulationNotificationProcessor.class,
         AiSimulationNotificationService.class, AiSimulationRecommendationService.class,
+        AiSimulationPersistenceService.class,
         SimulationRecommendationService.class, RecommendationBatchCreateService.class,
         NotificationRequestService.class, NotificationRequestOutboxService.class,
         NotificationRequestOutboxCodec.class, NotificationCreateRequestedValidator.class,

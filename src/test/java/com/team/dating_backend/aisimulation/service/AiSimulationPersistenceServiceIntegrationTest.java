@@ -8,9 +8,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import java.time.LocalDateTime;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -161,6 +163,61 @@ class AiSimulationPersistenceServiceIntegrationTest {
             assertThat(updated.get(5, TimeUnit.SECONDS)).isEqualTo(1);
         }
         assertThat(service.loadGenerationState(id).status()).isEqualTo(AiSimulationSessionStatus.CANCELED);
+    }
+
+    @Test
+    void 최종_실패_저장_오류는_세션과_리포트를_함께_롤백하고_재처리를_허용한다() {
+        Long id = service.begin(USER_ID, TARGET_ID).getId();
+        jdbc.execute("ALTER TABLE ai_simulation_reports ADD CONSTRAINT reject_test_failure CHECK (status <> 'FAILED')");
+        try {
+            assertThatThrownBy(() -> service.fail(id)).isInstanceOf(DataAccessException.class);
+            var state = service.loadGenerationState(id);
+            assertThat(state.status()).isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+            assertThat(state.finishedAt()).isNull();
+            assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+                String.class, id)).isEqualTo("GENERATING");
+        } finally {
+            jdbc.execute("ALTER TABLE ai_simulation_reports DROP CHECK reject_test_failure");
+        }
+        service.fail(id);
+        assertThat(service.loadGenerationState(id).status()).isEqualTo(AiSimulationSessionStatus.FAILED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, id)).isEqualTo("FAILED");
+    }
+
+    @Test
+    void 완료_트랜잭션을_기다린_최종_실패_처리는_커밋된_완료_결과를_보존한다() throws Exception {
+        Long id = service.begin(USER_ID, TARGET_ID).getId();
+        var completed = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var callers = Executors.newFixedThreadPool(2)) {
+            var completion = callers
+                .submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                    service.completeGeneration(id, aiResponse());
+                    completed.countDown();
+                    try {
+                        assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                }));
+            try {
+                assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
+                var failure = callers.submit(() -> service.fail(id));
+                assertThatThrownBy(() -> failure.get(100, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+                release.countDown();
+                completion.get(5, TimeUnit.SECONDS);
+                failure.get(5, TimeUnit.SECONDS);
+            } finally {
+                release.countDown();
+            }
+        }
+        assertThat(service.loadGenerationState(id).status()).isEqualTo(AiSimulationSessionStatus.COMPLETED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, id)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ai_simulation_messages WHERE session_id=?",
+            Integer.class, id)).isEqualTo(20);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

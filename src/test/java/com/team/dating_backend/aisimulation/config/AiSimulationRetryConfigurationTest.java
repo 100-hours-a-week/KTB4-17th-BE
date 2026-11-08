@@ -17,6 +17,8 @@ import com.team.dating_backend.aisimulation.dto.event.AiSimulationCompletedEvent
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent;
 import com.team.dating_backend.aisimulation.exception.AiSimulationRetryableProcessingException;
 import com.team.dating_backend.aisimulation.kafka.AiSimulationKafkaListeners;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationRecoveryHandler;
+import com.team.dating_backend.aisimulation.service.AiSimulationPersistenceService;
 import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.common.kafka.KafkaRetryComponentFactory;
 import com.team.dating_backend.common.kafka.KafkaRetryPolicy;
@@ -73,6 +75,7 @@ class AiSimulationRetryConfigurationTest {
             AiSimulationKafkaConfiguration.class, AiSimulationRetryConfiguration.class,
             AiSimulationKafkaTopicConfiguration.class, PropertiesConfiguration.class, TestListeners.class)
         .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
+        .withBean(AiSimulationPersistenceService.class, () -> mock(AiSimulationPersistenceService.class))
         .withPropertyValues(
             "spring.kafka.admin.auto-create=false",
             "app.notification.kafka.create-requested-topic=local-notification-create-requested-v1",
@@ -188,7 +191,7 @@ class AiSimulationRetryConfigurationTest {
             }
         };
         var factory = new KafkaRetryComponentFactory(() -> List.of(notificationPolicy,
-            new AiSimulationRetryConfiguration(new AiSimulationKafkaProperties())))
+            simulationPolicy()))
             .deadLetterPublishingRecovererFactory(mock(DestinationTopicResolver.class));
         assertThat(factory.create("notificationCreationConsumer")).isSameAs(notificationRecoverer);
         assertThat(factory.create(AiSimulationKafkaListeners.GENERATION)).isNotSameAs(notificationRecoverer);
@@ -215,7 +218,7 @@ class AiSimulationRetryConfigurationTest {
         when(operations.send(any(ProducerRecord.class)))
             .thenReturn(CompletableFuture.failedFuture(new IllegalStateException()));
         var recoverer = new KafkaRetryComponentFactory(() -> List.of(
-            new AiSimulationRetryConfiguration(new AiSimulationKafkaProperties())))
+            simulationPolicy()))
             .deadLetterPublishingRecovererFactory(resolver).create(AiSimulationKafkaListeners.GENERATION);
         recoverer.setVerifyPartition(false);
         var record = new ConsumerRecord<>("local-ai-simulation-requested", 3, 10L, 20L, "event");
@@ -224,6 +227,12 @@ class AiSimulationRetryConfigurationTest {
             .isInstanceOf(KafkaException.class);
         verify(operations).send(argThat((ProducerRecord<Object, Object> output) -> output.partition().equals(3)
             && output.topic().equals("local-ai-simulation-requested-generation-retry")));
+    }
+
+    private AiSimulationRetryConfiguration simulationPolicy() {
+        var properties = new AiSimulationKafkaProperties();
+        return new AiSimulationRetryConfiguration(properties,
+            new AiSimulationRecoveryHandler(mock(AiSimulationPersistenceService.class), properties));
     }
 
     @Configuration(proxyBeanMethods = false)
