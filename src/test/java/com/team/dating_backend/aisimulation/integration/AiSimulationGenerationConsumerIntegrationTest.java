@@ -20,6 +20,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.atLeast;
 
 import com.team.dating_backend.aisimulation.client.AiSimulationAiClient;
 import com.team.dating_backend.aisimulation.config.AiSimulationKafkaConfiguration;
@@ -42,23 +43,28 @@ import com.team.dating_backend.aisimulation.service.AiSimulationResponseValidato
 import com.team.dating_backend.common.config.SchedulingConfig;
 import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
 import java.time.Duration;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -76,6 +82,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.retrytopic.RetryTopicHeaders;
+import org.springframework.kafka.support.SendResult;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.test.EmbeddedKafkaBroker;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
@@ -105,7 +115,11 @@ import tools.jackson.databind.json.JsonMapper;
         "app.ai-simulation.kafka.retry.concurrency=1",
         "app.ai-simulation.kafka.retry.delay-ms=50",
         "app.ai-simulation.alert.enabled=true",
-        "app.ai-simulation.alert.webhook-url=https://discord.com/api/webhooks/123/test-token"
+        "app.ai-simulation.alert.webhook-url=https://discord.com/api/webhooks/123/test-token",
+        "app.ai-simulation.alert.max-messages-per-window=1000",
+        "app.ai-simulation.alert.queue-capacity=1",
+        "app.ai-simulation.kafka.publish-result-timeout-ms=100",
+        "KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS=3000", "KAFKA_PRODUCER_REQUEST_TIMEOUT_MS=1000"
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -157,6 +171,13 @@ class AiSimulationGenerationConsumerIntegrationTest {
     @Autowired
     private KafkaTemplate<Object, Object> template;
 
+    @MockitoSpyBean(name = "kafkaTemplate")
+    private KafkaTemplate<?, ?> faultTemplate;
+
+    @Autowired
+    @Qualifier("aiSimulationAlertExecutor")
+    private ThreadPoolTaskExecutor alertExecutor;
+
     @Autowired
     private EmbeddedKafkaBroker broker;
 
@@ -183,6 +204,14 @@ class AiSimulationGenerationConsumerIntegrationTest {
         when(ai.run(any())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             return aiResponse();
+        });
+    }
+
+    @AfterEach
+    void awaitAlertsIdle() {
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            assertThat(alertExecutor.getThreadPoolExecutor().getActiveCount()).isZero();
+            assertThat(alertExecutor.getThreadPoolExecutor().getQueue()).isEmpty();
         });
     }
 
@@ -391,7 +420,201 @@ class AiSimulationGenerationConsumerIntegrationTest {
         verify(alertSender, times(1)).send(any(), any(), any());
     }
 
+    @ParameterizedTest
+    @EnumSource(HandoffStage.class)
+    void 전달_실패는_해당_입력_offset과_생성중_상태를_유지하고_복구_후_동일_사건을_DLT로_전달한다(HandoffStage stage)
+        throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        var requested = events.requested(session.getId(), session.getCreatedAt());
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(stage == HandoffStage.MAIN_DLT
+            ? AiSimulationErrorCode.AI_REQUEST_REJECTED
+            : AiSimulationErrorCode.AI_SERVER_UNAVAILABLE));
+        String destination = REQUESTED + "-generation-" + (stage.dlt ? "dlt" : "retry");
+        var reject = new AtomicBoolean(true);
+        var rejected = new CountDownLatch(1);
+        String code = stage.dlt ? "DLT_PUBLISH_FAILED" : "RETRY_PUBLISH_FAILED";
+        double before = failureCount("ai.simulation.failures", code);
+        doAnswer(invocation -> {
+            ProducerRecord<?, ?> record = invocation.getArgument(0);
+            if (record.topic().equals(destination) && reject.get()
+                && ByteBuffer.wrap(record.headers().lastHeader(RetryTopicHeaders.DEFAULT_HEADER_ATTEMPTS).value())
+                    .getInt() == stage.attempt + 1) {
+                rejected.countDown();
+                return CompletableFuture.failedFuture(new TimeoutException());
+            }
+            return invocation.callRealMethod();
+        }).when(faultTemplate).send(any(ProducerRecord.class));
+        var sent = send(requested);
+        String inputTopic = stage.retryInput ? RETRY : REQUESTED;
+        String inputGroup = stage.retryInput ? GROUP + "-generation-retry" : GROUP;
+        long inputOffset;
+        try {
+            assertThat(rejected.await(15, TimeUnit.SECONDS)).isTrue();
+            inputOffset = stage.retryInput
+                ? records(RETRY, session.getId(), stage.attempt - 1).getLast().offset()
+                : sent.offset();
+            await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(failureCount("ai.simulation.failures", code)).isGreaterThan(before));
+            assertNotCommitted(inputGroup, inputTopic, inputOffset);
+            assertThat(persistence.loadGenerationState(session.getId()).status())
+                .isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+            assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+                String.class, session.getId())).isEqualTo("GENERATING");
+            verifyNoInteractions(alertSender);
+        } finally {
+            reject.set(false);
+        }
+        assertCommitted(inputGroup, new TopicPartition(inputTopic, 3), inputOffset + 1);
+        var dlt = records(REQUESTED + "-generation-dlt", session.getId(), 1).getFirst();
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+            persistence.loadGenerationState(session.getId()).status()).isEqualTo(AiSimulationSessionStatus.FAILED));
+        assertThat(mapper.readValue(dlt.value(), AiSimulationRequestedEvent.class)).isEqualTo(requested);
+        assertThat(dlt.partition()).isEqualTo(sent.partition());
+        verify(ai, atLeast(stage == HandoffStage.MAIN_DLT ? 2 : 5)).run(any());
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(), any()));
+    }
+
+    @Test
+    void 전달_결과_확인_타임아웃은_offset을_확정하지_않고_다음_처리에서_복구한다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_REQUEST_REJECTED));
+        var pending = new AtomicBoolean(true);
+        var entered = new CountDownLatch(1);
+        double before = failureCount("ai.simulation.failures", "DLT_PUBLISH_FAILED");
+        doAnswer(invocation -> {
+            ProducerRecord<?, ?> record = invocation.getArgument(0);
+            if (record.topic().equals(REQUESTED + "-generation-dlt") && pending.getAndSet(false)) {
+                entered.countDown();
+                return new CompletableFuture<SendResult<Object, Object>>();
+            }
+            return invocation.callRealMethod();
+        }).when(faultTemplate).send(any(ProducerRecord.class));
+
+        var sent = send(events.requested(session.getId(), session.getCreatedAt()));
+
+        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+        assertNotCommitted(GROUP, REQUESTED, sent.offset());
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+        verifyNoInteractions(alertSender);
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(
+            () -> assertThat(failureCount("ai.simulation.failures", "DLT_PUBLISH_FAILED")).isGreaterThan(before));
+        assertCommitted(GROUP, sent);
+        records(REQUESTED + "-generation-dlt", session.getId(), 1);
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.FAILED);
+        verify(ai, atLeast(2)).run(any());
+    }
+
+    @Test
+    void DLT_이후_실패_상태_저장_오류는_DB와_offset을_유지하고_재처리에서_복구한다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        var requested = events.requested(session.getId(), session.getCreatedAt());
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_REQUEST_REJECTED));
+        double before = failureCount("ai.simulation.failures", "FINAL_STATE_UPDATE_FAILED");
+        jdbc.execute("ALTER TABLE ai_simulation_reports ADD CONSTRAINT reject_dlt_failure CHECK (status <> 'FAILED')");
+        RecordMetadata sent;
+        try {
+            sent = send(requested);
+            recordsAtLeast(REQUESTED + "-generation-dlt", session.getId(), 1);
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(
+                failureCount("ai.simulation.failures", "FINAL_STATE_UPDATE_FAILED")).isGreaterThan(before));
+            assertNotCommitted(GROUP, REQUESTED, sent.offset());
+            var state = persistence.loadGenerationState(session.getId());
+            assertThat(state.status()).isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
+            assertThat(state.finishedAt()).isNull();
+            assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+                String.class, session.getId())).isEqualTo("GENERATING");
+            verifyNoInteractions(alertSender);
+        } finally {
+            jdbc.execute("ALTER TABLE ai_simulation_reports DROP CHECK reject_dlt_failure");
+        }
+        assertCommitted(GROUP, sent);
+        assertThat(recordsAtLeast(REQUESTED + "-generation-dlt", session.getId(), 2)).allSatisfy(record -> {
+            assertThat(mapper.readValue(record.value(), AiSimulationRequestedEvent.class)).isEqualTo(requested);
+            assertThat(record.partition()).isEqualTo(3);
+        });
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.FAILED);
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
+            String.class, session.getId())).isEqualTo("FAILED");
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(), any()));
+    }
+
+    @Test
+    void Discord_지연과_큐_포화는_Kafka_업무를_막거나_재실행하지_않는다() throws Exception {
+        var sessions = IntStream.range(0, 3).mapToObj(index -> persistence.begin(USER_ID, TARGET_ID)).toList();
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_REQUEST_REJECTED));
+        doAnswer(invocation -> {
+            entered.countDown();
+            assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(alertSender).send(any(), any(), any());
+        double before = failureCount("ai.simulation.alert.failures", "ALERT_SUBMISSION_REJECTED");
+        try {
+            var first = sessions.getFirst();
+            assertCommitted(GROUP, send(events.requested(first.getId(), first.getCreatedAt())));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            for (var session : sessions.subList(1, 3)) {
+                assertCommitted(GROUP, send(events.requested(session.getId(), session.getCreatedAt())));
+            }
+            assertThat(failureCount("ai.simulation.alert.failures", "ALERT_SUBMISSION_REJECTED")).isEqualTo(before + 1);
+            assertThat(alertExecutor.getThreadPoolExecutor().getQueue()).hasSize(1);
+            for (var session : sessions) {
+                assertThat(persistence.loadGenerationState(session.getId()).status())
+                    .isEqualTo(AiSimulationSessionStatus.FAILED);
+                records(REQUESTED + "-generation-dlt", session.getId(), 1);
+            }
+            verify(ai, times(3)).run(any());
+        } finally {
+            release.countDown();
+        }
+        awaitAlertsIdle();
+        verify(alertSender, times(2)).send(any(), any(), any());
+        verify(ai, times(3)).run(any());
+    }
+
+    private void assertNotCommitted(String group, String topic, long inputOffset) {
+        try (var admin = admin()) {
+            await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
+                var offset = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata()
+                    .get(5, TimeUnit.SECONDS).get(new TopicPartition(topic, 3));
+                assertThat(offset == null || offset.offset() <= inputOffset).isTrue();
+            });
+        }
+    }
+
+    private double failureCount(String name, String code) {
+        var counter = meters.find(name).tag("error_code", code).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    private enum HandoffStage {
+        MAIN_RETRY(1, false, false),
+        MAIN_DLT(1, false, true),
+        RETRY_RETRY(2, true, false),
+        RETRY_DLT(4, true, true);
+
+        private final int attempt;
+        private final boolean retryInput;
+        private final boolean dlt;
+
+        HandoffStage(int attempt, boolean retryInput, boolean dlt) {
+            this.attempt = attempt;
+            this.retryInput = retryInput;
+            this.dlt = dlt;
+        }
+    }
+
     private List<ConsumerRecord<Long, byte[]>> records(String topic, Long id, int expected) {
+        var result = recordsAtLeast(topic, id, expected);
+        assertThat(result).hasSize(expected);
+        return result;
+    }
+
+    private List<ConsumerRecord<Long, byte[]>> recordsAtLeast(String topic, Long id, int expected) {
         try (var consumer = new KafkaConsumer<Long, byte[]>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker.getBrokersAsString(),
             ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false), new LongDeserializer(), new ByteArrayDeserializer())) {
@@ -407,7 +630,7 @@ class AiSimulationGenerationConsumerIntegrationTest {
                     }
                 });
             }
-            assertThat(result).hasSize(expected);
+            assertThat(result).hasSizeGreaterThanOrEqualTo(expected);
             return result;
         }
     }

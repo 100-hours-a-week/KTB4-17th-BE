@@ -1,6 +1,12 @@
 package com.team.dating_backend.aisimulation.integration;
 
 import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
+import com.team.dating_backend.aisimulation.config.AiSimulationAlertConfiguration;
+import com.team.dating_backend.common.alert.DiscordWebhookSender;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.context.annotation.Bean;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.doAnswer;
@@ -94,7 +100,10 @@ import tools.jackson.databind.json.JsonMapper;
         "app.ai-simulation.kafka.request-notification.enabled=true",
         "app.ai-simulation.kafka.recommendation.enabled=true",
         "app.ai-simulation.kafka.requester-notification.enabled=true",
-        "app.ai-simulation.kafka.target-notification.enabled=true", "app.ai-simulation.kafka.retry.delay-ms=50"
+        "app.ai-simulation.kafka.target-notification.enabled=true", "app.ai-simulation.kafka.retry.delay-ms=50",
+        "app.ai-simulation.alert.enabled=true",
+        "app.ai-simulation.alert.webhook-url=https://discord.com/api/webhooks/123/test-token",
+        "app.ai-simulation.alert.max-messages-per-window=1000"
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -103,7 +112,8 @@ import tools.jackson.databind.json.JsonMapper;
         TaskSchedulingAutoConfiguration.class}
 )
 @Import(
-    {AiSimulationRequestNotificationConsumer.class, AiSimulationRecommendationConsumer.class,
+    {AiSimulationAlertConfiguration.class, AiSimulationFailureReporter.class,
+        AiSimulationRequestNotificationConsumer.class, AiSimulationRecommendationConsumer.class,
         AiSimulationFailureClassifier.class,
         AiSimulationCompletedNotificationConsumer.class, AiSimulationNotificationProcessor.class,
         AiSimulationNotificationService.class, AiSimulationRecommendationService.class,
@@ -137,8 +147,8 @@ class AiSimulationSideEffectConsumerIntegrationTest {
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
 
-    @MockitoBean
-    private AiSimulationFailureReporter failureReporter;
+    @MockitoBean(name = "aiSimulationDiscordWebhookSender")
+    private DiscordWebhookSender alertSender;
 
     @Autowired
     private KafkaTemplate<Object, Object> template;
@@ -331,6 +341,10 @@ class AiSimulationSideEffectConsumerIntegrationTest {
             assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?", String.class,
                 sessionId))
                 .isEqualTo(requested ? "GENERATING" : "COMPLETED");
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(),
+                org.mockito.ArgumentMatchers.argThat(fields -> sessionId.equals(fields.get("simulationId"))
+                    && task.replace('-', '_').toUpperCase(java.util.Locale.ROOT).equals(fields.get("task"))
+                    && fields.get("destinationOffset") != null)));
         } finally {
             jdbc.execute("ALTER TABLE " + table + " DROP CHECK test_reject_side_effect");
         }
@@ -418,5 +432,11 @@ class AiSimulationSideEffectConsumerIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties(AiSimulationKafkaProperties.class)
-    static class PropertiesConfiguration {}
+    static class PropertiesConfiguration {
+
+        @Bean
+        SimpleMeterRegistry meters() {
+            return new SimpleMeterRegistry();
+        }
+    }
 }
