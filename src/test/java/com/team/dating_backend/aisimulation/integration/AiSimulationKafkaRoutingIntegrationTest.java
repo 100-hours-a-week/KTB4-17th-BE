@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.integration;
 
+import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
@@ -78,6 +79,7 @@ class AiSimulationKafkaRoutingIntegrationTest {
                     AiSimulationKafkaTopicConfiguration.class, PropertiesConfiguration.class)
                 .withBean(ProbeListeners.class, () -> listeners)
                 .withBean(AiSimulationPersistenceService.class, () -> mock(AiSimulationPersistenceService.class))
+                .withBean(AiSimulationFailureReporter.class, () -> mock(AiSimulationFailureReporter.class))
                 .withPropertyValues(
                     "spring.kafka.bootstrap-servers=" + broker.getBrokersAsString(),
                     "spring.kafka.admin.auto-create=false",

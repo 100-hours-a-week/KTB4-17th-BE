@@ -1,5 +1,11 @@
 package com.team.dating_backend.aisimulation.integration;
 
+import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
+import com.team.dating_backend.aisimulation.config.AiSimulationAlertConfiguration;
+import com.team.dating_backend.common.alert.DiscordWebhookSender;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.context.annotation.Bean;
+import org.springframework.web.client.ResourceAccessException;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.TARGET_ID;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.USER_ID;
 import static com.team.dating_backend.aisimulation.AiSimulationTestFixtures.aiResponse;
@@ -97,7 +103,9 @@ import tools.jackson.databind.json.JsonMapper;
         "app.ai-simulation.kafka.min-in-sync-replicas=1",
         "app.ai-simulation.kafka.retry.max-attempts=4",
         "app.ai-simulation.kafka.retry.concurrency=1",
-        "app.ai-simulation.kafka.retry.delay-ms=50"
+        "app.ai-simulation.kafka.retry.delay-ms=50",
+        "app.ai-simulation.alert.enabled=true",
+        "app.ai-simulation.alert.webhook-url=https://discord.com/api/webhooks/123/test-token"
     }
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -106,7 +114,8 @@ import tools.jackson.databind.json.JsonMapper;
         TaskSchedulingAutoConfiguration.class}
 )
 @Import(
-    {AiSimulationGenerationConsumer.class, AiSimulationFailureClassifier.class, AiSimulationGenerationService.class,
+    {AiSimulationAlertConfiguration.class, AiSimulationFailureReporter.class,
+        AiSimulationGenerationConsumer.class, AiSimulationFailureClassifier.class, AiSimulationGenerationService.class,
         AiSimulationPersistenceService.class, AiSimulationResponseValidator.class,
         AiSimulationEventPublisher.class, AiSimulationEventFactory.class,
         KafkaProducerConfiguration.class, AiSimulationKafkaConfiguration.class,
@@ -132,6 +141,12 @@ class AiSimulationGenerationConsumerIntegrationTest {
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+
+    @MockitoBean(name = "aiSimulationDiscordWebhookSender")
+    private DiscordWebhookSender alertSender;
+
+    @Autowired
+    private SimpleMeterRegistry meters;
 
     @Autowired
     private AiSimulationPersistenceService persistence;
@@ -306,6 +321,9 @@ class AiSimulationGenerationConsumerIntegrationTest {
             String.class, session.getId())).isEqualTo("FAILED");
         verify(ai, times(4)).run(any());
         assertThat(messageCount(session.getId())).isZero();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(),
+            org.mockito.ArgumentMatchers.argThat(fields -> session.getId().equals(fields.get("simulationId"))
+                && "GENERATION".equals(fields.get("task")) && fields.get("destinationOffset") != null)));
     }
 
     @Test
@@ -325,6 +343,9 @@ class AiSimulationGenerationConsumerIntegrationTest {
         assertThat(messageCount(session.getId())).isEqualTo(20);
         verify(ai, times(1)).run(any());
         verify(publisher, times(4)).publishCompleted(eq(session.getId()), any());
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(),
+            org.mockito.ArgumentMatchers.argThat(fields -> session.getId().equals(fields.get("simulationId"))
+                && "COMPLETION_PUBLISH".equals(fields.get("task")))));
     }
 
     @Test
@@ -340,10 +361,34 @@ class AiSimulationGenerationConsumerIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM ai_simulation_reports WHERE session_id=?",
             String.class, session.getId())).isEqualTo("FAILED");
         verify(ai, times(1)).run(any());
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> verify(alertSender).send(any(), any(),
+            org.mockito.ArgumentMatchers.argThat(fields -> session.getId().equals(fields.get("simulationId")))));
     }
 
     private RecordMetadata send(AiSimulationRequestedEvent event) throws Exception {
         return template.send(REQUESTED, 3, event.simulationId(), event).get(10, TimeUnit.SECONDS).getRecordMetadata();
+    }
+
+    @Test
+    void Discord_실패는_DLT와_최종_상태와_입력_commit을_유지하고_AI를_재실행하지_않는다() throws Exception {
+        var session = persistence.begin(USER_ID, TARGET_ID);
+        when(ai.run(any())).thenThrow(new AiSimulationBusinessException(AiSimulationErrorCode.AI_REQUEST_REJECTED));
+        doThrow(new ResourceAccessException("private-webhook-token")).when(alertSender).send(any(), any(), any());
+        double before = meters.find("ai.simulation.alert.failures").tag("error_code", "ALERT_WEBHOOK_FAILED")
+            .counter() == null
+                ? 0
+                : meters.get("ai.simulation.alert.failures").tag("error_code", "ALERT_WEBHOOK_FAILED")
+                    .counter().count();
+
+        assertCommitted(GROUP, send(events.requested(session.getId(), session.getCreatedAt())));
+        records(REQUESTED + "-generation-dlt", session.getId(), 1);
+
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(meters.get("ai.simulation.alert.failures")
+            .tag("error_code", "ALERT_WEBHOOK_FAILED").counter().count()).isEqualTo(before + 1));
+        assertThat(persistence.loadGenerationState(session.getId()).status())
+            .isEqualTo(AiSimulationSessionStatus.FAILED);
+        verify(ai, times(1)).run(any());
+        verify(alertSender, times(1)).send(any(), any(), any());
     }
 
     private List<ConsumerRecord<Long, byte[]>> records(String topic, Long id, int expected) {
@@ -399,5 +444,11 @@ class AiSimulationGenerationConsumerIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties(AiSimulationKafkaProperties.class)
-    static class PropertiesConfiguration {}
+    static class PropertiesConfiguration {
+
+        @Bean
+        SimpleMeterRegistry meters() {
+            return new SimpleMeterRegistry();
+        }
+    }
 }
