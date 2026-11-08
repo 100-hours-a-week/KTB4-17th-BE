@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.config;
 
+import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,6 +77,7 @@ class AiSimulationRetryConfigurationTest {
             AiSimulationKafkaTopicConfiguration.class, PropertiesConfiguration.class, TestListeners.class)
         .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
         .withBean(AiSimulationPersistenceService.class, () -> mock(AiSimulationPersistenceService.class))
+        .withBean(AiSimulationFailureReporter.class, () -> mock(AiSimulationFailureReporter.class))
         .withPropertyValues(
             "spring.kafka.admin.auto-create=false",
             "app.notification.kafka.create-requested-topic=local-notification-create-requested-v1",
@@ -232,7 +234,8 @@ class AiSimulationRetryConfigurationTest {
     private AiSimulationRetryConfiguration simulationPolicy() {
         var properties = new AiSimulationKafkaProperties();
         return new AiSimulationRetryConfiguration(properties,
-            new AiSimulationRecoveryHandler(mock(AiSimulationPersistenceService.class), properties));
+            new AiSimulationRecoveryHandler(mock(AiSimulationPersistenceService.class), properties,
+                mock(AiSimulationFailureReporter.class)));
     }
 
     @Configuration(proxyBeanMethods = false)

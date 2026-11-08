@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.kafka;
 
+import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -9,6 +10,9 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.notNull;
 import static org.mockito.Mockito.when;
 
 import com.team.dating_backend.aisimulation.config.AiSimulationKafkaProperties;
@@ -52,8 +56,9 @@ class AiSimulationRecoveryHandlerTest {
 
     private final AiSimulationPersistenceService persistence = mock(AiSimulationPersistenceService.class);
     private final KafkaOperations<Object, Object> template = mock(KafkaOperations.class);
+    private final AiSimulationFailureReporter reporter = mock(AiSimulationFailureReporter.class);
     private final AiSimulationRecoveryHandler handler = new AiSimulationRecoveryHandler(persistence,
-        new AiSimulationKafkaProperties());
+        new AiSimulationKafkaProperties(), reporter);
 
     @Test
     void DLT_전달_확인과_최종_상태_저장이_끝나기_전에는_복구를_완료하지_않는다() throws Exception {
@@ -184,6 +189,29 @@ class AiSimulationRecoveryHandlerTest {
         recoverer.setTimeoutBuffer(0);
         recoverer.setWaitForSendResultTimeout(Duration.ofSeconds(3));
         return recoverer;
+    }
+
+    @Test
+    void 최종_상태_저장_이후에_보고하고_보고_실패는_복구_결과에_영향을_주지_않는다() {
+        when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(result(DLT)));
+        doThrow(new IllegalStateException()).when(reporter).report(any(), any(), any(), any(), any());
+
+        recoverer(DLT).accept(record(REQUESTED, ID, EVENT), new IllegalStateException());
+
+        var order = inOrder(persistence, reporter);
+        order.verify(persistence).fail(ID);
+        order.verify(reporter).report(any(), any(), any(), notNull(), isNull());
+    }
+
+    @Test
+    void 최종_상태_저장_실패는_DLT_발행_성공_정보와_함께_보고하고_원래_예외를_전파한다() {
+        var failure = new DataAccessResourceFailureException(null);
+        when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(result(DLT)));
+        doThrow(failure).when(persistence).fail(ID);
+
+        assertThatThrownBy(() -> recoverer(DLT).accept(record(REQUESTED, ID, EVENT), new IllegalStateException()))
+            .isSameAs(failure);
+        verify(reporter).report(any(), any(), any(), notNull(), org.mockito.ArgumentMatchers.same(failure));
     }
 
     private ConsumerRecord<Object, Object> record(String topic, Object key, Object value) {

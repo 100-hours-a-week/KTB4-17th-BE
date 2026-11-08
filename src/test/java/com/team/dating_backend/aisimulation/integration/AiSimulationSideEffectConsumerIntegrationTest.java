@@ -1,5 +1,6 @@
 package com.team.dating_backend.aisimulation.integration;
 
+import com.team.dating_backend.aisimulation.alert.AiSimulationFailureReporter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.doAnswer;
@@ -74,6 +75,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.EmbeddedKafkaBroker;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -134,6 +136,9 @@ class AiSimulationSideEffectConsumerIntegrationTest {
     @Container
     @ServiceConnection
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4");
+
+    @MockitoBean
+    private AiSimulationFailureReporter failureReporter;
 
     @Autowired
     private KafkaTemplate<Object, Object> template;
