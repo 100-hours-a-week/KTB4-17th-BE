@@ -14,6 +14,9 @@ import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import com.team.dating_backend.aisimulation.repository.AiSimulationReportRepository;
 import com.team.dating_backend.aisimulation.repository.AiSimulationSessionRepository;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
+import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.enums.AiNotificationTemplate;
+import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.outbox.NotificationRequestOutboxCodec;
 import com.team.dating_backend.notification.repository.NotificationRequestOutboxRepository;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
@@ -77,8 +80,6 @@ class AiSimulationCompletedNotificationIntegrationTest {
     private AiSimulationCompletedNotificationConsumer consumer;
     @Autowired
     private AiSimulationNotificationProcessor processor;
-    @Autowired
-    private AiSimulationNotificationService notifications;
     @Autowired
     private AiSimulationSessionRepository sessions;
     @Autowired
@@ -184,10 +185,21 @@ class AiSimulationCompletedNotificationIntegrationTest {
     }
 
     @Test
-    void 기존_Worker에서_기록한_완료_알림도_Kafka_재처리에서_중복_생성하지_않는다() {
+    void 기존_형식으로_저장된_완료_Outbox도_Kafka_재처리에서_중복_생성하지_않는다() {
         var session = completedSession();
-        notifications.completed(session.getId(), requester, target, requester);
-        notifications.completed(session.getId(), requester, target, target);
+        var legacyRecordedAt = FINISHED_AT.plusMinutes(1);
+        var template = AiNotificationTemplate.SIMULATION_COMPLETED;
+        for (Long recipientId : List.of(requester, target)) {
+            var sourceEventId = "AI_SIMULATION_COMPLETED:" + session.getId()
+                + (recipientId.equals(requester) ? "" : ":" + recipientId);
+            var request = new NotificationCreateRequested(NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
+                sourceEventId, recipientId, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+                template.getTitle(), template.getBody(), template.getTargetType(), session.getId(),
+                legacyRecordedAt.toInstant(ZoneOffset.UTC));
+            outboxes.saveAndFlush(new NotificationRequestOutbox(sourceEventId, recipientId, request.type(),
+                codec.encode(request), legacyRecordedAt));
+        }
+        var beforeIds = outboxes.findAll().stream().map(NotificationRequestOutbox::getId).toList();
         var before = outboxes.findAll().stream().map(NotificationRequestOutbox::getPayload).toList();
 
         for (var recipient : AiSimulationNotificationRecipient.values()) {
@@ -196,6 +208,8 @@ class AiSimulationCompletedNotificationIntegrationTest {
 
         assertThat(outboxes.findAll()).extracting(NotificationRequestOutbox::getPayload)
             .containsExactlyInAnyOrderElementsOf(before);
+        assertThat(outboxes.findAll()).extracting(NotificationRequestOutbox::getId)
+            .containsExactlyInAnyOrderElementsOf(beforeIds);
     }
 
     @Test

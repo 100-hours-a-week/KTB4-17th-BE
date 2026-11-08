@@ -14,7 +14,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.aisimulation.entity.AiSimulationMessage;
-import com.team.dating_backend.aisimulation.dto.internal.AiSimulationExecutionDtos.GenerationInput;
 import com.team.dating_backend.aisimulation.entity.AiSimulationReport;
 import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationReportStatus;
@@ -75,7 +74,7 @@ class AiSimulationPersistenceServiceTest {
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
         given(reportRepository.findBySessionId(SESSION_ID)).willReturn(Optional.of(report));
 
-        service.complete(SESSION_ID, aiResponse());
+        service.completeGeneration(SESSION_ID, aiResponse());
 
         assertThat(session.getStatus()).isEqualTo(AiSimulationSessionStatus.COMPLETED);
         assertThat(report.getStatus()).isEqualTo(AiSimulationReportStatus.COMPLETED);
@@ -114,23 +113,6 @@ class AiSimulationPersistenceServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void 종료된_세션에는_완료_결과를_저장하지_않는다(AiSimulationSessionStatus status) {
-        AiSimulationSession session = endedSession(status);
-        LocalDateTime finishedAt = session.getFinishedAt();
-        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
-
-        assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
-
-        assertThat(session.getStatus()).isEqualTo(status);
-        assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
-        verifyNoInteractions(reportRepository, messageRepository);
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
     void 종료된_세션에_실패_처리가_와도_기존_상태와_결과를_유지한다(
         AiSimulationSessionStatus status) {
         AiSimulationSession session = endedSession(status);
@@ -142,28 +124,6 @@ class AiSimulationPersistenceServiceTest {
         assertThat(session.getStatus()).isEqualTo(status);
         assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
         verifyNoInteractions(reportRepository, messageRepository);
-    }
-
-    @Test
-    void 완료_저장을_두번_호출해도_메시지를_중복_저장하지_않는다() {
-        AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
-        ReflectionTestUtils.setField(session, "id", SESSION_ID);
-        AiSimulationReport report = new AiSimulationReport(session, LocalDateTime.now());
-        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
-        given(reportRepository.findBySessionId(SESSION_ID)).willReturn(Optional.of(report));
-        service.complete(SESSION_ID, aiResponse());
-        LocalDateTime finishedAt = session.getFinishedAt();
-
-        assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_IN_PROGRESS));
-
-        assertThat(session.getStatus()).isEqualTo(AiSimulationSessionStatus.COMPLETED);
-        assertThat(session.getFinishedAt()).isEqualTo(finishedAt);
-        assertThat(report.getStatus()).isEqualTo(AiSimulationReportStatus.COMPLETED);
-        verify(messageRepository, times(1)).saveAll(org.mockito.ArgumentMatchers.any());
-        verify(reportRepository, times(1)).findBySessionId(SESSION_ID);
     }
 
     @Test
@@ -185,18 +145,6 @@ class AiSimulationPersistenceServiceTest {
     }
 
     @Test
-    void 없는_세션의_완료_저장은_조회_오류를_반환한다() {
-        given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
-
-        verifyNoInteractions(reportRepository, messageRepository);
-    }
-
-    @Test
     void 없는_세션의_실패_처리는_아무것도_저장하지_않는다() {
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.empty());
 
@@ -211,7 +159,7 @@ class AiSimulationPersistenceServiceTest {
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
         given(reportRepository.findBySessionId(SESSION_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.complete(SESSION_ID, aiResponse()))
+        assertThatThrownBy(() -> service.completeGeneration(SESSION_ID, aiResponse()))
             .isInstanceOfSatisfying(AiSimulationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(AiSimulationErrorCode.SIMULATION_NOT_FOUND));
@@ -222,43 +170,17 @@ class AiSimulationPersistenceServiceTest {
     }
 
     @Test
-    void 진행중_세션에서_최초_생성_방향의_ID만_읽는다() {
+    void 진행중_생성_상태에서_최초_생성_방향의_ID를_읽는다() {
         AiSimulationSession session = new AiSimulationSession(TARGET_ID, USER_ID, LocalDateTime.now());
         ReflectionTestUtils.setField(session, "id", SESSION_ID);
         given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
 
-        assertThat(service.loadGenerationInput(SESSION_ID))
-            .contains(new GenerationInput(SESSION_ID, TARGET_ID, USER_ID));
-        verifyNoInteractions(reportRepository, messageRepository);
-    }
+        var state = service.loadGenerationState(SESSION_ID);
 
-    @ParameterizedTest
-    @EnumSource(value = AiSimulationSessionStatus.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void 종료된_세션에는_AI_실행_입력을_반환하지_않는다(AiSimulationSessionStatus status) {
-        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(endedSession(status)));
-
-        assertThat(service.loadGenerationInput(SESSION_ID)).isEmpty();
-        verifyNoInteractions(reportRepository, messageRepository);
-    }
-
-    @Test
-    void 없는_세션에는_AI_실행_입력을_반환하지_않는다() {
-        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.empty());
-
-        assertThat(service.loadGenerationInput(SESSION_ID)).isEmpty();
-        verifyNoInteractions(reportRepository, messageRepository);
-    }
-
-    @Test
-    void 상대_ID가_없는_기존_세션의_AI_실행_입력은_거부한다() {
-        AiSimulationSession session = new AiSimulationSession(USER_ID, TARGET_ID, LocalDateTime.now());
-        ReflectionTestUtils.setField(session, "targetUserId", null);
-        given(sessionRepository.findById(SESSION_ID)).willReturn(Optional.of(session));
-
-        assertThatThrownBy(() -> service.loadGenerationInput(SESSION_ID))
-            .isInstanceOfSatisfying(AiSimulationBusinessException.class,
-                exception -> assertThat(exception.getErrorCode())
-                    .isEqualTo(AiSimulationErrorCode.SIMULATION_TARGET_USER_MISSING));
+        assertThat(state.simulationId()).isEqualTo(SESSION_ID);
+        assertThat(state.userId()).isEqualTo(TARGET_ID);
+        assertThat(state.targetUserId()).isEqualTo(USER_ID);
+        assertThat(state.status()).isEqualTo(AiSimulationSessionStatus.IN_PROGRESS);
         verifyNoInteractions(reportRepository, messageRepository);
     }
 

@@ -13,8 +13,6 @@ public final class AiSimulationExecutionDtos {
         boolean created,
         LocalDateTime createdAt) {}
 
-    public record GenerationInput(Long simulationId, Long userId, Long targetUserId) {}
-
     public record GenerationState(
         Long simulationId,
         Long userId,

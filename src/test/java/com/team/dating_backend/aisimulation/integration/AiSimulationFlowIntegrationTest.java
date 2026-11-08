@@ -25,6 +25,7 @@ import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads.Simula
 import com.team.dating_backend.aisimulation.dto.event.AiSimulationRequestedEvent;
 import com.team.dating_backend.aisimulation.dto.request.AiSimulationCreateRequest;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
+import com.team.dating_backend.aisimulation.enums.AiSimulationNotificationRecipient;
 import com.team.dating_backend.aisimulation.service.AiSimulationAdmissionService;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventFactory;
 import com.team.dating_backend.aisimulation.service.AiSimulationEventPublisher;
@@ -210,7 +211,7 @@ class AiSimulationFlowIntegrationTest {
         jdbc.update(
             "insert into recommendation_passes (passer_user_id, passed_user_id, created_at) values (8, 7, now(6))");
         Long id = persistence.begin(7L, 8L).getId();
-        persistence.complete(id, aiResponse());
+        persistence.completeGeneration(id, aiResponse());
         viewer = 7L;
         mvc.perform(get("/api/v1/users/8/profile")).andExpect(status().isOk());
         viewer = 8L;
@@ -223,7 +224,7 @@ class AiSimulationFlowIntegrationTest {
     @ValueSource(strings = {"blocked", "left", "target_withdrawn", "requester_withdrawn"})
     void 결과_저장_후_관계가_변해도_A의_수신_상태만으로_A의_알림을_판단한다(String situation) {
         Long id = persistence.begin(7L, 8L).getId();
-        persistence.complete(id, aiResponse());
+        persistence.completeGeneration(id, aiResponse());
         try {
             switch (situation) {
                 case "blocked" -> jdbc.update(
@@ -241,8 +242,8 @@ class AiSimulationFlowIntegrationTest {
                 default -> throw new IllegalArgumentException(situation);
             }
 
-            simulationNotifications.completed(id, 7L, 8L, 7L);
-            simulationNotifications.completed(id, 7L, 8L, 8L);
+            simulationNotifications.completed(id, AiSimulationNotificationRecipient.REQUESTER);
+            simulationNotifications.completed(id, AiSimulationNotificationRecipient.TARGET);
 
             if (situation.equals("requester_withdrawn")) {
                 assertThat(storedRequests.snapshot()).isEmpty();
@@ -270,7 +271,7 @@ class AiSimulationFlowIntegrationTest {
         Long existingId = null;
         if (existingResult) {
             existingId = persistence.begin(7L, 8L).getId();
-            persistence.complete(existingId, aiResponse());
+            persistence.completeGeneration(existingId, aiResponse());
         }
         jdbc.update("INSERT INTO user_blocks (blocker_user_id, blocked_user_id, blocked_at) VALUES (?, ?, NOW(6))",
             blockerId, blockedId);
@@ -309,7 +310,7 @@ class AiSimulationFlowIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.simulationId").value(decision.simulationId()))
             .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
-        persistence.complete(decision.simulationId(), aiResponse());
+        persistence.completeGeneration(decision.simulationId(), aiResponse());
         mvc.perform(get("/api/v1/ai-simulations/targets/7"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("COMPLETED"));
@@ -375,11 +376,11 @@ class AiSimulationFlowIntegrationTest {
     @Test
     void 과거_중복은_최근_성공_결과를_재사용하고_기존_ID_조회도_유지한다() {
         var first = persistence.begin(7L, 8L);
-        persistence.complete(first.getId(), aiResponse());
+        persistence.completeGeneration(first.getId(), aiResponse());
         jdbc.update("UPDATE ai_simulation_sessions SET finished_at=? WHERE id=?",
             LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5), first.getId());
         var second = persistence.begin(8L, 7L);
-        persistence.complete(second.getId(), responseFor(new SimulationRequest("8", "7", 10)));
+        persistence.completeGeneration(second.getId(), responseFor(new SimulationRequest("8", "7", 10)));
         var failed = persistence.begin(7L, 8L);
         persistence.fail(failed.getId());
         assertThat(admission.admit(7L, 8L).simulationId()).isEqualTo(second.getId());
