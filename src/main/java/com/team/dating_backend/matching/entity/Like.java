@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -17,7 +18,19 @@ import lombok.NoArgsConstructor;
 @Entity(name = "UserLike")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "likes")
+@Table(
+    name = "likes",
+    indexes = {
+        @Index(
+            name = "idx_likes_sender_status_receiver",
+            columnList = "sender_id,status,receiver_id"
+        ),
+        @Index(
+            name = "idx_likes_receiver_status_sender",
+            columnList = "receiver_id,status,sender_id"
+        )
+    }
+)
 public class Like {
 
     @Id
