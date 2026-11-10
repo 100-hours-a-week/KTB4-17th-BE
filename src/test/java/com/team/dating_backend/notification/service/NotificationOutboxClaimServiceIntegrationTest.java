@@ -168,6 +168,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         assertThat(service.tryClaim(id)).isEmpty();
         assertThat(service.tryClaimNext()).isEmpty();
         assertThat(service.markPublished(id, token)).isFalse();
+        assertThat(service.markCompleted(id, token)).isFalse();
         assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
         assertThat(row()).isEqualTo(before);
@@ -230,6 +231,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         var before = row();
 
         assertThat(service.markPublished(id, old)).isFalse();
+        assertThat(service.markCompleted(id, old)).isFalse();
         assertThat(failures.recordFailure(id, old, FAILURE)).isEmpty();
         assertThat(service.release(id, old)).isFalse();
         assertThat(row()).isEqualTo(before);
@@ -243,6 +245,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         var before = row();
 
         assertThat(service.markPublished(id, token)).isFalse();
+        assertThat(service.markCompleted(id, token)).isFalse();
         assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
         assertThat(row()).isEqualTo(before);
@@ -258,6 +261,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         var before = row();
         for (String other : List.of(UUID.randomUUID().toString(), token.toUpperCase(java.util.Locale.ROOT))) {
             assertThat(service.markPublished(id, other)).isFalse();
+            assertThat(service.markCompleted(id, other)).isFalse();
             assertThat(failures.recordFailure(id, other, FAILURE)).isEmpty();
             assertThat(service.release(id, other)).isFalse();
         }
@@ -388,13 +392,14 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"success", "failure", "release"})
+    @ValueSource(strings = {"success", "complete", "failure", "release"})
     void 잠금_대기_중_담당이_만료되면_대기_이후의_DB_시각으로_결과와_해제를_거절한다(String operation)
         throws Exception {
         String token = claim().getProcessingToken();
         try (var holder = lockRow(); var executor = Executors.newSingleThreadExecutor()) {
             var result = executor.submit(() -> switch (operation) {
                 case "success" -> service.markPublished(id, token);
+                case "complete" -> service.markCompleted(id, token);
                 case "failure" -> failures.recordFailure(id, token, FAILURE).isPresent();
                 default -> service.release(id, token);
             });
@@ -444,7 +449,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"claim", "claimNext", "success", "failure", "release"})
+    @ValueSource(strings = {"claim", "claimNext", "success", "complete", "failure", "release"})
     void 실제_DB_오류는_예외로_전달하고_담당과_이력을_함께_보존한다(String operation) {
         boolean claiming = operation.equals("claim") || operation.equals("claimNext");
         String token = claiming ? UUID.randomUUID().toString() : claim().getProcessingToken();
@@ -459,6 +464,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
                     case "claim" -> service.tryClaim(id);
                     case "claimNext" -> service.tryClaimNext();
                     case "success" -> service.markPublished(id, token);
+                    case "complete" -> service.markCompleted(id, token);
                     case "failure" -> failures.recordFailure(id, token, FAILURE);
                     default -> service.release(id, token);
                 }
@@ -479,6 +485,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         String token = UUID.randomUUID().toString();
         assertInternalError(() -> service.tryClaim(invalid));
         assertInternalError(() -> service.markPublished(invalid, token));
+        assertInternalError(() -> service.markCompleted(invalid, token));
         assertInternalError(() -> service.release(invalid, token));
         assertInternalError(() -> failures.recordFailure(invalid, token, FAILURE));
     }
@@ -488,6 +495,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     @ValueSource(strings = {"", "short", "                                    "})
     void 누락되거나_길이가_다르거나_공백인_토큰은_에러코드로_거절한다(String token) {
         assertInternalError(() -> service.markPublished(id, token));
+        assertInternalError(() -> service.markCompleted(id, token));
         assertInternalError(() -> service.release(id, token));
         assertInternalError(() -> failures.recordFailure(id, token, FAILURE));
     }
@@ -525,6 +533,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         assertThat(service.tryClaim(Long.MAX_VALUE)).isEmpty();
         for (Long target : List.of(id, Long.MAX_VALUE)) {
             assertThat(service.markPublished(target, token)).isFalse();
+            assertThat(service.markCompleted(target, token)).isFalse();
             assertThat(failures.recordFailure(target, token, FAILURE)).isEmpty();
             assertThat(service.release(target, token)).isFalse();
         }
@@ -655,6 +664,66 @@ class NotificationOutboxClaimServiceIntegrationTest {
         assertThat(service.release(id, old)).isFalse();
         assertThat(row()).isEqualTo(before);
         assertThat(service.release(id, current)).isTrue();
+    }
+
+    @Test
+    void 현재_점유자만_완료를_기록하고_원본과_실패_이력을_보존한다() {
+        jdbc.update("""
+            UPDATE notification_request_outbox
+            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            """, id);
+        String token = service.tryClaimNext().orElseThrow().getProcessingToken();
+        var before = new LinkedHashMap<>(row());
+        var started = dbNow();
+
+        assertThat(service.markCompleted(id, token)).isTrue();
+
+        var stored = repository.findById(id).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
+        assertThat(stored.getCompletedAt()).isBetween(started, dbNow());
+        assertThat(stored.getProcessingToken()).isNull();
+        assertThat(stored.getProcessingUntil()).isNull();
+        for (String field : List.of("status", "completed_at", "processing_token", "processing_until")) {
+            before.remove(field);
+        }
+        assertThat(row()).containsAllEntriesOf(before);
+        var completed = row();
+        assertThat(service.markCompleted(id, token)).isFalse();
+        assertThat(service.markPublished(id, token)).isFalse();
+        assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
+        assertThat(service.release(id, token)).isFalse();
+        assertThat(service.tryClaimNext()).isEmpty();
+        assertThat(row()).isEqualTo(completed);
+    }
+
+    @Test
+    void 같은_토큰의_동시_완료는_한_실행만_성공한다() throws Exception {
+        String token = claim().getProcessingToken();
+
+        var results = concurrently(() -> service.markCompleted(id, token), () -> service.markCompleted(id, token));
+
+        assertThat(results).containsExactlyInAnyOrder(true, false);
+        var stored = repository.findById(id).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
+        assertThat(stored.getCompletedAt()).isNotNull();
+        assertThat(stored.getProcessingToken()).isNull();
+        assertThat(stored.getProcessingUntil()).isNull();
+    }
+
+    @Test
+    void 외부_트랜잭션이_롤백되어도_완료_기록은_독립적으로_커밋된다() {
+        String token = claim().getProcessingToken();
+
+        transaction.executeWithoutResult(tx -> {
+            assertThat(service.markCompleted(id, token)).isTrue();
+            tx.setRollbackOnly();
+        });
+
+        var stored = repository.findById(id).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
+        assertThat(stored.getCompletedAt()).isNotNull();
+        assertThat(stored.getProcessingToken()).isNull();
+        assertThat(stored.getProcessingUntil()).isNull();
     }
 
     private NotificationRequestOutbox claim() {
