@@ -12,6 +12,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface NotificationRequestOutboxRepository extends JpaRepository<NotificationRequestOutbox, Long> {
 
@@ -73,6 +75,16 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         ORDER BY next_attempt_at ASC, id ASC
         """, nativeQuery = true)
     List<NotificationRequestOutbox> findAvailable(Pageable pageable);
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    @Query(value = """
+        SELECT * FROM notification_request_outbox
+        WHERE status = 'PENDING' AND next_attempt_at <= UTC_TIMESTAMP(6)
+            AND (processing_token IS NULL OR processing_until <= UTC_TIMESTAMP(6))
+        ORDER BY next_attempt_at ASC, id ASC
+        LIMIT 1 FOR UPDATE SKIP LOCKED
+        """, nativeQuery = true)
+    Optional<NotificationRequestOutbox> findNextAvailableForUpdateSkipLocked();
 
     @Query("""
         SELECT outbox FROM NotificationRequestOutbox outbox
