@@ -9,6 +9,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -197,7 +198,8 @@ class NotificationOutboxProcessingMappingIntegrationTest {
             var source = new DriverManagerDataSource(url, "root", MYSQL.getPassword());
             var legacy = new JdbcTemplate(source);
             Flyway.configure().dataSource(source).target("29").load().migrate();
-            for (var status : NotificationOutboxStatus.values()) {
+            for (var status : List.of(NotificationOutboxStatus.PENDING, NotificationOutboxStatus.PUBLISHED,
+                NotificationOutboxStatus.FAILED)) {
                 legacy.update("""
                     INSERT INTO notification_request_outbox
                         (source_event_id, recipient_user_id, type, payload, status, failure_count,
@@ -245,6 +247,7 @@ class NotificationOutboxProcessingMappingIntegrationTest {
             Arguments.of(" ".repeat(36), UNTIL, NotificationOutboxStatus.PENDING),
             Arguments.of("short", UNTIL, NotificationOutboxStatus.PENDING),
             Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.PUBLISHED),
-            Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.FAILED));
+            Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.FAILED),
+            Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.COMPLETED));
     }
 }
