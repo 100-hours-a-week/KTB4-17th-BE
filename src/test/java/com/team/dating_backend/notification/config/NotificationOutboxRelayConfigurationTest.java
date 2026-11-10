@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
@@ -23,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -40,8 +43,9 @@ class NotificationOutboxRelayConfigurationTest {
     private final NotificationFailureReporter reporter = mock(NotificationFailureReporter.class);
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class))
-        .withUserConfiguration(NotificationOutboxRelayConfiguration.class, NotificationOutboxPublishJob.class,
-            SchedulingConfiguration.class)
+        .withUserConfiguration(NotificationOutboxExecutionConfiguration.class,
+            NotificationOutboxRelayConfiguration.class,
+            NotificationOutboxPublishJob.class, SchedulingConfiguration.class)
         .withBean(NotificationRequestOutboxService.class, () -> outboxService)
         .withBean(NotificationOutboxRelay.class, () -> relay)
         .withBean(NotificationFailureReporter.class, () -> reporter);
@@ -63,6 +67,40 @@ class NotificationOutboxRelayConfigurationTest {
             assertThat(context).doesNotHaveBean(NotificationOutboxPublishJob.class);
             assertThat(context).doesNotHaveBean("notificationOutboxScheduler");
         });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "true,false", "false,true"})
+    void 실행_설정에_따라_기존_Relay만_선택적으로_등록한다(boolean relayEnabled, boolean workerEnabled) {
+        runner.withPropertyValues("app.notification.outbox.relay.enabled=" + relayEnabled,
+            "app.notification.outbox.worker.enabled=" + workerEnabled,
+            "app.notification.creation.enabled=true").run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context.getBean(NotificationOutboxRelayProperties.class).isEnabled())
+                    .isEqualTo(relayEnabled);
+                assertThat(context.getBean(NotificationOutboxWorkerProperties.class).isEnabled())
+                    .isEqualTo(workerEnabled);
+                if (relayEnabled) {
+                    assertThat(context).hasSingleBean(NotificationOutboxPublishJob.class);
+                    assertThat(context).hasBean("notificationOutboxScheduler");
+                } else {
+                    assertThat(context).doesNotHaveBean(NotificationOutboxPublishJob.class);
+                    assertThat(context).doesNotHaveBean("notificationOutboxScheduler");
+                    verifyNoInteractions(outboxService, relay, reporter);
+                }
+            });
+    }
+
+    @Test
+    void Relay와_Worker를_동시에_켜면_작업_실행_전에_시작을_거부한다() {
+        runner.withPropertyValues("app.notification.outbox.relay.enabled=true",
+            "app.notification.outbox.worker.enabled=true").run(context -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).rootCause()
+                    .isInstanceOfSatisfying(NotificationBusinessException.class,
+                        failure -> assertThat(failure.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
+                verifyNoInteractions(outboxService, relay, reporter);
+            });
     }
 
     @Test
