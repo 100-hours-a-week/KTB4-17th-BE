@@ -142,6 +142,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
             """, id);
         var before = row();
         assertThat(service.tryClaim(id)).isEmpty();
+        assertThat(service.tryClaimNext()).isEmpty();
         assertThat(row()).isEqualTo(before);
 
         jdbc.update("""
@@ -150,6 +151,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
             """, UUID.randomUUID().toString(), id);
         before = row();
         assertThat(service.tryClaim(id)).isEmpty();
+        assertThat(service.tryClaimNext()).isEmpty();
         assertThat(row()).isEqualTo(before);
 
         makeDue();
@@ -164,6 +166,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         String token = UUID.randomUUID().toString();
 
         assertThat(service.tryClaim(id)).isEmpty();
+        assertThat(service.tryClaimNext()).isEmpty();
         assertThat(service.markPublished(id, token)).isFalse();
         assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
@@ -441,9 +444,10 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"claim", "success", "failure", "release"})
+    @ValueSource(strings = {"claim", "claimNext", "success", "failure", "release"})
     void 실제_DB_오류는_예외로_전달하고_담당과_이력을_함께_보존한다(String operation) {
-        String token = operation.equals("claim") ? UUID.randomUUID().toString() : claim().getProcessingToken();
+        boolean claiming = operation.equals("claim") || operation.equals("claimNext");
+        String token = claiming ? UUID.randomUUID().toString() : claim().getProcessingToken();
         var before = row();
         var administrator = new JdbcTemplate(
             new DriverManagerDataSource(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword()));
@@ -453,6 +457,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
             assertThatThrownBy(() -> {
                 switch (operation) {
                     case "claim" -> service.tryClaim(id);
+                    case "claimNext" -> service.tryClaimNext();
                     case "success" -> service.markPublished(id, token);
                     case "failure" -> failures.recordFailure(id, token, FAILURE);
                     default -> service.release(id, token);
@@ -461,6 +466,9 @@ class NotificationOutboxClaimServiceIntegrationTest {
             assertThat(row()).isEqualTo(before);
         } finally {
             administrator.execute("DROP TRIGGER test_outbox_reject_update");
+        }
+        if (operation.equals("claimNext")) {
+            assertThat(service.tryClaimNext()).isPresent();
         }
     }
 
@@ -491,6 +499,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         var before = row();
 
         assertInternalError(() -> service.tryClaim(id));
+        assertInternalError(service::tryClaimNext);
 
         assertThat(row()).isEqualTo(before);
     }
@@ -520,6 +529,132 @@ class NotificationOutboxClaimServiceIntegrationTest {
             assertThat(service.release(target, token)).isFalse();
         }
         assertThat(repository.findById(id).orElseThrow().getFailureCount()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {60_000L, 90_123L})
+    void 다음_요청을_선택하고_DB_시각_기반_점유를_커밋한_최신_정보를_반환한다(long duration) {
+        properties.setDurationMs(duration);
+        jdbc.update("""
+            UPDATE notification_request_outbox
+            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            """, id);
+        var before = withoutProcessing(row());
+        var started = dbNow();
+
+        var claimed = service.tryClaimNext().orElseThrow();
+
+        assertThat(claimed.getId()).isEqualTo(id);
+        assertThat(UUID.fromString(claimed.getProcessingToken()).toString()).isEqualTo(claimed.getProcessingToken());
+        assertThat(claimed.getProcessingUntil()).isBetween(started.plusNanos(duration * 1_000_000L),
+            dbNow().plusNanos(duration * 1_000_000L));
+        var stored = repository.findById(id).orElseThrow();
+        assertThat(stored.getProcessingToken()).isEqualTo(claimed.getProcessingToken());
+        assertThat(stored.getProcessingUntil()).isEqualTo(claimed.getProcessingUntil());
+        assertThat(withoutProcessing(row())).isEqualTo(before);
+        var assigned = row();
+        assertThat(service.tryClaimNext()).isEmpty();
+        assertThat(row()).isEqualTo(assigned);
+    }
+
+    @Test
+    void 선택할_요청이_없으면_빈_결과를_반환한다() {
+        repository.deleteAllInBatch();
+
+        assertThat(service.tryClaimNext()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 한_요청의_동시_선택과_만료_재점유는_한_실행만_성공한다(boolean expired) throws Exception {
+        String old = null;
+        if (expired) {
+            old = service.tryClaimNext().orElseThrow().getProcessingToken();
+            expire();
+        }
+        var before = withoutProcessing(row());
+
+        var results = concurrently(service::tryClaimNext, service::tryClaimNext);
+
+        var winners = results.stream().flatMap(Optional::stream).toList();
+        assertThat(winners).hasSize(1);
+        var winner = winners.getFirst();
+        assertThat(winner.getId()).isEqualTo(id);
+        assertThat(winner.getProcessingToken()).isNotEqualTo(old);
+        assertThat(row()).containsEntry("processing_token", winner.getProcessingToken());
+        assertThat(withoutProcessing(row())).isEqualTo(before);
+    }
+
+    @Test
+    void 두_요청을_동시에_선택하면_서로_다른_행과_토큰을_확보한다() throws Exception {
+        Long second = repository.saveAndFlush(new NotificationRequestOutbox("event:502", 8L, NotificationType.LIKE,
+            "{\"snapshot\":\"다음\"}", dbNow().minusSeconds(30))).getId();
+
+        var results = concurrently(service::tryClaimNext, service::tryClaimNext);
+
+        var claimed = results.stream().flatMap(Optional::stream).toList();
+        assertThat(claimed).extracting(NotificationRequestOutbox::getId).containsExactlyInAnyOrder(id, second);
+        assertThat(claimed).extracting(NotificationRequestOutbox::getProcessingToken).doesNotHaveDuplicates();
+        for (var outbox : claimed) {
+            assertThat(repository.findById(outbox.getId()).orElseThrow().getProcessingToken())
+                .isEqualTo(outbox.getProcessingToken());
+        }
+        assertThat(service.tryClaimNext()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 첫_행이_잠겨_있으면_기다리지_않고_다음_행을_점유하거나_빈_결과를_반환한다(boolean hasNext)
+        throws Exception {
+        Long second = hasNext
+            ? repository.saveAndFlush(new NotificationRequestOutbox("event:502", 8L,
+                NotificationType.LIKE, "{\"snapshot\":\"다음\"}", dbNow().minusSeconds(30))).getId()
+            : null;
+        var before = row();
+
+        try (var holder = lockRow(); var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(service::tryClaimNext);
+            try {
+                var claimed = result.get(5, TimeUnit.SECONDS);
+                assertThat(claimed.map(NotificationRequestOutbox::getId)).isEqualTo(Optional.ofNullable(second));
+                claimed.ifPresent(outbox -> assertThat(outbox.getProcessingToken()).isNotNull());
+            } finally {
+                holder.rollback();
+            }
+        }
+
+        assertThat(row()).isEqualTo(before);
+        assertThat(service.tryClaimNext().orElseThrow().getId()).isEqualTo(id);
+    }
+
+    @Test
+    void 외부_트랜잭션이_롤백되어도_선택과_점유는_반환_전에_별도로_커밋된다() throws Exception {
+        var claimed = transaction.execute(tx -> {
+            var selected = service.tryClaimNext().orElseThrow();
+            tx.setRollbackOnly();
+            return selected;
+        });
+
+        assertThat(row()).containsEntry("processing_token", claimed.getProcessingToken());
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            assertThat(executor.submit(() -> service.tryClaim(id)).get(5, TimeUnit.SECONDS)).isEmpty();
+        }
+    }
+
+    @Test
+    void 만료_재점유_후_이전_토큰은_새_점유를_변경할_수_없다() {
+        String old = service.tryClaimNext().orElseThrow().getProcessingToken();
+        expire();
+
+        String current = service.tryClaimNext().orElseThrow().getProcessingToken();
+        var before = row();
+
+        assertThat(current).isNotEqualTo(old);
+        assertThat(service.markPublished(id, old)).isFalse();
+        assertThat(failures.recordFailure(id, old, FAILURE)).isEmpty();
+        assertThat(service.release(id, old)).isFalse();
+        assertThat(row()).isEqualTo(before);
+        assertThat(service.release(id, current)).isTrue();
     }
 
     private NotificationRequestOutbox claim() {
