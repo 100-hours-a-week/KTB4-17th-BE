@@ -392,7 +392,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"success", "complete", "failure", "release"})
+    @ValueSource(strings = {"success", "complete", "failure", "workerRetry", "workerTerminal", "release"})
     void 잠금_대기_중_담당이_만료되면_대기_이후의_DB_시각으로_결과와_해제를_거절한다(String operation)
         throws Exception {
         String token = claim().getProcessingToken();
@@ -401,6 +401,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
                 case "success" -> service.markPublished(id, token);
                 case "complete" -> service.markCompleted(id, token);
                 case "failure" -> failures.recordFailure(id, token, FAILURE).isPresent();
+                case "workerRetry" -> failures.recordWorkerFailure(id, token, FAILURE, true).isPresent();
+                case "workerTerminal" -> failures.recordWorkerFailure(id, token, FAILURE, false).isPresent();
                 default -> service.release(id, token);
             });
             try {
