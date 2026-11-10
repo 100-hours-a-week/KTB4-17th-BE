@@ -79,6 +79,9 @@ public class NotificationRequestOutbox {
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
 
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
     @Column(name = "processing_token", length = 36)
     private String processingToken;
 
