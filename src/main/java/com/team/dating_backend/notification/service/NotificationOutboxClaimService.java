@@ -24,23 +24,18 @@ public class NotificationOutboxClaimService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<NotificationRequestOutbox> tryClaim(Long id) {
         requireId(id);
-        long durationMicros;
-        try {
-            if (properties.getDurationMs() <= 0) {
-                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-            }
-            durationMicros = Math.multiplyExact(properties.getDurationMs(), 1000L);
-        } catch (ArithmeticException failure) {
-            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR, failure);
-        }
+        long durationMicros = durationMicros();
         if (repository.findByIdForUpdate(id).isEmpty()) {
             return Optional.empty();
         }
-        if (repository.claim(id, UUID.randomUUID().toString(), durationMicros) != 1) {
-            return Optional.empty();
-        }
-        return Optional.of(repository.findById(id)
-            .orElseThrow(() -> new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR)));
+        return claim(id, durationMicros);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<NotificationRequestOutbox> tryClaimNext() {
+        long durationMicros = durationMicros();
+        return repository.findNextAvailableForUpdateSkipLocked()
+            .flatMap(outbox -> claim(outbox.getId(), durationMicros));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -53,6 +48,25 @@ public class NotificationOutboxClaimService {
     public boolean release(Long id, String token) {
         requireOwner(id, token);
         return repository.findByIdForUpdate(id).isPresent() && repository.releaseByToken(id, token) == 1;
+    }
+
+    private Optional<NotificationRequestOutbox> claim(Long id, long durationMicros) {
+        if (repository.claim(id, UUID.randomUUID().toString(), durationMicros) != 1) {
+            return Optional.empty();
+        }
+        return Optional.of(repository.findById(id)
+            .orElseThrow(() -> new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR)));
+    }
+
+    private long durationMicros() {
+        try {
+            if (properties.getDurationMs() <= 0) {
+                throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+            }
+            return Math.multiplyExact(properties.getDurationMs(), 1000L);
+        } catch (ArithmeticException failure) {
+            throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR, failure);
+        }
     }
 
     private void requireOwner(Long id, String token) {
