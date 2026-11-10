@@ -157,7 +157,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED"})
+    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED", "COMPLETED"})
     void 종료된_요청은_확보하거나_결과와_담당을_변경하지_않는다(NotificationOutboxStatus status) {
         jdbc.update("UPDATE notification_request_outbox SET status = ? WHERE id = ?", status.name(), id);
         var before = row();
