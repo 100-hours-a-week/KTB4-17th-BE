@@ -26,7 +26,4 @@ public class NotificationCreationProperties {
 
     @Positive
     private int maxPollIntervalMs = 300_000;
-
-    @Positive
-    private long deliveryResultTimeoutMs = 15_000L;
 }

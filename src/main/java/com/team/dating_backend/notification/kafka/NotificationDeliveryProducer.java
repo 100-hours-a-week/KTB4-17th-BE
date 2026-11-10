@@ -1,7 +1,7 @@
 package com.team.dating_backend.notification.kafka;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
@@ -19,7 +19,7 @@ public class NotificationDeliveryProducer {
 
     private final KafkaTemplate<Object, Object> kafkaTemplate;
     private final NotificationKafkaProperties kafkaProperties;
-    private final NotificationCreationProperties creationProperties;
+    private final NotificationDeliveryProperties deliveryProperties;
 
     public RecordMetadata publishAndAwait(NotificationDeliveryEvent event)
         throws ExecutionException, InterruptedException, TimeoutException {
@@ -39,7 +39,7 @@ public class NotificationDeliveryProducer {
         var result = kafkaTemplate.send(kafkaProperties.getDeliveryTopic(), key, event);
 
         try {
-            return result.get(creationProperties.getDeliveryResultTimeoutMs(), TimeUnit.MILLISECONDS)
+            return result.get(deliveryProperties.getResultTimeoutMs(), TimeUnit.MILLISECONDS)
                 .getRecordMetadata();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
