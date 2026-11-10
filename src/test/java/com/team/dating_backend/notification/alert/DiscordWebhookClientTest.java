@@ -128,7 +128,7 @@ class DiscordWebhookClientTest {
                     "destinationTopic: ",
                     "destinationOffset: 9223372036854775807", "attempt: 32767", "retryable: false",
                     "processingCauseType: ", "errorCode: DELIVERY_INVALID_EVENT",
-                    "deliverySchemaVersion: 2147483647", "notificationId: 9223372036854775807",
+                    "notificationId: 9223372036854775807",
                     "notificationCreatedAt: ");
                 assertThat(content.chars().filter(character -> character == '`').count()).isEqualTo(6);
                 assertThat(content).doesNotContain("\u2028", "\u202e");
@@ -149,7 +149,7 @@ class DiscordWebhookClientTest {
         client.send(
             new NotificationFailureContext(NotificationFailureCode.DELIVERY_INVALID_EVENT, longValue, Long.MAX_VALUE,
                 NotificationType.LIKE, null, Instant.now(), longValue, longValue, details,
-                new DeliveryFailureDetails(Integer.MAX_VALUE, Long.MAX_VALUE, LocalDateTime.MAX)));
+                new DeliveryFailureDetails(Long.MAX_VALUE, LocalDateTime.MAX)));
         server.verify();
     }
 
@@ -161,7 +161,7 @@ class DiscordWebhookClientTest {
                     .readTree(((MockClientHttpRequest) request).getBodyAsString())
                     .path("content").stringValue();
                 assertThat(content).contains("errorCode: DELIVERY_INVALID_EVENT", "failureStage: DELIVERY_CONSUMPTION",
-                    "deliverySchemaVersion: 99", "notificationId: 31", "notificationCreatedAt: 2026-10-23T12:00",
+                    "notificationId: 31", "notificationCreatedAt: 2026-10-23T12:00",
                     "requestedAt: -", "type: -", "inputTopic: delivery", "inputOffset: 18")
                     .doesNotContain("private-title", "private-body");
             }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
@@ -170,7 +170,7 @@ class DiscordWebhookClientTest {
         var details = new KafkaFailureDetails("process-group", null, new KafkaLocation("delivery", 2, 18L), null,
             null, false, "NotificationInvalidDeliveryEventException", null);
         client.send(NotificationFailureContext.fromDelivery(NotificationFailureCode.DELIVERY_INVALID_EVENT,
-            new NotificationDeliveryEvent(99, "source", 7L, snapshot), null, Instant.now(), details));
+            new NotificationDeliveryEvent("source", 7L, snapshot), null, Instant.now(), details));
         server.verify();
     }
 

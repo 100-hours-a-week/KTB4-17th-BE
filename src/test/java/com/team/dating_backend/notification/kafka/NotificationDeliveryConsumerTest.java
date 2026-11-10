@@ -42,7 +42,7 @@ class NotificationDeliveryConsumerTest {
         var now = LocalDateTime.of(2026, 10, 23, 12, 0);
         var snapshot = new NotificationEventResponse(31L, "LIKE", "😀".repeat(100), "😀".repeat(500),
             "PROFILE", 9L, now, now.minusMinutes(1));
-        var event = new NotificationDeliveryEvent(1, "😀".repeat(255), 7L, snapshot);
+        var event = new NotificationDeliveryEvent("😀".repeat(255), 7L, snapshot);
         when(registry.findByUserId(7L)).thenReturn(List.of(mock(NotificationSseConnection.class)));
 
         consumer.consume(new ConsumerRecord<>("delivery", 0, 0, 7L, event));
@@ -57,7 +57,7 @@ class NotificationDeliveryConsumerTest {
             LocalDateTime.of(2026, 10, 23, 12, 0));
 
         consumer.consume(new ConsumerRecord<>("delivery", 0, 0, 7L,
-            new NotificationDeliveryEvent(1, "source", 7L, snapshot)));
+            new NotificationDeliveryEvent("source", 7L, snapshot)));
 
         verify(sender).sendNotification(eq(7L), same(snapshot));
         verify(observation).deliveryProcessed(any(), eq(0), anyLong(), isNull());
@@ -81,7 +81,7 @@ class NotificationDeliveryConsumerTest {
         var snapshot = new NotificationEventResponse(31L, "LIKE", "", "", null, null, null,
             LocalDateTime.of(2026, 10, 24, 12, 0));
         var record = new ConsumerRecord<>("delivery", 0, 0, 7L,
-            new NotificationDeliveryEvent(1, "source", 7L, snapshot));
+            new NotificationDeliveryEvent("source", 7L, snapshot));
         var observationFailure = new AssertionError();
         doThrow(failure).when(sender).sendNotification(7L, snapshot);
         doThrow(observationFailure).when(observation).deliveryProcessed(eq(record), eq(0), anyLong(), same(failure));
@@ -101,12 +101,12 @@ class NotificationDeliveryConsumerTest {
         var now = LocalDateTime.of(2026, 10, 23, 12, 0);
         return Stream.of(
             null,
-            new NotificationDeliveryEvent(99, "source", 7L, null),
-            new NotificationDeliveryEvent(1, "source", 7L,
+            new NotificationDeliveryEvent("source", 7L, null),
+            new NotificationDeliveryEvent("source", 7L,
                 new NotificationEventResponse(31L, "UNKNOWN", "", "", null, null, null, now)),
-            new NotificationDeliveryEvent(1, "source", 7L,
+            new NotificationDeliveryEvent("source", 7L,
                 new NotificationEventResponse(31L, "LIKE", "", "", "PROFILE", null, null, now)),
-            new NotificationDeliveryEvent(1, "source", 7L,
+            new NotificationDeliveryEvent("source", 7L,
                 new NotificationEventResponse(31L, "LIKE", "😀".repeat(101), "", null, null, null, now)));
     }
 }

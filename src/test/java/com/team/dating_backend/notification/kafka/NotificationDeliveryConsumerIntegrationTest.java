@@ -136,10 +136,10 @@ class NotificationDeliveryConsumerIntegrationTest {
                 send(context, topic, 0, new byte[]{'{'});
                 send(context, topic, 0, new byte[]{'n', 'u', 'l', 'l'});
                 send(context, topic, 0, null);
-                send(context, topic, 0, new NotificationDeliveryEvent(99, "bad-schema", 7L, event(20).notification()));
+                send(context, topic, 0, new NotificationDeliveryEvent(" ", 7L, event(20).notification()));
                 send(context, topic, 0, event(21));
                 send(context, topic, 0,
-                    new NotificationDeliveryEvent(1, "no-connection", 9L, event(22).notification()));
+                    new NotificationDeliveryEvent("no-connection", 9L, event(22).notification()));
                 await().atMost(Duration.ofSeconds(20))
                     .untilAsserted(() -> assertThat(committed(admin, group(context), topic, 0)).isEqualTo(6L));
                 assertThat(events).containsExactly(event(21).notification());
@@ -294,7 +294,7 @@ class NotificationDeliveryConsumerIntegrationTest {
     }
 
     private static NotificationDeliveryEvent event(long id) {
-        return new NotificationDeliveryEvent(1, "source-" + id, 7L,
+        return new NotificationDeliveryEvent("source-" + id, 7L,
             new NotificationEventResponse(id, "LIKE", "제목", "본문", null, null, null,
                 LocalDateTime.of(2026, 10, 23, 12, 0)));
     }

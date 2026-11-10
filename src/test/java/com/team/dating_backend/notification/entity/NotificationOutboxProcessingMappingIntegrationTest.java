@@ -35,7 +35,7 @@ import org.testcontainers.mysql.MySQLContainer;
 class NotificationOutboxProcessingMappingIntegrationTest {
 
     private static final String TOKEN = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-    private static final String PAYLOAD = "{\"schemaVersion\":1,\"snapshot\":\"원본\"}";
+    private static final String PAYLOAD = "{\"snapshot\":\"원본\"}";
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 30, 12, 0, 0, 123456000);
     private static final LocalDateTime UNTIL = CREATED_AT.plusSeconds(60);
 

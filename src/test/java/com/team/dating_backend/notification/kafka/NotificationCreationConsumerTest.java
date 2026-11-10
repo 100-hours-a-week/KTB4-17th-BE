@@ -25,8 +25,8 @@ import org.springframework.dao.QueryTimeoutException;
 
 class NotificationCreationConsumerTest {
 
-    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested(
-        1, "source", 7L, NotificationType.LIKE, "제목", "본문", null, null,
+    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested("source", 7L,
+        NotificationType.LIKE, "제목", "본문", null, null,
         Instant.parse("2026-10-22T01:00:00Z"));
     private static final ConsumerRecord<Long, NotificationCreateRequested> RECORD = new ConsumerRecord<>("creation",
         0, 0L, 7L, REQUEST);

@@ -318,7 +318,7 @@ class NotificationOutboxPublishJobIntegrationTest {
     }
 
     private NotificationCreateRequested request() {
-        return new NotificationCreateRequested(1, "LIKE_SENT:" + UUID.randomUUID(), userId, NotificationType.LIKE,
+        return new NotificationCreateRequested("LIKE_SENT:" + UUID.randomUUID(), userId, NotificationType.LIKE,
             "원본 제목", "원본 본문", "PROFILE", 202L, Instant.parse("2026-10-30T01:02:03.123456789Z"));
     }
 

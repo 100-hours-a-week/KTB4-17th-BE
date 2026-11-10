@@ -192,8 +192,8 @@ class AiSimulationCompletedNotificationIntegrationTest {
         for (Long recipientId : List.of(requester, target)) {
             var sourceEventId = "AI_SIMULATION_COMPLETED:" + session.getId()
                 + (recipientId.equals(requester) ? "" : ":" + recipientId);
-            var request = new NotificationCreateRequested(NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
-                sourceEventId, recipientId, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
+            var request = new NotificationCreateRequested(sourceEventId, recipientId,
+                NotificationType.AI_SIMULATION_REPORT_COMPLETED,
                 template.getTitle(), template.getBody(), template.getTargetType(), session.getId(),
                 legacyRecordedAt.toInstant(ZoneOffset.UTC));
             outboxes.saveAndFlush(new NotificationRequestOutbox(sourceEventId, recipientId, request.type(),

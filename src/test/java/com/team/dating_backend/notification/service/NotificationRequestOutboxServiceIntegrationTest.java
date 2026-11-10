@@ -256,7 +256,7 @@ class NotificationRequestOutboxServiceIntegrationTest {
     }
 
     private NotificationCreateRequested request(String sourceEventId) {
-        return new NotificationCreateRequested(1, sourceEventId, userId, NotificationType.LIKE,
+        return new NotificationCreateRequested(sourceEventId, userId, NotificationType.LIKE,
             "새로운 좋아요😀", "하늘님이 마음을 전했어요.", "PROFILE", 8L, REQUESTED_AT);
     }
 

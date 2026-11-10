@@ -268,7 +268,7 @@ class NotificationRecoveryReporterTest {
     }
 
     private ConsumerRecord<Object, Object> record(String topic, String source) {
-        var request = new NotificationCreateRequested(1, source, 7L, NotificationType.LIKE,
+        var request = new NotificationCreateRequested(source, 7L, NotificationType.LIKE,
             "private-title", "private-body", null, null, Instant.parse("2026-10-22T01:00:00Z"));
         return new ConsumerRecord<>(topic, 0, 4, 7L, request);
     }

@@ -45,7 +45,7 @@ class NotificationDeliveryProducerTest {
     private static final String TOPIC = "test-notification-delivery-v1";
     private static final NotificationEventResponse NOTIFICATION = new NotificationEventResponse(
         10L, "LIKE", "제목", "본문", "USER", 2L, null, LocalDateTime.of(2026, 10, 21, 1, 0));
-    private static final NotificationDeliveryEvent EVENT = new NotificationDeliveryEvent(1, "event-1", 7L,
+    private static final NotificationDeliveryEvent EVENT = new NotificationDeliveryEvent("event-1", 7L,
         NOTIFICATION);
 
     @Mock
@@ -165,11 +165,10 @@ class NotificationDeliveryProducerTest {
 
     private static Stream<NotificationDeliveryEvent> invalidEvents() {
         return Stream.of(
-            new NotificationDeliveryEvent(2, "event-1", 7L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, " ", 7L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, "event-1", 0L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, "event-1", 7L, null),
-            new NotificationDeliveryEvent(1, "event-1", 7L, new NotificationEventResponse(
+            new NotificationDeliveryEvent(" ", 7L, NOTIFICATION),
+            new NotificationDeliveryEvent("event-1", 0L, NOTIFICATION),
+            new NotificationDeliveryEvent("event-1", 7L, null),
+            new NotificationDeliveryEvent("event-1", 7L, new NotificationEventResponse(
                 null, "LIKE", "제목", "본문", null, null, null, NOTIFICATION.createdAt())));
     }
 

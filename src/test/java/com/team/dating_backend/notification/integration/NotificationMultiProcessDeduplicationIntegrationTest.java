@@ -29,7 +29,7 @@ class NotificationMultiProcessDeduplicationIntegrationTest extends NotificationM
     @Test
     void 서로_다른_Partition의_같은_사건을_두_서버가_동시에_저장해도_한_행과_같은_ID로_전파한다() throws Exception {
         long userId = activeUser();
-        var request = new NotificationCreateRequested(1, "PR25_CONCURRENT:" + UUID.randomUUID(), userId,
+        var request = new NotificationCreateRequested("PR25_CONCURRENT:" + UUID.randomUUID(), userId,
             NotificationType.NOTICE, "동시 알림", "같은 사건", null, null,
             Instant.now().truncatedTo(ChronoUnit.MICROS));
         var connection = subscribe(second, userId);

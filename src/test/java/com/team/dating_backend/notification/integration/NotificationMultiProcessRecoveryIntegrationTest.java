@@ -242,7 +242,7 @@ class NotificationMultiProcessRecoveryIntegrationTest extends NotificationMultiP
     }
 
     private NotificationCreateRequested notification(long userId) {
-        return new NotificationCreateRequested(1, "PR25_RECOVERY:" + UUID.randomUUID(), userId, NotificationType.NOTICE,
+        return new NotificationCreateRequested("PR25_RECOVERY:" + UUID.randomUUID(), userId, NotificationType.NOTICE,
             "복구 알림", "복구 본문", null, null, Instant.now().truncatedTo(ChronoUnit.MICROS));
     }
 }

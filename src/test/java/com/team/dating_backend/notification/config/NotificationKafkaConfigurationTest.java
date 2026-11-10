@@ -342,9 +342,9 @@ class NotificationKafkaConfigurationTest {
         contextRunner.run(context -> {
             var producerFactory = context.getBean(DefaultKafkaProducerFactory.class);
             Serializer<Object> serializer = producerFactory.getValueSerializer();
-            var requested = new NotificationCreateRequested(1, "source-1", 101L, NotificationType.LIKE,
+            var requested = new NotificationCreateRequested("source-1", 101L, NotificationType.LIKE,
                 "좋아요", "새로운 알림", null, null, Instant.parse("2026-10-20T01:02:03.123456Z"));
-            var delivery = new NotificationDeliveryEvent(1, "source-1", 101L,
+            var delivery = new NotificationDeliveryEvent("source-1", 101L,
                 new NotificationEventResponse(501L, "LIKE", "좋아요", "새로운 알림", null, null, null,
                     LocalDateTime.parse("2026-10-20T10:02:03.123456")));
             Map<String, Object> messages = Map.of(
@@ -416,7 +416,7 @@ class NotificationKafkaConfigurationTest {
         contextRunner.withBean(JsonMapperBuilderCustomizer.class,
             () -> builder -> builder.propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE))
             .run(context -> {
-                var message = new NotificationCreateRequested(1, "custom-mapper", 101L, NotificationType.NOTICE,
+                var message = new NotificationCreateRequested("custom-mapper", 101L, NotificationType.NOTICE,
                     "공지", null, null, null, Instant.parse("2026-10-20T01:02:03Z"));
                 var serializer = context.getBean(DefaultKafkaProducerFactory.class).getValueSerializer();
                 byte[] json = serializer.serialize("test-topic", message);

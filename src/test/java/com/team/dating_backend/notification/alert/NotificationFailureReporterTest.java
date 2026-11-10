@@ -145,7 +145,7 @@ class NotificationFailureReporterTest {
     @Test
     void 원본_정보를_유지하고_민감한_내용_없이_통보보다_먼저_기록한다(CapturedOutput output) {
         Instant requestedAt = Instant.parse("2026-10-20T01:00:00Z");
-        var request = new NotificationCreateRequested(1, "event-123", 7L, NotificationType.LIKE,
+        var request = new NotificationCreateRequested("event-123", 7L, NotificationType.LIKE,
             "private-title", "private-body", null, null, requestedAt);
         doAnswer(invocation -> {
             assertThat(registry.get("notification.failures").tag("error_code", "PUBLISH_RESULT_TIMEOUT")
@@ -169,7 +169,7 @@ class NotificationFailureReporterTest {
 
     @Test
     void delivery_문맥은_로그와_통보에_유지하고_지표에는_errorCode만_사용한다(CapturedOutput output) {
-        var event = new NotificationDeliveryEvent(99, "source", 7L,
+        var event = new NotificationDeliveryEvent("source", 7L,
             new NotificationEventResponse(31L, "UNKNOWN", "private-title", "private-body", null, null, null,
                 LocalDateTime.of(2026, 10, 23, 12, 0)));
         var context = NotificationFailureContext.fromDelivery(NotificationFailureCode.DELIVERY_INVALID_EVENT,
@@ -178,8 +178,9 @@ class NotificationFailureReporterTest {
         reporter.report(context);
 
         verify(dispatcher).dispatch(context);
-        assertThat(output.getAll()).contains("failureStage=DELIVERY_CONSUMPTION", "deliverySchemaVersion=99",
-            "notificationId=31", "notificationCreatedAt=2026-10-23T12:00", "requestedAt=null", "type=null")
+        assertThat(output.getAll())
+            .contains("failureStage=DELIVERY_CONSUMPTION", "notificationId=31",
+                "notificationCreatedAt=2026-10-23T12:00", "requestedAt=null", "type=null")
             .doesNotContain("private-title", "private-body");
         var counter = registry.get("notification.failures").tag("error_code", "DELIVERY_INVALID_EVENT").counter();
         assertThat(counter.count()).isEqualTo(1);

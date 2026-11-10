@@ -62,8 +62,8 @@ class NotificationOutboxRelayTest {
     private static final String TOKEN = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     @Mock
     private NotificationOutboxClaimService claimService;
-    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested(
-        1, "LIKE_SENT:501", 7L, NotificationType.LIKE, "좋아요", "원본 요청", "PROFILE", 8L,
+    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested("LIKE_SENT:501", 7L,
+        NotificationType.LIKE, "좋아요", "원본 요청", "PROFILE", 8L,
         Instant.parse("2026-10-20T01:02:03.123456789Z"));
     private static final RecordMetadata METADATA = new RecordMetadata(new TopicPartition("notifications", 0),
         0L, 0, 0L, 0, 0);

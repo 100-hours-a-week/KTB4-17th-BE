@@ -657,7 +657,7 @@ class NotificationOutboxRelayIntegrationTest {
     }
 
     private NotificationCreateRequested request() {
-        return new NotificationCreateRequested(1, "LIKE_SENT:" + UUID.randomUUID(), userId, NotificationType.LIKE,
+        return new NotificationCreateRequested("LIKE_SENT:" + UUID.randomUUID(), userId, NotificationType.LIKE,
             "원본 제목", "하늘님이 당신에게 마음을 전했어요.", "PROFILE", 202L, REQUESTED_AT);
     }
 
