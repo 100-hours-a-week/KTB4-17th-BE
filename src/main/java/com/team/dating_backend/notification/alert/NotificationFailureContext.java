@@ -177,7 +177,7 @@ public record 피NotificationFailureContext(
         ALERT_WEBHOOK
     }
 
-    public record DeliveryFailureDetails(Integer schemaVersion, Long notificationId, LocalDateTime createdAt) {}
+    public record DeliveryFailureDetails(Long notificationId, LocalDateTime createdAt) {}
 
     public record KafkaLocation(String topic, Integer partition, Long offset) {
 
