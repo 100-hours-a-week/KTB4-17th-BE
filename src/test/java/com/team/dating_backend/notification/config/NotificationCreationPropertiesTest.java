@@ -32,7 +32,7 @@ class NotificationCreationPropertiesTest {
         });
 
     @Test
-    void 기본값은_소비를_비활성화하고_건별_처리와_15초_발행_대기를_사용한다() {
+    void 기본값은_소비를_비활성화하고_건별_처리를_사용한다() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             var properties = context.getBean(NotificationCreationProperties.class);
@@ -40,7 +40,6 @@ class NotificationCreationPropertiesTest {
             assertThat(properties.getConcurrency()).isEqualTo(1);
             assertThat(properties.getMaxPollRecords()).isEqualTo(1);
             assertThat(properties.getMaxPollIntervalMs()).isEqualTo(300_000);
-            assertThat(properties.getDeliveryResultTimeoutMs()).isEqualTo(15_000L);
         });
     }
 
@@ -67,29 +66,7 @@ class NotificationCreationPropertiesTest {
         });
     }
 
-    @Test
-    void delivery_환경변수는_기존_생성_요청의_대기_설정과_독립적으로_적용한다() {
-        contextRunner.withPropertyValues("APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS=7000",
-            "APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS=9000")
-            .run(context -> {
-                assertThat(context).hasNotFailed();
-                assertThat(context.getBean(NotificationCreationProperties.class).getDeliveryResultTimeoutMs())
-                    .isEqualTo(7000L);
-                assertThat(context.getBean(NotificationPublishProperties.class).getResultTimeoutMs()).isEqualTo(9000L);
-            });
-    }
-
-    @ParameterizedTest
-    @ValueSource(longs = {0L, -1L})
-    void 대기_시간이_0_이하이면_시작을_거부한다(long timeoutMs) {
-        contextRunner.withPropertyValues("APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS=" + timeoutMs)
-            .run(context -> {
-                assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(BindValidationException.class);
-            });
-    }
-
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({NotificationCreationProperties.class, NotificationPublishProperties.class})
+    @EnableConfigurationProperties(NotificationCreationProperties.class)
     static class PropertiesConfiguration {}
 }
