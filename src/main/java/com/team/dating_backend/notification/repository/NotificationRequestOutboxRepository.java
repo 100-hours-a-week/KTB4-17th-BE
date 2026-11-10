@@ -44,6 +44,16 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
         UPDATE notification_request_outbox
+        SET status = 'COMPLETED', completed_at = UTC_TIMESTAMP(6),
+            processing_token = NULL, processing_until = NULL
+        WHERE id = :id AND status = 'PENDING' AND processing_token = :token
+            AND processing_until > UTC_TIMESTAMP(6)
+        """, nativeQuery = true)
+    int markCompletedByToken(@Param("id") Long id, @Param("token") String token);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+        UPDATE notification_request_outbox
         SET failure_count = :failureCount, last_failure_type = :failureType,
             next_attempt_at = TIMESTAMPADD(MICROSECOND, :delayMicros, UTC_TIMESTAMP(6)), status = :status,
             processing_token = NULL, processing_until = NULL
