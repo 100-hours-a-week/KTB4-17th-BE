@@ -29,6 +29,19 @@ public class NotificationOutboxFailureService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<FailureResult> recordFailure(Long id, String token, NotificationFailureCode failureType) {
+        return record(id, token, failureType, true)
+            .map(
+                result -> new FailureResult(result.failureCount(), result.status() == NotificationOutboxStatus.FAILED));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<WorkerFailureResult> recordWorkerFailure(Long id, String token,
+        NotificationFailureCode failureType, boolean retryable) {
+        return record(id, token, failureType, retryable);
+    }
+
+    private Optional<WorkerFailureResult> record(Long id, String token,
+        NotificationFailureCode failureType, boolean retryable) {
         if (id == null || id <= 0 || token == null || token.length() != 36 || token.isBlank()
             || failureType == null || !RECORDABLE_FAILURES.contains(failureType)) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
@@ -43,19 +56,24 @@ public class NotificationOutboxFailureService {
         }
         int failures;
         long delayMicros;
-        boolean exhausted;
+        NotificationOutboxStatus status;
         try {
             failures = Math.addExact(outbox.getFailureCount(), 1);
-            exhausted = retryPolicy.isExhausted(failures);
-            delayMicros = exhausted ? 0L : Math.multiplyExact(retryPolicy.delayMillis(failures), 1000L);
+            status = !retryable || retryPolicy.isExhausted(failures)
+                ? NotificationOutboxStatus.FAILED
+                : NotificationOutboxStatus.PENDING;
+            delayMicros = status == NotificationOutboxStatus.FAILED
+                ? 0L
+                : Math.multiplyExact(retryPolicy.delayMillis(failures), 1000L);
         } catch (ArithmeticException failure) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR, failure);
         }
         int updated = repository.recordFailureByToken(id, token, outbox.getFailureCount(), failures,
-            failureType.name(), delayMicros,
-            exhausted ? NotificationOutboxStatus.FAILED.name() : NotificationOutboxStatus.PENDING.name());
-        return updated == 1 ? Optional.of(new FailureResult(failures, exhausted)) : Optional.empty();
+            failureType.name(), delayMicros, status.name());
+        return updated == 1 ? Optional.of(new WorkerFailureResult(failures, status)) : Optional.empty();
     }
 
     public record FailureResult(int failureCount, boolean exhausted) {}
+
+    public record WorkerFailureResult(int failureCount, NotificationOutboxStatus status) {}
 }
