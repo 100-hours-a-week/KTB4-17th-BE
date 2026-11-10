@@ -23,9 +23,14 @@ final class RecommendationEligibilityQuery {
                 AND pendingLike.receiverId = candidate.id
           )
           AND NOT EXISTS (
-              SELECT userMatch.id FROM Match userMatch
-              WHERE (userMatch.senderId = :requesterUserId AND userMatch.receiverId = candidate.id)
-                 OR (userMatch.senderId = candidate.id AND userMatch.receiverId = :requesterUserId)
+              SELECT sentMatch.id FROM Match sentMatch
+              WHERE sentMatch.senderId = :requesterUserId
+                AND sentMatch.receiverId = candidate.id
+          )
+          AND NOT EXISTS (
+              SELECT receivedMatch.id FROM Match receivedMatch
+              WHERE receivedMatch.senderId = candidate.id
+                AND receivedMatch.receiverId = :requesterUserId
           )
           AND NOT EXISTS (
               SELECT recommendationPass.id FROM RecommendationPass recommendationPass
