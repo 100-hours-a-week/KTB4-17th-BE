@@ -1,15 +1,15 @@
 package com.team.dating_backend.notification.config;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "app.notification.outbox.relay", name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(NotificationOutboxRelayProperties.class)
+@Import(NotificationOutboxExecutionConfiguration.class)
 public class NotificationOutboxRelayConfiguration {
 
     @Bean(name = "notificationOutboxScheduler", defaultCandidate = false)
