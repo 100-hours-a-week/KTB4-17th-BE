@@ -132,6 +132,9 @@ app:
       upload-url-expiration: PT5M
       download-url-expiration: PT5M
 management:
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:

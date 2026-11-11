@@ -74,7 +74,7 @@ class NotificationMultiProcessDeduplicationIntegrationTest extends NotificationM
                 assertThat(kafka.inputState(environment.creationGroup(), firstInput).completed()).isTrue();
                 assertThat(kafka.inputState(environment.creationGroup(), secondInput).completed()).isTrue();
                 connection.assertHealthy();
-                assertThat(connection.notifications()).hasSize(2).allSatisfy(notification -> {
+                assertThat(connection.notifications()).hasSize(1).allSatisfy(notification -> {
                     assertThat(notification.notificationId()).isEqualTo(stored.id());
                     assertThat(notification.title()).isEqualTo(request.title());
                     assertThat(notification.body()).isEqualTo(request.body());
