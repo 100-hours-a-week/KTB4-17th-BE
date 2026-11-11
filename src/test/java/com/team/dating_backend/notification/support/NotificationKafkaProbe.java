@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.support;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -124,6 +125,14 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         throws InterruptedException, ExecutionException, TimeoutException {
         var record = new ProducerRecord<>(creationTopic, partition, request.recipientUserId(),
             JSON.writeValueAsBytes(request));
+        var metadata = awaitResult(producer.send(record), Duration.ofSeconds(12));
+        return new Position(metadata.topic(), metadata.partition(), metadata.offset());
+    }
+
+    public Position publishDelivery(String topic, NotificationDeliveryEvent event, int partition)
+        throws InterruptedException, ExecutionException, TimeoutException {
+        assertThat(topics).contains(topic);
+        var record = new ProducerRecord<>(topic, partition, event.recipientUserId(), JSON.writeValueAsBytes(event));
         var metadata = awaitResult(producer.send(record), Duration.ofSeconds(12));
         return new Position(metadata.topic(), metadata.partition(), metadata.offset());
     }
