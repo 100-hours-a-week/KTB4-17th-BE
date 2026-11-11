@@ -91,12 +91,10 @@ public class LikeSendService {
             MatchingNotificationTemplate template = MatchingNotificationTemplate.MATCH;
             String sourceEventId = "MATCH_CREATED:" + match.getId();
             Instant requestedAt = Instant.now();
-            notificationRequestService.requestNotification(new NotificationCreateRequested(
-                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, sourceEventId,
+            notificationRequestService.requestNotification(new NotificationCreateRequested(sourceEventId,
                 match.getSenderId(), NotificationType.MATCH,
                 template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId, requestedAt));
-            notificationRequestService.requestNotification(new NotificationCreateRequested(
-                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, sourceEventId,
+            notificationRequestService.requestNotification(new NotificationCreateRequested(sourceEventId,
                 match.getReceiverId(), NotificationType.MATCH,
                 template.getTitle(), template.getBody(), template.getTargetType(), chatRoomId, requestedAt));
         } else {
@@ -105,8 +103,7 @@ public class LikeSendService {
                 .orElse(null);
             MatchingNotificationTemplate template = MatchingNotificationTemplate.LIKE;
             Instant requestedAt = Instant.now();
-            notificationRequestService.requestNotification(new NotificationCreateRequested(
-                NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "LIKE_SENT:" + like.getId(),
+            notificationRequestService.requestNotification(new NotificationCreateRequested("LIKE_SENT:" + like.getId(),
                 receiverId, NotificationType.LIKE,
                 template.getTitle(), template.formatBody(senderNickname),
                 template.getTargetType(), senderId, requestedAt));

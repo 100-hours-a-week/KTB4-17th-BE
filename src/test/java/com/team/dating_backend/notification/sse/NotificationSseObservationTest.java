@@ -129,6 +129,6 @@ class NotificationSseObservationTest {
         var snapshot = new NotificationEventResponse(31L, "LIKE", "", "", null, null, null,
             LocalDateTime.of(2026, 10, 24, 12, 0));
         return new ConsumerRecord<>("delivery", 0, 11, timestamp, type, 0, 0, 7L,
-            new NotificationDeliveryEvent(1, "source", 7L, snapshot), new RecordHeaders(), Optional.empty());
+            new NotificationDeliveryEvent("source", 7L, snapshot), new RecordHeaders(), Optional.empty());
     }
 }

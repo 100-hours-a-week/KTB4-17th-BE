@@ -10,7 +10,7 @@ import com.team.dating_backend.notification.exception.NotificationBusinessExcept
 import java.time.Instant;
 import java.time.LocalDateTime;
 
-public record NotificationFailureContext(
+public record 피NotificationFailureContext(
     NotificationFailureCode errorCode,
     String sourceEventId,
     Long recipientUserId,
@@ -90,7 +90,6 @@ public record NotificationFailureContext(
         DeliveryFailureDetails details = event == null
             ? null
             : new DeliveryFailureDetails(
-                event.schemaVersion(),
                 notification == null ? null : notification.notificationId(),
                 notification == null ? null : notification.createdAt());
         return new NotificationFailureContext(
@@ -112,6 +111,8 @@ public record NotificationFailureContext(
             case PUBLISH_CALL_FAILED -> FailureStage.PUBLISH;
             case OUTBOX_PUBLISH_REQUIRES_ATTENTION -> FailureStage.PUBLISH;
             case OUTBOX_RESTORE_FAILED -> FailureStage.OUTBOX_RESTORE;
+            case OUTBOX_CREATION_FAILED -> FailureStage.CREATION_PROCESSING;
+            case OUTBOX_DELIVERY_FAILED -> FailureStage.PUBLISH_RESULT;
             case OUTBOX_STATE_UPDATE_FAILED -> FailureStage.OUTBOX_STATE_UPDATE;
             case OUTBOX_RETRY_LIMIT_EXCEEDED -> FailureStage.OUTBOX_RETRY;
             case OUTBOX_LOOKUP_FAILED -> FailureStage.OUTBOX_LOOKUP;
@@ -176,7 +177,7 @@ public record NotificationFailureContext(
         ALERT_WEBHOOK
     }
 
-    public record DeliveryFailureDetails(Integer schemaVersion, Long notificationId, LocalDateTime createdAt) {}
+    public record DeliveryFailureDetails(Long notificationId, LocalDateTime createdAt) {}
 
     public record KafkaLocation(String topic, Integer partition, Long offset) {
 

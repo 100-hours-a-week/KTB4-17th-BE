@@ -78,7 +78,7 @@ class NotificationRequestProducerIntegrationTest {
                     admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1)))
                         .all().get(20, TimeUnit.SECONDS);
                 }
-                var request = new NotificationCreateRequested(1, "LIKE_SENT:501", 101L, NotificationType.LIKE,
+                var request = new NotificationCreateRequested("LIKE_SENT:501", 101L, NotificationType.LIKE,
                     "좋아요", "새로운 알림", hasTarget ? "USER" : null, hasTarget ? 202L : null,
                     Instant.parse("2026-10-20T01:02:03.123456789Z"));
                 var metadata = context.getBean(NotificationRequestProducer.class).publishAndAwait(request);

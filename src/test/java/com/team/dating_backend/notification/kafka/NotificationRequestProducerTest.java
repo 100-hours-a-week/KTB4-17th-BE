@@ -150,7 +150,7 @@ class NotificationRequestProducerTest {
     }
 
     private static NotificationCreateRequested request(Long recipientUserId) {
-        return new NotificationCreateRequested(1, "LIKE_SENT:501", recipientUserId, NotificationType.LIKE,
+        return new NotificationCreateRequested("LIKE_SENT:501", recipientUserId, NotificationType.LIKE,
             "좋아요", "새로운 알림", "USER", 202L, Instant.parse("2026-10-20T01:02:03.123456789Z"));
     }
 

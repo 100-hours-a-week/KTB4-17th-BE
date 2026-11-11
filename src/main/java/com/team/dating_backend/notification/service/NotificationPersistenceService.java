@@ -25,7 +25,6 @@ public class NotificationPersistenceService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public NotificationCreationResult create(NotificationCreateRequested request) {
         if (request == null
-            || request.schemaVersion() != NotificationCreateRequested.CURRENT_SCHEMA_VERSION
             || request.recipientUserId() == null
             || request.recipientUserId() <= 0
             || request.requestedAt() == null) {

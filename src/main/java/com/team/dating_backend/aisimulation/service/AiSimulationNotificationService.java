@@ -51,8 +51,7 @@ public class AiSimulationNotificationService {
         if (!eligiblePair(requesterId, targetId) || passed(requesterId, targetId)) {
             return AiSimulationNotificationResult.SKIPPED;
         }
-        notifications.requestNotification(new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION, "AI_SIMULATION_REQUESTED:" + sessionId,
+        notifications.requestNotification(new NotificationCreateRequested("AI_SIMULATION_REQUESTED:" + sessionId,
             targetId, NotificationType.AI_SIMULATION_REQUESTED, "시뮬레이션 요청",
             "누군가 회원님과의 AI 소개팅을 시작했어요", null, null, requestedAt));
         return AiSimulationNotificationResult.RECORDED;
@@ -90,7 +89,6 @@ public class AiSimulationNotificationService {
         }
         var template = AiNotificationTemplate.SIMULATION_COMPLETED;
         notifications.requestNotification(new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
             "AI_SIMULATION_COMPLETED:" + sessionId + (recipientId.equals(requesterId) ? "" : ":" + recipientId),
             recipientId, NotificationType.AI_SIMULATION_REPORT_COMPLETED,
             template.getTitle(), template.getBody(), template.getTargetType(), sessionId, completedAt));

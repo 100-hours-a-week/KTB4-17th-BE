@@ -53,7 +53,7 @@ public class NotificationFailureReporter {
         KafkaFailureDetails details = context.kafkaDetails();
         DeliveryFailureDetails delivery = context.deliveryDetails();
         log.error(
-            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}, deliverySchemaVersion={}, notificationId={}, notificationCreatedAt={}",
+            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}, notificationId={}, notificationCreatedAt={}",
             context.errorCode(),
             context.failureStage(),
             valueForLog(context.sourceEventId(), 128),
@@ -71,7 +71,6 @@ public class NotificationFailureReporter {
             details == null ? null : details.retryable(),
             details == null ? null : valueForLog(details.processingExceptionType(), 128),
             details == null ? null : valueForLog(details.processingCauseType(), 128),
-            delivery == null ? null : delivery.schemaVersion(),
             delivery == null ? null : delivery.notificationId(),
             delivery == null ? null : delivery.createdAt());
     }

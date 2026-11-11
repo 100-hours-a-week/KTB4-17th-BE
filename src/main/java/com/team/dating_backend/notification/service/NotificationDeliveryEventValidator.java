@@ -15,7 +15,6 @@ public class NotificationDeliveryEventValidator {
 
     public void validate(NotificationDeliveryEvent event) {
         if (event == null
-            || event.schemaVersion() != NotificationDeliveryEvent.CURRENT_SCHEMA_VERSION
             || event.sourceEventId() == null
             || event.sourceEventId().isBlank()
             || event.recipientUserId() == null

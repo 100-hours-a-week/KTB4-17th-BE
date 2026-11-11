@@ -20,6 +20,8 @@ import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryProducer;
+import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
+import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationCreationProcessor;
 import com.team.dating_backend.notification.service.NotificationCreationService;
@@ -64,6 +66,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.TransientDataAccessResourceException;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -91,6 +95,8 @@ import tools.jackson.databind.json.JsonMapper;
         NotificationCreateRequestedValidator.class, NotificationCreationProcessor.class,
         NotificationCreationService.class,
         NotificationPersistenceService.class, NotificationLookupService.class, NotificationOutboxClaimService.class,
+        NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
+        NotificationOutboxWorkerFailureClassifier.class, NotificationCreationFailureClassifier.class,
         NotificationDeliveryProducer.class, KafkaProducerConfiguration.class,
         NotificationOutboxWorkerIntegrationTest.PropertiesConfiguration.class}
 )
@@ -128,6 +134,8 @@ class NotificationOutboxWorkerIntegrationTest {
     private JsonMapper json;
     @MockitoSpyBean
     private NotificationDeliveryProducer producer;
+    @MockitoSpyBean
+    private NotificationPersistenceService persistence;
 
     private TransactionTemplate transaction;
     private NotificationCreateRequested request;
@@ -139,9 +147,12 @@ class NotificationOutboxWorkerIntegrationTest {
         transaction = new TransactionTemplate(transactionManager);
         userId = transaction.execute(tx -> users.saveAndFlush(
             User.create("수신자", LocalDate.of(2000, 1, 1), Gender.FEMALE, CREATED_AT)).getId());
-        request = new NotificationCreateRequested(1, "event:worker", userId, NotificationType.LIKE,
+        request = new NotificationCreateRequested("event:worker", userId, NotificationType.LIKE,
             "원본 제목", "원본 본문", "USER", 99L, REQUESTED_AT);
-        transaction.executeWithoutResult(tx -> outboxService.append(request));
+        Long outboxId = transaction.execute(tx -> outboxService.append(request).getId());
+        jdbc.update(
+            "UPDATE notification_request_outbox SET next_attempt_at = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE id = ?",
+            outboxId);
         claimed = claims.tryClaimNext().orElseThrow();
         topics.setDeliveryTopic("worker-delivery-" + UUID.randomUUID());
         try (
@@ -190,7 +201,7 @@ class NotificationOutboxWorkerIntegrationTest {
         if (stage.equals("completion")) {
             jdbc.execute("""
                 ALTER TABLE notification_request_outbox
-                ADD CONSTRAINT test_worker_keep_pending CHECK (completed_at IS NULL)
+                ADD CONSTRAINT test_worker_keep_pending CHECK (completed_at IS NULL AND failure_count = 0)
                 """);
         } else {
             doAnswer(invocation -> {
@@ -203,25 +214,42 @@ class NotificationOutboxWorkerIntegrationTest {
         var before = row();
         try {
             assertThatThrownBy(() -> worker.process(claimed))
-                .isInstanceOf(stage.equals("completion") ? DataAccessException.class : TimeoutException.class);
+                .isInstanceOf(stage.equals("completion") ? DataAccessException.class : TimeoutException.class)
+                .satisfies(failure -> {
+                    if (stage.equals("completion")) {
+                        assertThat(failure.getSuppressed()).anyMatch(DataAccessException.class::isInstance);
+                    }
+                });
         } finally {
             if (stage.equals("completion")) {
                 jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_worker_keep_pending");
             }
         }
-        assertThat(row()).isEqualTo(before);
+        if (stage.equals("completion")) {
+            assertThat(row()).isEqualTo(before);
+        } else {
+            assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 1)
+                .containsEntry("last_failure_type", "OUTBOX_DELIVERY_FAILED").containsEntry("processing_token", null);
+        }
         assertThat(notificationCount()).isEqualTo(1);
         Long originalId = notificationId();
         jdbc.update("UPDATE notifications SET read_at = ? WHERE id = ?", CREATED_AT.plusMinutes(1), originalId);
         var notification = jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", originalId);
         doCallRealMethod().when(producer).publishAndAwait(any());
-        expire();
+        if (stage.equals("completion")) {
+            expire();
+        } else {
+            jdbc.update(
+                "UPDATE notification_request_outbox SET next_attempt_at = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE id = ?",
+                claimed.getId());
+        }
         var next = claims.tryClaimNext().orElseThrow();
 
         worker.process(next);
 
         assertThat(next.getProcessingToken()).isNotEqualTo(claimed.getProcessingToken());
-        assertThat(row()).containsEntry("status", "COMPLETED").containsEntry("failure_count", 0);
+        assertThat(row()).containsEntry("status", "COMPLETED")
+            .containsEntry("failure_count", stage.equals("completion") ? 0 : 1);
         assertThat(notificationCount()).isEqualTo(1);
         assertThat(jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", originalId)).isEqualTo(notification);
         assertThat(deliveries(stage.equals("beforeDelivery") ? 1 : 2)).allSatisfy(event -> {
@@ -249,11 +277,11 @@ class NotificationOutboxWorkerIntegrationTest {
         jdbc.update("UPDATE notification_request_outbox SET payload = '{}' WHERE id = ?", claimed.getId());
         expire();
         var invalid = claims.tryClaimNext().orElseThrow();
-        var before = row();
-
         assertThatThrownBy(() -> worker.process(invalid)).isInstanceOf(NotificationInvalidCreateRequestException.class);
 
-        assertThat(row()).isEqualTo(before);
+        assertThat(row()).containsEntry("status", "FAILED").containsEntry("failure_count", 1)
+            .containsEntry("last_failure_type", "OUTBOX_RESTORE_FAILED").containsEntry("processing_token", null)
+            .containsEntry("completed_at", null);
         assertThat(notificationCount()).isZero();
         verify(producer, never()).publishAndAwait(any());
         deliveries(0);
@@ -292,6 +320,117 @@ class NotificationOutboxWorkerIntegrationTest {
         assertThat(notificationCount()).isEqualTo(1);
         assertThat(deliveries(2)).extracting(event -> event.notification().notificationId())
             .containsOnly(notificationId());
+    }
+
+    @Test
+    void 생성_DB_일시_장애는_단계를_기록하고_다음_실행에서_생성과_전달을_완료한다() throws Exception {
+        org.mockito.Mockito.doThrow(new TransientDataAccessResourceException("저장 일시 장애"))
+            .when(persistence).create(any());
+
+        assertThatThrownBy(() -> worker.process(claimed)).isInstanceOf(TransientDataAccessResourceException.class);
+
+        assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 1)
+            .containsEntry("last_failure_type", "OUTBOX_CREATION_FAILED").containsEntry("processing_token", null);
+        assertThat(notificationCount()).isZero();
+        verify(producer, never()).publishAndAwait(any());
+        doCallRealMethod().when(persistence).create(any());
+        makeDue();
+        worker.process(claims.tryClaimNext().orElseThrow());
+        assertThat(row()).containsEntry("status", "COMPLETED");
+        assertThat(notificationCount()).isEqualTo(1);
+        deliveries(1);
+    }
+
+    @Test
+    void 재시도_불가_Delivery_오류는_즉시_최종_실패로_기록한다() throws Exception {
+        org.mockito.Mockito.doThrow(new AuthenticationException("인증 실패")).when(producer).publishAndAwait(any());
+
+        assertThatThrownBy(() -> worker.process(claimed)).isInstanceOf(AuthenticationException.class);
+
+        assertThat(row()).containsEntry("status", "FAILED").containsEntry("failure_count", 1)
+            .containsEntry("last_failure_type", "OUTBOX_DELIVERY_FAILED").containsEntry("processing_token", null)
+            .containsEntry("completed_at", null);
+        assertThat(notificationCount()).isEqualTo(1);
+        assertThat(claims.tryClaimNext()).isEmpty();
+        deliveries(0);
+    }
+
+    @Test
+    void Delivery_일시_실패가_다섯_번이면_최종_실패하고_알림은_한_건만_유지한다() throws Exception {
+        org.mockito.Mockito.doThrow(new TimeoutException()).when(producer).publishAndAwait(any());
+        var attempt = claimed;
+        for (int count = 1; count <= 5; count++) {
+            var current = attempt;
+            assertThatThrownBy(() -> worker.process(current)).isInstanceOf(TimeoutException.class);
+            assertThat(row()).containsEntry("failure_count", count)
+                .containsEntry("status", count == 5 ? "FAILED" : "PENDING")
+                .containsEntry("last_failure_type", "OUTBOX_DELIVERY_FAILED").containsEntry("processing_token", null);
+            if (count < 5) {
+                makeDue();
+                attempt = claims.tryClaimNext().orElseThrow();
+            }
+        }
+        assertThat(notificationCount()).isEqualTo(1);
+        assertThat(claims.tryClaimNext()).isEmpty();
+        deliveries(0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 종료_인터럽트는_실패를_늘리지_않고_해제_실패시에도_점유_만료로_복구한다(boolean releaseFails) throws Exception {
+        var interruption = new InterruptedException();
+        org.mockito.Mockito.doThrow(interruption).when(producer).publishAndAwait(any());
+        if (releaseFails) {
+            jdbc.execute(
+                "ALTER TABLE notification_request_outbox ADD CONSTRAINT test_keep_worker_token CHECK (processing_token IS NOT NULL)");
+        }
+        try {
+            assertThatThrownBy(() -> worker.process(claimed)).isSameAs(interruption);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+            if (releaseFails) {
+                jdbc.execute("ALTER TABLE notification_request_outbox DROP CHECK test_keep_worker_token");
+            }
+        }
+        assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 0)
+            .containsEntry("completed_at", null).containsEntry("last_failure_type", null)
+            .containsEntry("processing_token", releaseFails ? claimed.getProcessingToken() : null);
+        if (releaseFails) {
+            assertThat(interruption.getSuppressed()).anyMatch(DataAccessException.class::isInstance);
+            expire();
+        }
+        doCallRealMethod().when(producer).publishAndAwait(any());
+        worker.process(claims.tryClaimNext().orElseThrow());
+        assertThat(row()).containsEntry("status", "COMPLETED").containsEntry("failure_count", 0);
+        assertThat(notificationCount()).isEqualTo(1);
+        deliveries(1);
+    }
+
+    @Test
+    void 실패_직전에_재점유되면_다른_소유자의_실패와_점유를_변경하지_않는다() throws Exception {
+        var next = new AtomicReference<NotificationRequestOutbox>();
+        doAnswer(invocation -> {
+            expire();
+            next.set(claims.tryClaimNext().orElseThrow());
+            throw new TimeoutException();
+        }).when(producer).publishAndAwait(any());
+
+        assertThatThrownBy(() -> worker.process(claimed)).isInstanceOfSatisfying(NotificationBusinessException.class,
+            failure -> assertThat(failure.getErrorCode()).isEqualTo(NotificationErrorCode.OUTBOX_CLAIM_LOST));
+
+        assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 0)
+            .containsEntry("processing_token", next.get().getProcessingToken());
+        doCallRealMethod().when(producer).publishAndAwait(any());
+        worker.process(next.get());
+        assertThat(row()).containsEntry("status", "COMPLETED");
+        deliveries(1);
+    }
+
+    private void makeDue() {
+        jdbc.update(
+            "UPDATE notification_request_outbox SET next_attempt_at = TIMESTAMPADD(SECOND, -1, UTC_TIMESTAMP(6)) WHERE id = ?",
+            claimed.getId());
     }
 
     private Map<String, Object> row() {

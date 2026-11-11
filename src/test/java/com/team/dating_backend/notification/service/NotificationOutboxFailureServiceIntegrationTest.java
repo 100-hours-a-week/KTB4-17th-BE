@@ -92,7 +92,7 @@ class NotificationOutboxFailureServiceIntegrationTest {
         transaction = new TransactionTemplate(transactionManager);
         Long userId = transaction.execute(tx -> users.saveAndFlush(
             User.create("회원", LocalDate.of(2000, 1, 1), Gender.FEMALE, LocalDateTime.now(ZoneOffset.UTC))).getId());
-        request = new NotificationCreateRequested(1, "LIKE_SENT:501", userId, NotificationType.LIKE,
+        request = new NotificationCreateRequested("LIKE_SENT:501", userId, NotificationType.LIKE,
             "원본 제목", "하늘님이 당신에게 마음을 전했어요.", "PROFILE", 202L,
             Instant.parse("2026-10-20T01:02:03.123456789Z"));
         id = transaction.execute(tx -> outboxService.append(request).getId());
@@ -237,8 +237,10 @@ class NotificationOutboxFailureServiceIntegrationTest {
         var before = row();
         assertThatThrownBy(() -> service.recordFailure(id, token, code))
             .isInstanceOf(NotificationBusinessException.class);
-        assertThatThrownBy(() -> service.recordWorkerFailure(id, token, code, false))
-            .isInstanceOf(NotificationBusinessException.class);
+        if (code != NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED) {
+            assertThatThrownBy(() -> service.recordWorkerFailure(id, token, code, false))
+                .isInstanceOf(NotificationBusinessException.class);
+        }
         assertThat(row()).isEqualTo(before);
     }
 
@@ -423,6 +425,22 @@ class NotificationOutboxFailureServiceIntegrationTest {
             NotificationFailureCode.PUBLISH_CALL_FAILED, retryable)).isInstanceOf(NotificationBusinessException.class);
 
         assertThat(row()).isEqualTo(before);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = NotificationFailureCode.class,
+        names = {"OUTBOX_CREATION_FAILED", "OUTBOX_DELIVERY_FAILED", "OUTBOX_STATE_UPDATE_FAILED"}
+    )
+    void Worker의_단계별_실패는_기록하고_기존_Relay는_해당_유형을_거부한다(NotificationFailureCode code) {
+        String token = claim();
+        assertThatThrownBy(() -> service.recordFailure(id, token, code))
+            .isInstanceOf(NotificationBusinessException.class);
+
+        var result = service.recordWorkerFailure(id, token, code, false).orElseThrow();
+
+        assertThat(result.status()).isEqualTo(NotificationOutboxStatus.FAILED);
+        assertThat(row()).containsEntry("failure_count", 1).containsEntry("last_failure_type", code.name());
     }
 
     private Map<String, Object> preservedFields(Map<String, Object> source) {

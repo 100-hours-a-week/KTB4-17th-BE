@@ -118,7 +118,7 @@ class NotificationCreationConsumerIntegrationTest {
         try (Admin admin = admin(topic, 1)) {
             contextRunner(topic, group, processor)
                 .withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true").run(context -> {
-                    var request = request("waiting", 1);
+                    var request = request("waiting");
                     send(context, topic, 0, request);
                     var container = start(context, 1);
                     try {
@@ -154,9 +154,9 @@ class NotificationCreationConsumerIntegrationTest {
             contextRunner(topic, group, processor)
                 .withPropertyValues("APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS=10")
                 .run(context -> {
-                    var first = request("first", 1);
-                    var failed = request("failed", 1);
-                    var afterFailure = request("after-failure", 1);
+                    var first = request("first");
+                    var failed = request("failed");
+                    var afterFailure = request("after-failure");
                     send(context, topic, 0, first);
                     send(context, topic, 0, failed);
                     send(context, topic, 0, afterFailure);
@@ -207,8 +207,8 @@ class NotificationCreationConsumerIntegrationTest {
         try (Admin admin = admin(topic, 1)) {
             contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
                 .run(context -> {
-                    send(context, topic, 0, request("transient", 1));
-                    send(context, topic, 0, request("after-retry", 1));
+                    send(context, topic, 0, request("transient"));
+                    send(context, topic, 0, request("after-retry"));
                     var container = start(context, 1);
                     try {
                         assertThat(retryEntered.await(15, TimeUnit.SECONDS)).isTrue();
@@ -221,7 +221,7 @@ class NotificationCreationConsumerIntegrationTest {
                         assertThat(retryRecord.headers().lastHeader("__TypeId__")).isNull();
                         assertThat(context.getBean(JsonMapper.class)
                             .readValue(retryRecord.value(), NotificationCreateRequested.class))
-                            .isEqualTo(request("transient", 1));
+                            .isEqualTo(request("transient"));
                     } finally {
                         releaseRetry.countDown();
                     }
@@ -229,8 +229,8 @@ class NotificationCreationConsumerIntegrationTest {
                     await().atMost(Duration.ofSeconds(15))
                         .untilAsserted(() -> assertThat(transientAttempts.get()).isEqualTo(2));
                     assertThat(processed).contains("after-retry");
-                    verify(processor, times(2)).process(request("transient", 1));
-                    verify(processor).process(request("after-retry", 1));
+                    verify(processor, times(2)).process(request("transient"));
+                    verify(processor).process(request("after-retry"));
                     verifyNoMoreInteractions(processor);
                 });
         }
@@ -264,7 +264,7 @@ class NotificationCreationConsumerIntegrationTest {
                         assertThat(committed(admin, group + "-retry", topic + "-retry", 0)).isEqualTo(2L);
                         return null;
                     }).when(client).send(any());
-                    var request = request("exhausted", 1);
+                    var request = request("exhausted");
                     send(context, topic, 0, request);
                     start(context, 1);
                     await().atMost(Duration.ofSeconds(20))
@@ -314,8 +314,8 @@ class NotificationCreationConsumerIntegrationTest {
                     case MALFORMED_JSON -> "{invalid".getBytes(StandardCharsets.UTF_8);
                     case JSON_NULL -> "null".getBytes(StandardCharsets.UTF_8);
                     case TOMBSTONE -> null;
-                    case UNSUPPORTED_SCHEMA ->
-                        context.getBean(JsonMapper.class).writeValueAsBytes(request("invalid", 2));
+                    case INVALID_REQUEST ->
+                        context.getBean(JsonMapper.class).writeValueAsBytes(request(" "));
                 };
                 try (var producer = new KafkaProducer<Long, byte[]>(Map.of(
                     ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
@@ -338,9 +338,9 @@ class NotificationCreationConsumerIntegrationTest {
                 switch (input) {
                     case MALFORMED_JSON -> assertThat(deadLetter.value()).isEqualTo(payload);
                     case JSON_NULL, TOMBSTONE -> assertThat(deadLetter.value()).isNull();
-                    case UNSUPPORTED_SCHEMA -> assertThat(context.getBean(JsonMapper.class)
+                    case INVALID_REQUEST -> assertThat(context.getBean(JsonMapper.class)
                         .readValue(deadLetter.value(), NotificationCreateRequested.class))
-                        .isEqualTo(request("invalid", 2));
+                        .isEqualTo(request(" "));
                 }
                 var failure = ArgumentCaptor.forClass(NotificationFailureContext.class);
                 verify(context.getBean(DiscordWebhookClient.class)).send(failure.capture());
@@ -348,7 +348,7 @@ class NotificationCreationConsumerIntegrationTest {
                 assertThat(failure.getValue().kafkaDetails().destinationLocation().offset())
                     .isEqualTo(deadLetter.offset());
                 assertThat(failure.getValue().kafkaDetails().attempt()).isEqualTo(1);
-                if (input != InvalidPayload.UNSUPPORTED_SCHEMA) {
+                if (input != InvalidPayload.INVALID_REQUEST) {
                     assertThat(failure.getValue().sourceEventId()).isNull();
                 }
                 verifyNoInteractions(creationService, deliveryProducer);
@@ -369,7 +369,7 @@ class NotificationCreationConsumerIntegrationTest {
             contextRunner(topic, group, processor).withPropertyValues("APP_NOTIFICATION_CREATION_ENABLED=true")
                 .run(context -> {
                     var container = start(context, 1);
-                    send(context, topic, 0, request("stop", 1));
+                    send(context, topic, 0, request("stop"));
                     await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
                         assertThat(container.isRunning()).isFalse();
                         assertThat(container.isInExpectedState()).isFalse();
@@ -414,7 +414,7 @@ class NotificationCreationConsumerIntegrationTest {
                         }
                         return invocation.callRealMethod();
                     }).when(template).send(any(ProducerRecord.class));
-                    var request = request("handoff", 1);
+                    var request = request("handoff");
                     send(context, topic, 0, request);
                     start(context, 1);
                     String inputTopic = topic + stage.inputSuffix;
@@ -479,7 +479,7 @@ class NotificationCreationConsumerIntegrationTest {
                         }
                         return invocation.callRealMethod();
                     }).when(template).send(any(ProducerRecord.class));
-                    send(context, topic, 0, request("timeout", 1));
+                    send(context, topic, 0, request("timeout"));
                     start(context, 1);
                     assertThat(entered.await(15, TimeUnit.SECONDS)).isTrue();
                     await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
@@ -504,7 +504,7 @@ class NotificationCreationConsumerIntegrationTest {
             contextRunner(topic, group, processor).run(context -> {
                 var client = context.getBean(DiscordWebhookClient.class);
                 doThrow(new IllegalStateException("private-webhook")).when(client).send(any());
-                send(context, topic, 0, request("alert-failure", 1));
+                send(context, topic, 0, request("alert-failure"));
                 start(context, 1);
                 await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                     assertThat(committed(admin, group, topic, 0)).isEqualTo(1L);
@@ -547,8 +547,8 @@ class NotificationCreationConsumerIntegrationTest {
                         assertThat(secondContainer.getAssignedPartitions()).hasSize(1)
                             .doesNotContainAnyElementsOf(firstContainer.getAssignedPartitions());
                     });
-                    send(first, topic, 0, request("partition-0", 1));
-                    send(first, topic, 1, request("partition-1", 1));
+                    send(first, topic, 0, request("partition-0"));
+                    send(first, topic, 1, request("partition-1"));
                     await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                         assertThat(committed(admin, group, topic, 0)).isEqualTo(1L);
                         assertThat(committed(admin, group, topic, 1)).isEqualTo(1L);
@@ -670,8 +670,8 @@ class NotificationCreationConsumerIntegrationTest {
         }
     }
 
-    private static NotificationCreateRequested request(String sourceEventId, int schemaVersion) {
-        return new NotificationCreateRequested(schemaVersion, sourceEventId, 7L, NotificationType.LIKE,
+    private static NotificationCreateRequested request(String sourceEventId) {
+        return new NotificationCreateRequested(sourceEventId, 7L, NotificationType.LIKE,
             "제목", "본문", null, null, Instant.parse("2026-10-22T01:00:00Z"));
     }
 
@@ -686,7 +686,7 @@ class NotificationCreationConsumerIntegrationTest {
     }
 
     private enum InvalidPayload {
-        MALFORMED_JSON, JSON_NULL, TOMBSTONE, UNSUPPORTED_SCHEMA
+        MALFORMED_JSON, JSON_NULL, TOMBSTONE, INVALID_REQUEST
     }
 
     private enum HandoffStage {

@@ -292,7 +292,7 @@ class NotificationDeliveryIntegrationTest {
     }
 
     private void createNotification() {
-        service.requestNotification(new NotificationCreateRequested(1, "MATCH_CREATED:123", recipientId,
+        service.requestNotification(new NotificationCreateRequested("MATCH_CREATED:123", recipientId,
             NotificationType.MATCH, "매칭 성사", "서로의 마음이 연결되었어요.", "CHAT_ROOM", 123L,
             Instant.parse("2026-10-18T12:00:00Z")));
     }
@@ -302,7 +302,7 @@ class NotificationDeliveryIntegrationTest {
         assertThat(repository.countVisibleUnreadByUserId(recipientId)).isZero();
         storedRequests.createNotificationsFromStoredRequests();
         var request = storedRequests.snapshot().getFirst();
-        var event = new NotificationDeliveryEvent(1, request.sourceEventId(), recipientId, storedNotification());
+        var event = new NotificationDeliveryEvent(request.sourceEventId(), recipientId, storedNotification());
         new NotificationDeliveryConsumer(deliveryValidator, sender, registry, observation)
             .consume(new ConsumerRecord<>("test-delivery", 0, 0L, recipientId, event));
     }

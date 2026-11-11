@@ -14,14 +14,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.json.JsonMapper;
 
 class NotificationRequestOutboxCodecTest {
 
     private static final Instant REQUESTED_AT = Instant.parse("2026-10-30T01:02:03.123456789Z");
     private static final String VALID_JSON = """
-        {"schemaVersion":1,"sourceEventId":"EVENT:LIKE","recipientUserId":7,"type":"LIKE",
+        {"sourceEventId":"EVENT:LIKE","recipientUserId":7,"type":"LIKE",
          "title":"좋아요😀","body":"하늘님이 마음을 전했어요.","targetType":"PROFILE","targetId":8,
          "requestedAt":"2026-10-30T01:02:03.123456789Z"}
         """;
@@ -49,22 +48,20 @@ class NotificationRequestOutboxCodecTest {
         assertThatThrownBy(() -> codec.decode(payload)).isInstanceOf(NotificationInvalidCreateRequestException.class);
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {0, 2})
-    void 지원하지_않는_버전의_요청은_저장_JSON으로_변환하지_않는다(int schemaVersion) {
-        var request = new NotificationCreateRequested(schemaVersion, "EVENT:LIKE", 7L, NotificationType.LIKE,
-            "좋아요", "본문", null, null, REQUESTED_AT);
-
-        assertThatThrownBy(() -> codec.encode(request)).isInstanceOf(NotificationInvalidCreateRequestException.class);
-    }
-
     @Test
     void null_요청은_저장_JSON으로_변환하지_않는다() {
         assertThatThrownBy(() -> codec.encode(null)).isInstanceOf(NotificationInvalidCreateRequestException.class);
     }
 
+    @Test
+    void 저장된_JSON의_알_수_없는_추가_필드가_있어도_요청을_복원한다() {
+        var payload = VALID_JSON.replaceFirst("\\{", "{\"legacyField\":1,");
+
+        assertThat(codec.decode(payload)).isEqualTo(request(NotificationType.LIKE, true));
+    }
+
     private static NotificationCreateRequested request(NotificationType type, boolean hasTarget) {
-        return new NotificationCreateRequested(1, "EVENT:" + type.name(), 7L, type,
+        return new NotificationCreateRequested("EVENT:" + type.name(), 7L, type,
             "좋아요😀", "하늘님이 마음을 전했어요.", hasTarget ? "PROFILE" : null, hasTarget ? 8L : null,
             REQUESTED_AT);
     }
@@ -76,7 +73,6 @@ class NotificationRequestOutboxCodecTest {
 
     private static Stream<String> invalidPayloads() {
         return Stream.of(null, "", " ", "{", "null", "[]", "{}",
-            VALID_JSON.replace("\"schemaVersion\":1", "\"schemaVersion\":2"),
             VALID_JSON.replace("EVENT:LIKE", " "),
             VALID_JSON.replace("\"recipientUserId\":7", "\"recipientUserId\":0"),
             VALID_JSON.replace("\"type\":\"LIKE\"", "\"type\":\"UNKNOWN\""),

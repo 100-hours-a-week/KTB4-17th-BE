@@ -34,15 +34,14 @@ public class ChatMessageNotificationProcessor {
             .map(Profile::getNickname)
             .orElse(null);
         ChatNotificationTemplate template = ChatNotificationTemplate.CHAT_MESSAGE;
-        notificationCreationProcessor.process(new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
-            SOURCE_EVENT_ID_PREFIX + event.messageId(),
-            event.receiverUserId(),
-            NotificationType.CHAT_MESSAGE,
-            template.getTitle(),
-            template.formatBody(senderNickname),
-            template.getTargetType(),
-            event.chatRoomId(),
-            Instant.now()));
+        notificationCreationProcessor
+            .process(new NotificationCreateRequested(SOURCE_EVENT_ID_PREFIX + event.messageId(),
+                event.receiverUserId(),
+                NotificationType.CHAT_MESSAGE,
+                template.getTitle(),
+                template.formatBody(senderNickname),
+                template.getTargetType(),
+                event.chatRoomId(),
+                Instant.now()));
     }
 }

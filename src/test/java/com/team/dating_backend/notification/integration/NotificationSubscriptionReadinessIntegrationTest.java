@@ -295,7 +295,7 @@ class NotificationSubscriptionReadinessIntegrationTest {
     }
 
     private NotificationDeliveryEvent event(long id) {
-        return new NotificationDeliveryEvent(1, "source-" + id, 42L,
+        return new NotificationDeliveryEvent("source-" + id, 42L,
             new NotificationEventResponse(id, "LIKE", "제목", "본문", null, null, null,
                 LocalDateTime.of(2026, 10, 23, 12, 0)));
     }

@@ -24,12 +24,17 @@ public class NotificationOutboxFailureService {
         NotificationFailureCode.PUBLISH_RESULT_FAILED,
         NotificationFailureCode.PUBLISH_RESULT_TIMEOUT);
 
+    private static final Set<NotificationFailureCode> WORKER_FAILURES = Set.of(
+        NotificationFailureCode.OUTBOX_CREATION_FAILED,
+        NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
+        NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED);
+
     private final NotificationRequestOutboxRepository repository;
     private final NotificationOutboxRetryPolicy retryPolicy;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<FailureResult> recordFailure(Long id, String token, NotificationFailureCode failureType) {
-        return record(id, token, failureType, true)
+        return record(id, token, failureType, true, Set.of())
             .map(
                 result -> new FailureResult(result.failureCount(), result.status() == NotificationOutboxStatus.FAILED));
     }
@@ -37,13 +42,14 @@ public class NotificationOutboxFailureService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<WorkerFailureResult> recordWorkerFailure(Long id, String token,
         NotificationFailureCode failureType, boolean retryable) {
-        return record(id, token, failureType, retryable);
+        return record(id, token, failureType, retryable, WORKER_FAILURES);
     }
 
     private Optional<WorkerFailureResult> record(Long id, String token,
-        NotificationFailureCode failureType, boolean retryable) {
+        NotificationFailureCode failureType, boolean retryable, Set<NotificationFailureCode> additionalTypes) {
         if (id == null || id <= 0 || token == null || token.length() != 36 || token.isBlank()
-            || failureType == null || !RECORDABLE_FAILURES.contains(failureType)) {
+            || failureType == null
+            || (!RECORDABLE_FAILURES.contains(failureType) && !additionalTypes.contains(failureType))) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
         var candidate = repository.findByIdForUpdate(id);

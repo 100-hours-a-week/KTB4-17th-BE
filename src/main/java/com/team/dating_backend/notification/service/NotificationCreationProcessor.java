@@ -6,6 +6,7 @@ import com.team.dating_backend.notification.dto.result.NotificationCreationResul
 import com.team.dating_backend.notification.kafka.NotificationDeliveryProducer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -22,17 +23,28 @@ public class NotificationCreationProcessor {
     @Transactional(propagation = Propagation.NEVER)
     public void process(NotificationCreateRequested request)
         throws ExecutionException, InterruptedException, TimeoutException {
+        process(request, stage -> {});
+    }
+
+    @Transactional(propagation = Propagation.NEVER)
+    public void process(NotificationCreateRequested request, Consumer<Stage> stageListener)
+        throws ExecutionException, InterruptedException, TimeoutException {
+        stageListener.accept(Stage.CREATION);
         validator.validate(request);
         NotificationCreationResult result = creationService.createOrLoad(request);
         if (result.deletedAt() != null) {
             return;
         }
 
-        NotificationDeliveryEvent event = new NotificationDeliveryEvent(
-            NotificationDeliveryEvent.CURRENT_SCHEMA_VERSION,
-            result.sourceEventId(),
+        NotificationDeliveryEvent event = new NotificationDeliveryEvent(result.sourceEventId(),
             result.recipientUserId(),
             result.notification());
+        stageListener.accept(Stage.DELIVERY);
         deliveryProducer.publishAndAwait(event);
+    }
+
+    public enum Stage {
+        CREATION,
+        DELIVERY
     }
 }

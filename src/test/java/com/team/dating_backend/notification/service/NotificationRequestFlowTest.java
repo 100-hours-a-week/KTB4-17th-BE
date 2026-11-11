@@ -199,7 +199,7 @@ class NotificationRequestFlowTest {
     void 원본_식별자_255자를_변경없이_Outbox로_전달한다(String character) {
         String prefix = "Like_SENT:501 ";
         String sourceEventId = prefix + character.repeat(255 - prefix.length());
-        var request = new NotificationCreateRequested(1, sourceEventId, 7L, NotificationType.LIKE,
+        var request = new NotificationCreateRequested(sourceEventId, 7L, NotificationType.LIKE,
             "title", "body", null, null, REQUESTED_AT);
 
         transaction.executeWithoutResult(status -> service.requestNotification(request));
@@ -228,18 +228,16 @@ class NotificationRequestFlowTest {
 
     private static Stream<NotificationCreateRequested> invalidRequests() {
         return Stream.of(null,
-            new NotificationCreateRequested(2, "id", 7L, NotificationType.LIKE, "title", "body", null, null,
+            new NotificationCreateRequested(" ", 7L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
-            new NotificationCreateRequested(1, " ", 7L, NotificationType.LIKE, "title", "body", null, null,
+            new NotificationCreateRequested("a".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
-            new NotificationCreateRequested(1, "a".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
+            new NotificationCreateRequested("😀".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
-            new NotificationCreateRequested(1, "😀".repeat(256), 7L, NotificationType.LIKE, "title", "body", null, null,
+            new NotificationCreateRequested("id", 0L, NotificationType.LIKE, "title", "body", null, null,
                 REQUESTED_AT),
-            new NotificationCreateRequested(1, "id", 0L, NotificationType.LIKE, "title", "body", null, null,
-                REQUESTED_AT),
-            new NotificationCreateRequested(1, "id", 7L, null, "title", "body", null, null, REQUESTED_AT),
-            new NotificationCreateRequested(1, "id", 7L, NotificationType.LIKE, "title", "body", null, null, null),
+            new NotificationCreateRequested("id", 7L, null, "title", "body", null, null, REQUESTED_AT),
+            new NotificationCreateRequested("id", 7L, NotificationType.LIKE, "title", "body", null, null, null),
             request(null, "body", null, null), request("title", null, null, null),
             request("😀".repeat(101), "body", null, null), request("title", "😀".repeat(501), null, null),
             request("title", "body", "CHAT", null), request("title", "body", null, 1L),
@@ -248,7 +246,7 @@ class NotificationRequestFlowTest {
     }
 
     private static NotificationCreateRequested request(String title, String body, String targetType, Long targetId) {
-        return new NotificationCreateRequested(1, "LIKE_SENT:501", 7L, NotificationType.LIKE,
+        return new NotificationCreateRequested("LIKE_SENT:501", 7L, NotificationType.LIKE,
             title, body, targetType, targetId, REQUESTED_AT);
     }
 

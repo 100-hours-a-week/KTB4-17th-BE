@@ -489,7 +489,7 @@ class NotificationCreationPipelineIntegrationTest {
     }
 
     private NotificationCreateRequested request(String title, Instant requestedAt) {
-        return new NotificationCreateRequested(1, sourceEventId, userId, NotificationType.LIKE,
+        return new NotificationCreateRequested(sourceEventId, userId, NotificationType.LIKE,
             title, "원본 본문", "USER", 99L, requestedAt);
     }
 

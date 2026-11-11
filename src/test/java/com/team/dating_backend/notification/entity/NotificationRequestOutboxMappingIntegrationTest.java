@@ -36,7 +36,7 @@ class NotificationRequestOutboxMappingIntegrationTest {
 
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 30, 12, 0, 0, 123456789);
     private static final String PAYLOAD = """
-        {"schemaVersion":1,"sourceEventId":"LIKE_SENT:501","recipientUserId":7,"type":"LIKE",
+        {"sourceEventId":"LIKE_SENT:501","recipientUserId":7,"type":"LIKE",
          "title":"새로운 좋아요😀","body":"하늘님이 마음을 전했어요.","targetType":"PROFILE","targetId":8,
          "requestedAt":"2026-10-30T01:02:03.123456789Z"}
         """;

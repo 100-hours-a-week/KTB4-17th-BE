@@ -229,7 +229,7 @@ class NotificationMultiProcessRetryIntegrationTest extends NotificationMultiProc
     }
 
     private NotificationCreateRequested notification(long userId) {
-        return new NotificationCreateRequested(1, "PR25_HANDOFF:" + UUID.randomUUID(), userId, NotificationType.NOTICE,
+        return new NotificationCreateRequested("PR25_HANDOFF:" + UUID.randomUUID(), userId, NotificationType.NOTICE,
             "인계 검증", "원본 보존", null, null, Instant.now().truncatedTo(ChronoUnit.MICROS));
     }
 

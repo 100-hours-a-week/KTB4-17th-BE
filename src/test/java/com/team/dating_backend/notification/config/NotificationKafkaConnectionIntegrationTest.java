@@ -46,14 +46,14 @@ class NotificationKafkaConnectionIntegrationTest {
 
     @Test
     void 생성_요청은_기존_메시지부터_소비하고_두_파티션의_새_메시지를_복원한다() {
-        var message = new NotificationCreateRequested(1, "source-create", 101L, NotificationType.LIKE,
+        var message = new NotificationCreateRequested("source-create", 101L, NotificationType.LIKE,
             "좋아요", "새로운 알림", null, null, Instant.parse("2026-10-20T01:02:03.123456Z"));
         assertRoundTrip("notificationCreateRequestedKafkaListenerContainerFactory", message, true);
     }
 
     @Test
     void delivery는_시작_이후_두_파티션의_새_메시지만_소비한다() {
-        var message = new NotificationDeliveryEvent(1, "source-delivery", 101L,
+        var message = new NotificationDeliveryEvent("source-delivery", 101L,
             new NotificationEventResponse(501L, "LIKE", "좋아요", "새로운 알림", null, null, null,
                 LocalDateTime.parse("2026-10-20T10:02:03.123456")));
         assertRoundTrip("notificationDeliveryKafkaListenerContainerFactory", message, false);

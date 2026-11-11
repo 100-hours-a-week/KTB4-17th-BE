@@ -20,7 +20,6 @@ class NotificationMessageJsonTest {
 
     private static final String CREATE_REQUEST_JSON = """
         {
-          "schemaVersion": 1,
           "sourceEventId": "CHAT_MESSAGE_SENT:900",
           "recipientUserId": 42,
           "type": "CHAT_MESSAGE",
@@ -34,7 +33,6 @@ class NotificationMessageJsonTest {
 
     private static final String DELIVERY_EVENT_JSON = """
         {
-          "schemaVersion": 1,
           "sourceEventId": "CHAT_MESSAGE_SENT:900",
           "recipientUserId": 42,
           "notification": {
@@ -70,17 +68,22 @@ class NotificationMessageJsonTest {
     }
 
     @Test
+    void 생성_요청의_알_수_없는_추가_필드는_무시한다() {
+        var json = CREATE_REQUEST_JSON.replaceFirst("\\{", "{\"legacyField\":1,");
+
+        assertThat(objectMapper.readValue(json, NotificationCreateRequested.class)).isEqualTo(createRequest());
+    }
+
+    @Test
     void 대상이_없는_생성_요청은_null_필드를_포함하고_복원한다() {
-        NotificationCreateRequested request = new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
-            "NOTICE_CREATED:901", 42L, NotificationType.NOTICE,
+        NotificationCreateRequested request = new NotificationCreateRequested("NOTICE_CREATED:901", 42L,
+            NotificationType.NOTICE,
             "공지", "서비스 공지입니다.", null, null, REQUESTED_AT);
 
         String json = objectMapper.writeValueAsString(request);
 
         assertThat(objectMapper.readTree(json)).isEqualTo(objectMapper.readTree("""
             {
-              "schemaVersion": 1,
               "sourceEventId": "NOTICE_CREATED:901",
               "recipientUserId": 42,
               "type": "NOTICE",
@@ -111,17 +114,22 @@ class NotificationMessageJsonTest {
     }
 
     @Test
+    void Delivery_이벤트의_알_수_없는_추가_필드는_무시한다() {
+        var json = DELIVERY_EVENT_JSON.replaceFirst("\\{", "{\"legacyField\":1,");
+
+        assertThat(objectMapper.readValue(json, NotificationDeliveryEvent.class)).isEqualTo(deliveryEvent());
+    }
+
+    @Test
     void delivery_이벤트는_대상과_읽은_시각의_null을_포함하고_복원한다() {
         NotificationEventResponse notification = new NotificationEventResponse(
             101L, "NOTICE", "공지", "서비스 공지입니다.", null, null, null, CREATED_AT);
-        NotificationDeliveryEvent event = new NotificationDeliveryEvent(
-            NotificationDeliveryEvent.CURRENT_SCHEMA_VERSION, "NOTICE_CREATED:901", 42L, notification);
+        NotificationDeliveryEvent event = new NotificationDeliveryEvent("NOTICE_CREATED:901", 42L, notification);
 
         String json = objectMapper.writeValueAsString(event);
 
         assertThat(objectMapper.readTree(json)).isEqualTo(objectMapper.readTree("""
             {
-              "schemaVersion": 1,
               "sourceEventId": "NOTICE_CREATED:901",
               "recipientUserId": 42,
               "notification": {
@@ -140,9 +148,7 @@ class NotificationMessageJsonTest {
     }
 
     private NotificationCreateRequested createRequest() {
-        return new NotificationCreateRequested(
-            NotificationCreateRequested.CURRENT_SCHEMA_VERSION,
-            "CHAT_MESSAGE_SENT:900", 42L, NotificationType.CHAT_MESSAGE,
+        return new NotificationCreateRequested("CHAT_MESSAGE_SENT:900", 42L, NotificationType.CHAT_MESSAGE,
             "새 메시지", "새 메시지가 도착했습니다.", "CHAT_ROOM", 7L, REQUESTED_AT);
     }
 
@@ -150,7 +156,6 @@ class NotificationMessageJsonTest {
         NotificationEventResponse notification = new NotificationEventResponse(
             100L, "CHAT_MESSAGE", "새 메시지", "새 메시지가 도착했습니다.",
             "CHAT_ROOM", 7L, READ_AT, CREATED_AT);
-        return new NotificationDeliveryEvent(
-            NotificationDeliveryEvent.CURRENT_SCHEMA_VERSION, "CHAT_MESSAGE_SENT:900", 42L, notification);
+        return new NotificationDeliveryEvent("CHAT_MESSAGE_SENT:900", 42L, notification);
     }
 }

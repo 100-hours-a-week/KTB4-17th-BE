@@ -19,6 +19,7 @@ import com.team.dating_backend.notification.kafka.NotificationDeliveryProducer;
 import java.sql.Connection;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -27,7 +28,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -41,13 +41,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 class NotificationCreationProcessorTest {
 
-    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested(
-        1, "event-1", 7L, NotificationType.LIKE, "재처리 제목", "재처리 본문", null, null,
+    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested("event-1", 7L,
+        NotificationType.LIKE, "재처리 제목", "재처리 본문", null, null,
         Instant.parse("2026-10-21T01:00:00Z"));
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 20, 1, 0);
     private static final NotificationEventResponse STORED = new NotificationEventResponse(
         10L, "LIKE", "원본 제목", "원본 본문", "USER", 2L, CREATED_AT.plusMinutes(1), CREATED_AT);
-    private static final NotificationDeliveryEvent DELIVERY = new NotificationDeliveryEvent(1, "event-1", 7L, STORED);
+    private static final NotificationDeliveryEvent DELIVERY = new NotificationDeliveryEvent("event-1", 7L, STORED);
 
     private NotificationCreationService creationService;
     private NotificationDeliveryProducer producer;
@@ -99,16 +99,9 @@ class NotificationCreationProcessorTest {
         verifyNoInteractions(producer);
     }
 
-    @ParameterizedTest
-    @NullSource
-    @ValueSource(ints = {2})
-    void 잘못된_요청은_저장과_발행_전에_errorCode로_거부한다(Integer schemaVersion) {
-        NotificationCreateRequested invalid = schemaVersion == null
-            ? null
-            : new NotificationCreateRequested(
-                schemaVersion, "event-1", 7L, NotificationType.LIKE, "제목", "본문", null, null, REQUEST.requestedAt());
-
-        assertThatThrownBy(() -> processor.process(invalid))
+    @Test
+    void null_요청은_저장과_발행_전에_errorCode로_거부한다() {
+        assertThatThrownBy(() -> processor.process(null))
             .isInstanceOfSatisfying(NotificationInvalidCreateRequestException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
@@ -155,6 +148,41 @@ class NotificationCreationProcessorTest {
 
     private static Stream<RuntimeException> storageFailures() {
         return Stream.of(new DataAccessResourceFailureException("저장 실패"), new TransactionSystemException("커밋 실패"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 단계_통지는_생성과_Delivery_순서이며_삭제된_알림은_생성_단계에서_끝난다(boolean deleted) throws Exception {
+        given(creationService.createOrLoad(REQUEST)).willReturn(new NotificationCreationResult(
+            "event-1", 7L, STORED, deleted ? CREATED_AT.plusMinutes(2) : null));
+        var stages = new ArrayList<NotificationCreationProcessor.Stage>();
+
+        processor.process(REQUEST, stages::add);
+
+        assertThat(stages).containsExactlyElementsOf(deleted
+            ? java.util.List.of(NotificationCreationProcessor.Stage.CREATION)
+            : java.util.List.of(NotificationCreationProcessor.Stage.CREATION,
+                NotificationCreationProcessor.Stage.DELIVERY));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 단계_통지는_저장과_Delivery의_예외_객체를_바꾸지_않는다(boolean delivery) throws Exception {
+        var failure = new DataAccessResourceFailureException("처리 실패");
+        if (delivery) {
+            given(creationService.createOrLoad(REQUEST))
+                .willReturn(new NotificationCreationResult("event-1", 7L, STORED, null));
+            given(producer.publishAndAwait(DELIVERY)).willThrow(failure);
+        } else {
+            given(creationService.createOrLoad(REQUEST)).willThrow(failure);
+        }
+        var stages = new ArrayList<NotificationCreationProcessor.Stage>();
+
+        assertThatThrownBy(() -> processor.process(REQUEST, stages::add)).isSameAs(failure);
+
+        assertThat(stages.getLast()).isEqualTo(delivery
+            ? NotificationCreationProcessor.Stage.DELIVERY
+            : NotificationCreationProcessor.Stage.CREATION);
     }
 
     private static Stream<Exception> deliveryFailures() {

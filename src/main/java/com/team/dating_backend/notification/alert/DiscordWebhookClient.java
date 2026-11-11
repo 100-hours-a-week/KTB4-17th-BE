@@ -68,7 +68,6 @@ public class DiscordWebhookClient {
 
         DeliveryFailureDetails delivery = context.deliveryDetails();
         if (delivery != null) {
-            fields.put("deliverySchemaVersion", delivery.schemaVersion());
             fields.put("notificationId", delivery.notificationId());
             fields.put("notificationCreatedAt", delivery.createdAt());
         }

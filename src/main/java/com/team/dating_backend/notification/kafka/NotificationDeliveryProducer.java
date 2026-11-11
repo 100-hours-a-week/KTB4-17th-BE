@@ -24,7 +24,6 @@ public class NotificationDeliveryProducer {
     public RecordMetadata publishAndAwait(NotificationDeliveryEvent event)
         throws ExecutionException, InterruptedException, TimeoutException {
         if (event == null
-            || event.schemaVersion() != NotificationDeliveryEvent.CURRENT_SCHEMA_VERSION
             || event.sourceEventId() == null
             || event.sourceEventId().isBlank()
             || event.recipientUserId() == null

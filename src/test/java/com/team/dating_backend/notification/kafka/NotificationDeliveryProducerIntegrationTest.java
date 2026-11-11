@@ -79,7 +79,7 @@ class NotificationDeliveryProducerIntegrationTest {
                 var createdAt = LocalDateTime.of(2026, 10, 21, 1, 2, 3, 123456000);
                 var notification = new NotificationEventResponse(
                     10L, "LIKE", "저장된 제목", "저장된 본문", null, null, createdAt.plusMinutes(1), createdAt);
-                var event = new NotificationDeliveryEvent(1, "event-1", 7L, notification);
+                var event = new NotificationDeliveryEvent("event-1", 7L, notification);
                 var metadata = context.getBean(NotificationDeliveryProducer.class).publishAndAwait(event);
                 assertThat(metadata.topic()).isEqualTo(topic);
                 assertThat(metadata.partition()).isIn(0, 1);

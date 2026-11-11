@@ -208,7 +208,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
     }
 
     private NotificationCreateRequested notice(long recipient) {
-        return new NotificationCreateRequested(1, "PR27_BACKLOG:" + UUID.randomUUID(), recipient,
+        return new NotificationCreateRequested("PR27_BACKLOG:" + UUID.randomUUID(), recipient,
             NotificationType.NOTICE, "복구 확인", "처리 대기 알림", null, null, Instant.now().truncatedTo(ChronoUnit.MICROS));
     }
 
