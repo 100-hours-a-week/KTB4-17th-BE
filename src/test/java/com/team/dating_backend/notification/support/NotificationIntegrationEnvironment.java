@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -61,6 +62,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     private final List<BrokerTransition> brokerHistory = new ArrayList<>();
     private final String jwtSecret = Base64.getEncoder().encodeToString(randomKey());
     private final AtomicInteger aiRequests = new AtomicInteger();
+    private volatile CountDownLatch aiResponseGate = new CountDownLatch(0);
     private Admin admin;
     private JdbcTemplate jdbc;
     private NotificationBackendProcess first;
@@ -100,6 +102,20 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             case BROKER -> "pr27-";
         } + UUID.randomUUID();
         directory = Path.of(System.getProperty("notification.test.output-directory")).resolve(runId);
+    }
+
+    public static NotificationIntegrationEnvironment worker(Mode mode) {
+        var settings = new HashMap<>(Map.of("OUTBOX_RELAY_ENABLED", "false", "OUTBOX_WORKER_ENABLED", "true",
+            "OUTBOX_CLAIM_DURATION_MS", "30000", "AI_KAFKA_ENABLED", Boolean.toString(mode == Mode.NORMAL)));
+        if (mode == Mode.RECOVERY) {
+            settings.putAll(Map.of("DELIVERY_RESULT_TIMEOUT_MS", "90000",
+                "PRODUCER_MAX_BLOCK_MS", "60000", "PRODUCER_DELIVERY_TIMEOUT_MS", "60000"));
+        }
+        return new NotificationIntegrationEnvironment(mode, settings);
+    }
+
+    private boolean usesWorker() {
+        return Boolean.parseBoolean(settingsOverrides.get("OUTBOX_WORKER_ENABLED"));
     }
 
     public void start() throws Exception {
@@ -146,7 +162,12 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000));
         resource(() -> admin.close(Duration.ofSeconds(5)));
         assertThat(admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)).hasSize(3);
-        var topics = Stream.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic())
+        var topicNames = new ArrayList<>(
+            List.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic()));
+        if (usesAiKafka()) {
+            topicNames.addAll(aiTopics());
+        }
+        var topics = topicNames.stream()
             .map(name -> (mode == Mode.BROKER
                 ? new NewTopic(name, Map.of(0, List.of(1, 2, 3), 1, List.of(3, 2, 1)))
                 : new NewTopic(name, 2, (short) 3)).configs(name.equals(dltTopic())
@@ -184,6 +205,9 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             "CREATION_TOPIC", creationTopic(), "DELIVERY_TOPIC", deliveryTopic(), "CREATION_GROUP", creationGroup()));
         settings.put("CHAT_MESSAGE_TOPIC", chatMessageTopic());
         settings.put("CHAT_MESSAGE_GROUP", chatMessageGroup());
+        settings.put("AI_REQUESTED_TOPIC", runId + "-ai-requested");
+        settings.put("AI_COMPLETED_TOPIC", runId + "-ai-completed");
+        settings.put("AI_GROUP_PREFIX", runId + "-ai");
         first = resource(new NotificationBackendProcess("a", directory));
         settings.put("DB_CONNECTION_INIT_SQL", "SET SESSION innodb_lock_wait_timeout = 50");
         settings.put("ALERT_ENABLED", "false");
@@ -197,7 +221,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         settings.put("MANAGEMENT_ENDPOINTS", mode == Mode.LIFECYCLE ? "health,prometheus" : "health");
         settings.put("PROCESS", "a");
         settings.put("DELIVERY_PREFIX", runId + "-sse-a");
-        settings.put("CREATION_ENABLED", Boolean.toString(mode != Mode.LIFECYCLE));
+        settings.put("CREATION_ENABLED", Boolean.toString(!usesWorker() && mode != Mode.LIFECYCLE));
         settings.put("PRODUCER_BOOTSTRAP_SERVERS", kafkaFaultProxy == null
             ? bootstrap
             : kafkaFaultProxy.bootstrapServers(Channel.PRODUCER));
@@ -210,7 +234,10 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         second = resource(new NotificationBackendProcess("b", directory));
         settings.put("PROCESS", "b");
         settings.put("DELIVERY_PREFIX", runId + "-sse-b");
-        settings.put("CREATION_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
+        settings.put("CREATION_ENABLED", Boolean.toString(!usesWorker() && mode != Mode.RECOVERY));
+        if (usesWorker()) {
+            settings.put("OUTBOX_WORKER_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
+        }
         settings.put("PRODUCER_BOOTSTRAP_SERVERS", secondProducerUsesProxy && kafkaFaultProxy != null
             ? kafkaFaultProxy.bootstrapServers(Channel.PRODUCER)
             : bootstrap);
@@ -254,6 +281,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
                     fixture.transcript(), fixture.report(), fixture.createdAt());
                 byte[] body = JSON.writeValueAsBytes(response);
                 aiRequests.incrementAndGet();
+                try {
+                    if (!aiResponseGate.await(30, TimeUnit.SECONDS)) {
+                        throw new IOException("AI response gate timed out");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, body.length);
                 exchange.getResponseBody().write(body);
@@ -266,25 +301,31 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     public void assertGroupsReady() {
         await().atMost(Duration.ofSeconds(45)).failFast(() -> !first.isAlive() || !second.isAlive())
             .ignoreExceptions().untilAsserted(() -> {
-                var creation = admin.describeConsumerGroups(List.of(creationGroup())).all().get(10, TimeUnit.SECONDS)
-                    .get(creationGroup());
-                int members = mode == Mode.NORMAL || mode == Mode.BROKER ? 2 : 1;
-                assertThat(creation.members()).hasSize(members)
-                    .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
-                var creators = switch (mode) {
-                    case NORMAL, BROKER -> List.of(first, second);
-                    case RECOVERY -> List.of(first);
-                    case LIFECYCLE -> List.of(second);
-                };
-                for (var backend : creators) {
-                    String prefix = backend.deliveryGroupPrefix();
-                    assertThat(creation.members()).filteredOn(member -> member.clientId().equals(prefix)
-                        || member.clientId().startsWith(prefix + "-")).hasSize(1);
+                if (usesWorker()) {
+                    assertThat(admin.listGroups().all().get(10, TimeUnit.SECONDS))
+                        .noneMatch(group -> group.groupId().equals(creationGroup()));
+                } else {
+                    var creation = admin.describeConsumerGroups(List.of(creationGroup())).all()
+                        .get(10, TimeUnit.SECONDS)
+                        .get(creationGroup());
+                    int members = mode == Mode.NORMAL || mode == Mode.BROKER ? 2 : 1;
+                    assertThat(creation.members()).hasSize(members)
+                        .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
+                    var creators = switch (mode) {
+                        case NORMAL, BROKER -> List.of(first, second);
+                        case RECOVERY -> List.of(first);
+                        case LIFECYCLE -> List.of(second);
+                    };
+                    for (var backend : creators) {
+                        String prefix = backend.deliveryGroupPrefix();
+                        assertThat(creation.members()).filteredOn(member -> member.clientId().equals(prefix)
+                            || member.clientId().startsWith(prefix + "-")).hasSize(1);
+                    }
+                    assertThat(
+                        creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
+                        .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
+                            new TopicPartition(creationTopic(), 1));
                 }
-                assertThat(
-                    creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
-                    .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
-                        new TopicPartition(creationTopic(), 1));
                 var chatMessage = admin.describeConsumerGroups(List.of(chatMessageGroup())).all()
                     .get(10, TimeUnit.SECONDS).get(chatMessageGroup());
                 assertThat(chatMessage.members()).hasSize(2);
@@ -303,18 +344,46 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
                         .containsExactlyInAnyOrder(new TopicPartition(deliveryTopic(), 0),
                             new TopicPartition(deliveryTopic(), 1));
                 });
+                if (usesAiKafka()) {
+                    var groupsByStage = aiGroups();
+                    var aiGroups = admin.describeConsumerGroups(groupsByStage.keySet()).all().get(10, TimeUnit.SECONDS);
+                    assertThat(aiGroups.values()).allSatisfy(group -> {
+                        assertThat(group.members()).hasSize(2);
+                        String topic = groupsByStage.get(group.groupId());
+                        assertThat(
+                            group.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
+                            .containsExactlyInAnyOrder(new TopicPartition(topic, 0), new TopicPartition(topic, 1));
+                    });
+                }
             });
     }
 
     public void awaitProcessed() {
         await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> {
-            assertCommitted(creationGroup(), creationTopic());
+            if (usesWorker()) {
+                assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM notification_request_outbox WHERE status <> 'COMPLETED'
+                    """, Long.class)).isZero();
+                assertThat(endOffsets(creationTopic()).values()).containsOnly(0L);
+            } else {
+                assertCommitted(creationGroup(), creationTopic());
+            }
             assertCommitted(chatMessageGroup(), chatMessageTopic());
             for (String group : deliveryGroups()) {
                 assertCommitted(group, deliveryTopic());
             }
             assertThat(endOffsets(retryTopic()).values()).containsOnly(0L);
             assertThat(endOffsets(dltTopic()).values()).containsOnly(0L);
+            if (usesAiKafka()) {
+                for (var entry : aiGroups().entrySet()) {
+                    assertCommitted(entry.getKey(), entry.getValue());
+                }
+                for (String topic : aiTopics()) {
+                    if (topic.endsWith("-retry") || topic.endsWith("-dlt")) {
+                        assertThat(endOffsets(topic).values()).containsOnly(0L);
+                    }
+                }
+            }
         });
     }
 
@@ -504,6 +573,39 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
 
     public int aiRequests() {
         return aiRequests.get();
+    }
+
+    public AutoCloseable pauseAiResponses() {
+        var gate = new CountDownLatch(1);
+        aiResponseGate = gate;
+        return resource(gate::countDown);
+    }
+
+    private boolean usesAiKafka() {
+        return Boolean.parseBoolean(settingsOverrides.get("AI_KAFKA_ENABLED"));
+    }
+
+    private List<String> aiTopics() {
+        var topics = new ArrayList<>(List.of(runId + "-ai-requested", runId + "-ai-completed"));
+        for (var entry : aiGroups().entrySet()) {
+            String stage = entry.getKey().substring((runId + "-ai-").length());
+            String source = entry.getValue();
+            topics.add(source + "-" + stage + "-retry");
+            topics.add(source + "-" + stage + "-dlt");
+        }
+        return List.copyOf(topics);
+    }
+
+    private Map<String, String> aiGroups() {
+        var groups = new LinkedHashMap<String, String>();
+        for (String stage : List.of("generation", "request-notification", "recommendation",
+            "requester-notification", "target-notification")) {
+            groups.put(runId + "-ai-" + stage,
+                stage.equals("requester-notification") || stage.equals("target-notification")
+                    ? runId + "-ai-completed"
+                    : runId + "-ai-requested");
+        }
+        return Map.copyOf(groups);
     }
 
     public String creationTopic() {

@@ -80,6 +80,9 @@ app:
       relay:
         enabled: @OUTBOX_RELAY_ENABLED@
         fixed-delay-ms: @OUTBOX_FIXED_DELAY_MS@
+      worker:
+        enabled: @OUTBOX_WORKER_ENABLED@
+        fixed-delay-ms: @OUTBOX_WORKER_FIXED_DELAY_MS@
     publish:
       result-timeout-ms: @PUBLISH_RESULT_TIMEOUT_MS@
     kafka:
@@ -94,6 +97,7 @@ app:
     delivery:
       enabled: true
       group-id-prefix: "@DELIVERY_PREFIX@"
+      result-timeout-ms: @DELIVERY_RESULT_TIMEOUT_MS@
     retry:
       max-attempts: 4
       delay-ms: 5000
@@ -110,6 +114,26 @@ app:
       consumer-stop-timeout-ms: 5000
   ai-simulation:
     base-url: "@AI_URL@"
+    kafka:
+      requested-topic: "@AI_REQUESTED_TOPIC@"
+      completed-topic: "@AI_COMPLETED_TOPIC@"
+      partitions: 2
+      concurrency: 1
+      generation:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-generation"
+      request-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-request-notification"
+      recommendation:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-recommendation"
+      requester-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-requester-notification"
+      target-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-target-notification"
   ai-practice:
     base-url: "@AI_URL@"
   persona-ai:
