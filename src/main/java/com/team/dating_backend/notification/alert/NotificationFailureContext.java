@@ -5,6 +5,7 @@ import com.team.dating_backend.notification.dto.event.NotificationCreateRequeste
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
@@ -20,12 +21,21 @@ public record NotificationFailureContext(
     String exceptionType,
     String causeType,
     KafkaFailureDetails kafkaDetails,
-    DeliveryFailureDetails deliveryDetails) {
+    DeliveryFailureDetails deliveryDetails,
+    OutboxFailureDetails outboxDetails) {
 
     public NotificationFailureContext {
         if (errorCode == null || occurredAt == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    public NotificationFailureContext(
+        NotificationFailureCode errorCode, String sourceEventId, Long recipientUserId, NotificationType type,
+        Instant requestedAt, Instant occurredAt, String exceptionType, String causeType,
+        KafkaFailureDetails kafkaDetails, DeliveryFailureDetails deliveryDetails) {
+        this(errorCode, sourceEventId, recipientUserId, type, requestedAt, occurredAt, exceptionType, causeType,
+            kafkaDetails, deliveryDetails, null);
     }
 
     public NotificationFailureContext(
@@ -139,6 +149,15 @@ public record NotificationFailureContext(
             exceptionType(exception), causeType(exception), details);
     }
 
+    public static NotificationFailureContext fromWorker(NotificationFailureCode errorCode,
+        NotificationRequestOutbox outbox, NotificationCreateRequested request, Throwable exception,
+        Instant occurredAt, Integer failureCount, NotificationOutboxStatus status, Boolean retryable) {
+        return new NotificationFailureContext(errorCode, outbox.getSourceEventId(), outbox.getRecipientUserId(),
+            outbox.getType(), request == null ? null : request.requestedAt(), occurredAt,
+            exceptionType(exception), causeType(exception), null, null,
+            new OutboxFailureDetails(outbox.getId(), failureCount, status, retryable));
+    }
+
     private static NotificationType notificationType(String type) {
         if (type == null) {
             return null;
@@ -178,6 +197,9 @@ public record NotificationFailureContext(
     }
 
     public record DeliveryFailureDetails(Long notificationId, LocalDateTime createdAt) {}
+
+    public record OutboxFailureDetails(Long outboxId, Integer failureCount, NotificationOutboxStatus status,
+        Boolean retryable) {}
 
     public record KafkaLocation(String topic, Integer partition, Long offset) {
 

@@ -9,6 +9,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
+import com.team.dating_backend.notification.alert.DiscordWebhookClient;
+import com.team.dating_backend.notification.alert.NotificationAlertDispatcher;
+import com.team.dating_backend.notification.alert.NotificationFailureContext;
+import com.team.dating_backend.notification.alert.NotificationFailureReporter;
+import com.team.dating_backend.notification.config.NotificationAlertProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
@@ -65,12 +72,14 @@ import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -97,6 +106,7 @@ import tools.jackson.databind.json.JsonMapper;
         NotificationPersistenceService.class, NotificationLookupService.class, NotificationOutboxClaimService.class,
         NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
         NotificationOutboxWorkerFailureClassifier.class, NotificationCreationFailureClassifier.class,
+        NotificationFailureReporter.class,
         NotificationDeliveryProducer.class, KafkaProducerConfiguration.class,
         NotificationOutboxWorkerIntegrationTest.PropertiesConfiguration.class}
 )
@@ -136,6 +146,8 @@ class NotificationOutboxWorkerIntegrationTest {
     private NotificationDeliveryProducer producer;
     @MockitoSpyBean
     private NotificationPersistenceService persistence;
+    @MockitoBean
+    private DiscordWebhookClient webhook;
 
     private TransactionTemplate transaction;
     private NotificationCreateRequested request;
@@ -231,6 +243,7 @@ class NotificationOutboxWorkerIntegrationTest {
             assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 1)
                 .containsEntry("last_failure_type", "OUTBOX_DELIVERY_FAILED").containsEntry("processing_token", null);
         }
+        verify(webhook, never()).send(any());
         assertThat(notificationCount()).isEqualTo(1);
         Long originalId = notificationId();
         jdbc.update("UPDATE notifications SET read_at = ? WHERE id = ?", CREATED_AT.plusMinutes(1), originalId);
@@ -284,6 +297,10 @@ class NotificationOutboxWorkerIntegrationTest {
             .containsEntry("completed_at", null);
         assertThat(notificationCount()).isZero();
         verify(producer, never()).publishAndAwait(any());
+        verify(webhook).send(org.mockito.ArgumentMatchers.argThat(context -> context
+            .errorCode() == com.team.dating_backend.notification.enums.NotificationFailureCode.OUTBOX_RESTORE_FAILED
+            && context.outboxDetails().failureCount() == 1
+            && context.outboxDetails().status() == NotificationOutboxStatus.FAILED));
         deliveries(0);
     }
 
@@ -343,6 +360,7 @@ class NotificationOutboxWorkerIntegrationTest {
 
     @Test
     void 재시도_불가_Delivery_오류는_즉시_최종_실패로_기록한다() throws Exception {
+        assertCommittedFailureBeforeAlert(1);
         org.mockito.Mockito.doThrow(new AuthenticationException("인증 실패")).when(producer).publishAndAwait(any());
 
         assertThatThrownBy(() -> worker.process(claimed)).isInstanceOf(AuthenticationException.class);
@@ -352,11 +370,13 @@ class NotificationOutboxWorkerIntegrationTest {
             .containsEntry("completed_at", null);
         assertThat(notificationCount()).isEqualTo(1);
         assertThat(claims.tryClaimNext()).isEmpty();
+        verify(webhook).send(any());
         deliveries(0);
     }
 
     @Test
     void Delivery_일시_실패가_다섯_번이면_최종_실패하고_알림은_한_건만_유지한다() throws Exception {
+        assertCommittedFailureBeforeAlert(5);
         org.mockito.Mockito.doThrow(new TimeoutException()).when(producer).publishAndAwait(any());
         var attempt = claimed;
         for (int count = 1; count <= 5; count++) {
@@ -366,12 +386,14 @@ class NotificationOutboxWorkerIntegrationTest {
                 .containsEntry("status", count == 5 ? "FAILED" : "PENDING")
                 .containsEntry("last_failure_type", "OUTBOX_DELIVERY_FAILED").containsEntry("processing_token", null);
             if (count < 5) {
+                verify(webhook, never()).send(any());
                 makeDue();
                 attempt = claims.tryClaimNext().orElseThrow();
             }
         }
         assertThat(notificationCount()).isEqualTo(1);
         assertThat(claims.tryClaimNext()).isEmpty();
+        verify(webhook).send(any());
         deliveries(0);
     }
 
@@ -396,6 +418,7 @@ class NotificationOutboxWorkerIntegrationTest {
         assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 0)
             .containsEntry("completed_at", null).containsEntry("last_failure_type", null)
             .containsEntry("processing_token", releaseFails ? claimed.getProcessingToken() : null);
+        verify(webhook, never()).send(any());
         if (releaseFails) {
             assertThat(interruption.getSuppressed()).anyMatch(DataAccessException.class::isInstance);
             expire();
@@ -421,10 +444,25 @@ class NotificationOutboxWorkerIntegrationTest {
 
         assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 0)
             .containsEntry("processing_token", next.get().getProcessingToken());
+        verify(webhook, never()).send(any());
         doCallRealMethod().when(producer).publishAndAwait(any());
         worker.process(next.get());
         assertThat(row()).containsEntry("status", "COMPLETED");
         deliveries(1);
+    }
+
+    private void assertCommittedFailureBeforeAlert(int count) {
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var committed = java.util.concurrent.CompletableFuture.supplyAsync(this::row).get(10, TimeUnit.SECONDS);
+            assertThat(committed).containsEntry("status", "FAILED").containsEntry("failure_count", count)
+                .containsEntry("processing_token", null);
+            NotificationFailureContext context = invocation.getArgument(0);
+            assertThat(context.outboxDetails().outboxId()).isEqualTo(claimed.getId());
+            assertThat(context.outboxDetails().failureCount()).isEqualTo(count);
+            assertThat(context.failureStage()).isEqualTo(NotificationFailureContext.FailureStage.PUBLISH_RESULT);
+            return null;
+        }).when(webhook).send(any());
     }
 
     private void makeDue() {
@@ -478,5 +516,19 @@ class NotificationOutboxWorkerIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationDeliveryProperties.class})
-    static class PropertiesConfiguration {}
+    static class PropertiesConfiguration {
+
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        NotificationAlertDispatcher alertDispatcher(DiscordWebhookClient webhook, MeterRegistry registry) {
+            var properties = new NotificationAlertProperties();
+            properties.setEnabled(true);
+            properties.setMaxMessagesPerWindow(100);
+            return new NotificationAlertDispatcher(Runnable::run, webhook, properties, registry);
+        }
+    }
 }

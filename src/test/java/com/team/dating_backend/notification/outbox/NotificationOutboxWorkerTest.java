@@ -15,6 +15,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.alert.NotificationFailureContext;
+import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
@@ -40,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -49,8 +52,9 @@ class NotificationOutboxWorkerTest {
     private final NotificationCreationProcessor processor = mock(NotificationCreationProcessor.class);
     private final NotificationOutboxClaimService claims = mock(NotificationOutboxClaimService.class);
     private final NotificationOutboxFailureService failures = mock(NotificationOutboxFailureService.class);
+    private final NotificationFailureReporter reporter = mock(NotificationFailureReporter.class);
     private final NotificationOutboxWorker worker = new NotificationOutboxWorker(outboxes, processor, claims, failures,
-        new NotificationOutboxWorkerFailureClassifier(new NotificationCreationFailureClassifier()));
+        new NotificationOutboxWorkerFailureClassifier(new NotificationCreationFailureClassifier()), reporter);
     private final String token = UUID.randomUUID().toString();
     private final NotificationCreateRequested request = new NotificationCreateRequested("event:worker", 7L,
         NotificationType.LIKE, "제목", "본문", null, null, Instant.now());
@@ -86,7 +90,7 @@ class NotificationOutboxWorkerTest {
         order.verify(processor).process(eq(request), any());
         order.verify(claims).markCompleted(1L, token);
         order.verifyNoMoreInteractions();
-        verifyNoInteractions(failures);
+        verifyNoInteractions(failures, reporter);
     }
 
     @Test
@@ -207,6 +211,12 @@ class NotificationOutboxWorkerTest {
 
         assertThat(original.getSuppressed()).containsExactly(recording);
         verifyNoInteractions(claims);
+        var contexts = ArgumentCaptor.forClass(NotificationFailureContext.class);
+        verify(reporter, org.mockito.Mockito.times(2)).report(contexts.capture(), eq(false));
+        assertThat(contexts.getAllValues()).allSatisfy(context -> {
+            assertThat(context.outboxDetails().status()).isNull();
+            assertThat(context.outboxDetails().failureCount()).isNull();
+        });
     }
 
     @Test
@@ -239,6 +249,45 @@ class NotificationOutboxWorkerTest {
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
         assertThat(interruption.getSuppressed()).containsExactly(releasing);
         verifyNoInteractions(failures);
+        verify(reporter, org.mockito.Mockito.times(2)).report(any(), eq(false));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 실패_저장_결과의_상태와_횟수로_보고하고_최종_실패만_통보한다(boolean terminal) throws Exception {
+        var failure = new TimeoutException();
+        doThrow(failure).when(processor).process(eq(request), any());
+        given(failures.recordWorkerFailure(1L, token, NotificationFailureCode.OUTBOX_CREATION_FAILED, true))
+            .willReturn(Optional.of(new NotificationOutboxFailureService.WorkerFailureResult(terminal ? 5 : 2,
+                terminal ? NotificationOutboxStatus.FAILED : NotificationOutboxStatus.PENDING)));
+
+        assertThatThrownBy(() -> worker.process(outbox)).isSameAs(failure);
+
+        var context = ArgumentCaptor.forClass(NotificationFailureContext.class);
+        var order = inOrder(failures, reporter);
+        order.verify(failures).recordWorkerFailure(1L, token, NotificationFailureCode.OUTBOX_CREATION_FAILED, true);
+        order.verify(reporter).report(context.capture(), eq(terminal));
+        assertThat(context.getValue().outboxDetails().outboxId()).isEqualTo(1L);
+        assertThat(context.getValue().outboxDetails().failureCount()).isEqualTo(terminal ? 5 : 2);
+        assertThat(context.getValue().sourceEventId()).isEqualTo(request.sourceEventId());
+        assertThat(context.getValue().recipientUserId()).isEqualTo(request.recipientUserId());
+        assertThat(context.getValue().requestedAt()).isEqualTo(request.requestedAt());
+        assertThat(context.getValue().exceptionType()).isEqualTo("TimeoutException");
+        assertThat(context.getValue().kafkaDetails()).isNull();
+    }
+
+    @Test
+    void 보고_예외는_원래_처리_오류와_실패_저장_결과를_바꾸지_않는다() throws Exception {
+        var failure = new TimeoutException();
+        var reporting = new IllegalStateException("보고 실패");
+        doThrow(failure).when(processor).process(eq(request), any());
+        doThrow(reporting).when(reporter).report(any(), anyBoolean());
+
+        assertThatThrownBy(() -> worker.process(outbox)).isSameAs(failure);
+
+        assertThat(failure.getSuppressed()).containsExactly(reporting);
+        verify(failures).recordWorkerFailure(1L, token, NotificationFailureCode.OUTBOX_CREATION_FAILED, true);
+        verifyNoInteractions(claims);
     }
 
     private static Stream<Exception> processingFailures() {
