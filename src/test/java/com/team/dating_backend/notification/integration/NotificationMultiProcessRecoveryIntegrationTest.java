@@ -114,7 +114,7 @@ class NotificationMultiProcessRecoveryIntegrationTest extends NotificationMultiP
 
         restartFirst();
         var stored = awaitStored(request);
-        assertRecovered(request, input, stored, connection, 1);
+        assertRecovered(request, input, stored, connection, 1, 1);
         checkpoint("afterRestart", request, input, connection);
         evidence.put("completed", true);
     }
@@ -149,7 +149,7 @@ class NotificationMultiProcessRecoveryIntegrationTest extends NotificationMultiP
         proxy.setEnabled(Channel.PRODUCER, true);
 
         restartFirst();
-        assertRecovered(request, input, expected, connection, deleted ? 0 : 1);
+        assertRecovered(request, input, expected, connection, deleted ? 0 : 1, deleted ? 0 : 1);
         checkpoint("afterRestart", request, input, connection);
         evidence.put("completed", true);
     }
@@ -183,20 +183,20 @@ class NotificationMultiProcessRecoveryIntegrationTest extends NotificationMultiP
         proxy.setEnabled(Channel.CONSUMER, true);
         restartFirst();
 
-        assertRecovered(request, input, expected, connection, 2);
-        assertThat(connection.notifications().getLast().readAt()).isEqualTo(expected.readAt());
+        assertRecovered(request, input, expected, connection, 2, 1);
+        assertThat(connection.notifications().getFirst().readAt()).isNull();
         checkpoint("afterRestart", request, input, connection);
         evidence.put("completed", true);
     }
 
     private void assertRecovered(NotificationCreateRequested request, Position input, StoredNotification expected,
-        NotificationSseProbe connection, int count) throws Exception {
+        NotificationSseProbe connection, int deliveryCount, int sseCount) throws Exception {
         awaitInput(input);
         await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
             assertThat(database.notifications(request)).containsExactly(expected);
-            assertThat(deliveries(request)).hasSize(count);
+            assertThat(deliveries(request)).hasSize(deliveryCount);
             connection.assertHealthy();
-            assertThat(connection.notifications()).hasSize(count).allSatisfy(notification -> {
+            assertThat(connection.notifications()).hasSize(sseCount).allSatisfy(notification -> {
                 assertThat(notification.notificationId()).isEqualTo(expected.id());
                 assertThat(notification.title()).isEqualTo(expected.title());
                 assertThat(notification.body()).isEqualTo(expected.body());

@@ -324,14 +324,11 @@ class NotificationMultiProcessOutboxPublicationIntegrationTest extends Notificat
         if (!deleted) {
             assertThat(deliveryEvents.getLast().notification().readAt()).isEqualTo(expectedState.readAt());
         }
-        int expectedSseCount = deleted ? 1 : 2;
         await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
             connection.assertHealthy();
-            assertThat(connection.notifications()).hasSize(expectedSseCount)
+            assertThat(connection.notifications()).hasSize(1)
                 .allSatisfy(notification -> assertThat(notification.notificationId()).isEqualTo(expectedState.id()));
-            if (!deleted) {
-                assertThat(connection.notifications().getLast().readAt()).isEqualTo(expectedState.readAt());
-            }
+            assertThat(connection.notifications().getFirst().readAt()).isNull();
         });
         evidence.put("publishedOutbox", published);
         evidence.put("replayedCreationRecords", records(expected));
