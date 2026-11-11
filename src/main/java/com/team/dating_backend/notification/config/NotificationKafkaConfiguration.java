@@ -3,7 +3,6 @@ package com.team.dating_backend.notification.config;
 import com.team.dating_backend.chat.dto.event.ChatMessageCreatedKafkaEvent;
 import com.team.dating_backend.common.kafka.KafkaListenerFactories;
 import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryFailureRecoverer;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryReadinessListener;
@@ -32,25 +31,6 @@ import tools.jackson.databind.json.JsonMapper;
 public class NotificationKafkaConfiguration {
 
     private static final long CHAT_MESSAGE_RETRY_INTERVAL_MS = 1_000L;
-
-    @Bean("notificationCreateRequestedKafkaListenerContainerFactory")
-    public ConcurrentKafkaListenerContainerFactory<Object, Object> notificationCreateRequestedListenerFactory(
-        ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
-        ConsumerFactory<Object, Object> kafkaConsumerFactory,
-        JsonMapper jsonMapper,
-        NotificationCreationProperties properties) {
-        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = KafkaListenerFactories.jsonRecordFactory(
-            configurer, kafkaConsumerFactory, jsonMapper, NotificationCreateRequested.class, "earliest",
-            Map.of(
-                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
-                ConsumerConfig.MAX_POLL_RECORDS_CONFIG, properties.getMaxPollRecords(),
-                ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, properties.getMaxPollIntervalMs()));
-        factory.setAutoStartup(properties.isEnabled());
-        factory.setConcurrency(properties.getConcurrency());
-        factory.setCommonErrorHandler(new CommonContainerStoppingErrorHandler());
-        factory.getContainerProperties().setGroupId(properties.getGroupId());
-        return factory;
-    }
 
     @Bean("notificationDeliveryKafkaListenerContainerFactory")
     public ConcurrentKafkaListenerContainerFactory<Object, Object> notificationDeliveryListenerFactory(

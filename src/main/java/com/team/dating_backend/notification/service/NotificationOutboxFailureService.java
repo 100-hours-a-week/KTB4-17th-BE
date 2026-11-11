@@ -17,14 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class NotificationOutboxFailureService {
 
-    private static final Set<NotificationFailureCode> RECORDABLE_FAILURES = Set.of(
-        NotificationFailureCode.OUTBOX_RESTORE_FAILED,
-        NotificationFailureCode.OUTBOX_PUBLISH_REQUIRES_ATTENTION,
-        NotificationFailureCode.PUBLISH_CALL_FAILED,
-        NotificationFailureCode.PUBLISH_RESULT_FAILED,
-        NotificationFailureCode.PUBLISH_RESULT_TIMEOUT);
-
     private static final Set<NotificationFailureCode> WORKER_FAILURES = Set.of(
+        NotificationFailureCode.OUTBOX_RESTORE_FAILED,
         NotificationFailureCode.OUTBOX_CREATION_FAILED,
         NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
         NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED);
@@ -33,23 +27,11 @@ public class NotificationOutboxFailureService {
     private final NotificationOutboxRetryPolicy retryPolicy;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<FailureResult> recordFailure(Long id, String token, NotificationFailureCode failureType) {
-        return record(id, token, failureType, true, Set.of())
-            .map(
-                result -> new FailureResult(result.failureCount(), result.status() == NotificationOutboxStatus.FAILED));
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<WorkerFailureResult> recordWorkerFailure(Long id, String token,
         NotificationFailureCode failureType, boolean retryable) {
-        return record(id, token, failureType, retryable, WORKER_FAILURES);
-    }
-
-    private Optional<WorkerFailureResult> record(Long id, String token,
-        NotificationFailureCode failureType, boolean retryable, Set<NotificationFailureCode> additionalTypes) {
         if (id == null || id <= 0 || token == null || token.length() != 36 || token.isBlank()
             || failureType == null
-            || (!RECORDABLE_FAILURES.contains(failureType) && !additionalTypes.contains(failureType))) {
+            || !WORKER_FAILURES.contains(failureType)) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
         var candidate = repository.findByIdForUpdate(id);
@@ -78,8 +60,6 @@ public class NotificationOutboxFailureService {
             failureType.name(), delayMicros, status.name());
         return updated == 1 ? Optional.of(new WorkerFailureResult(failures, status)) : Optional.empty();
     }
-
-    public record FailureResult(int failureCount, boolean exhausted) {}
 
     public record WorkerFailureResult(int failureCount, NotificationOutboxStatus status) {}
 }

@@ -39,12 +39,6 @@ public class NotificationOutboxClaimService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean markPublished(Long id, String token) {
-        requireOwner(id, token);
-        return repository.findByIdForUpdate(id).isPresent() && repository.markPublishedByToken(id, token) == 1;
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean markCompleted(Long id, String token) {
         requireOwner(id, token);
         return repository.findByIdForUpdate(id).isPresent() && repository.markCompletedByToken(id, token) == 1;

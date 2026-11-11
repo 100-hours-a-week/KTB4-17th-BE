@@ -76,9 +76,6 @@ public class NotificationRequestOutbox {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "published_at")
-    private LocalDateTime publishedAt;
-
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
