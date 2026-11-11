@@ -65,12 +65,11 @@ public final class NotificationBackendProcess implements AutoCloseable {
         String nextDeliveryPrefix = snapshot.get("DELIVERY_PREFIX") + "-g" + nextGeneration;
         var renderedSettings = new HashMap<>(snapshot);
         renderedSettings.put("DELIVERY_PREFIX", nextDeliveryPrefix);
-        renderedSettings.putIfAbsent("OUTBOX_RELAY_ENABLED", "true");
-        renderedSettings.putIfAbsent("OUTBOX_FIXED_DELAY_MS", "1000");
+
         renderedSettings.putIfAbsent("OUTBOX_WORKER_ENABLED", "false");
         renderedSettings.putIfAbsent("OUTBOX_WORKER_FIXED_DELAY_MS", "100");
         renderedSettings.putIfAbsent("OUTBOX_CLAIM_DURATION_MS", "60000");
-        renderedSettings.putIfAbsent("PUBLISH_RESULT_TIMEOUT_MS", "15000");
+        renderedSettings.putIfAbsent("OUTBOX_DELIVERY_FAILED_MS", "15000");
         renderedSettings.putIfAbsent("DELIVERY_RESULT_TIMEOUT_MS", "15000");
         renderedSettings.putIfAbsent("AI_KAFKA_ENABLED", "false");
         renderedSettings.putIfAbsent("PRODUCER_MAX_BLOCK_MS", "3000");

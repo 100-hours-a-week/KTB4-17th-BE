@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
@@ -86,7 +85,7 @@ class NotificationDeliveryProducerTest {
             .withBean(NotificationDeliveryProperties.class, () -> properties)
             .run(context -> {
                 assertThat(context).hasNotFailed();
-                assertThat(context).doesNotHaveBean(NotificationCreationProperties.class);
+                assertThat(context).doesNotHaveBean("notificationCreationProperties");
                 assertThat(context.getBean(NotificationDeliveryProducer.class).publishAndAwait(EVENT))
                     .isSameAs(result.getRecordMetadata());
             });

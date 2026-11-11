@@ -65,7 +65,6 @@ class NotificationRequestOutboxMappingIntegrationTest {
         assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PENDING);
         assertThat(stored.getFailureCount()).isZero();
         assertThat(stored.getLastFailureType()).isNull();
-        assertThat(stored.getPublishedAt()).isNull();
         assertThat(stored.getCompletedAt()).isNull();
         assertThat(stored.getProcessingToken()).isNull();
         assertThat(stored.getProcessingUntil()).isNull();
@@ -81,7 +80,6 @@ class NotificationRequestOutboxMappingIntegrationTest {
         assertThat(row.get("status")).isEqualTo("PENDING");
         assertThat(row.get("failure_count")).isEqualTo(0);
         assertThat(row.get("last_failure_type")).isNull();
-        assertThat(row.get("published_at")).isNull();
         assertThat(row.get("completed_at")).isNull();
         assertThat(row.get("processing_token")).isNull();
         assertThat(row.get("processing_until")).isNull();

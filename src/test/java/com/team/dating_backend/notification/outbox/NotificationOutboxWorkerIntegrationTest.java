@@ -29,7 +29,6 @@ import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryProducer;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
 import com.team.dating_backend.notification.service.NotificationCreateRequestedValidator;
 import com.team.dating_backend.notification.service.NotificationCreationProcessor;
@@ -97,7 +96,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 @DataJpaTest(
     properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate",
-        "app.notification.kafka.create-requested-topic=unused-worker-create",
+
         "app.notification.kafka.delivery-topic=worker-delivery"}
 )
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -108,7 +107,7 @@ import tools.jackson.databind.json.JsonMapper;
         NotificationCreationService.class,
         NotificationPersistenceService.class, NotificationLookupService.class, NotificationOutboxClaimService.class,
         NotificationOutboxFailureService.class, NotificationOutboxRetryPolicy.class,
-        NotificationOutboxWorkerFailureClassifier.class, NotificationCreationFailureClassifier.class,
+        NotificationOutboxWorkerFailureClassifier.class,
         NotificationFailureReporter.class,
         NotificationDeliveryProducer.class, KafkaProducerConfiguration.class,
         NotificationOutboxWorkerIntegrationTest.PropertiesConfiguration.class}

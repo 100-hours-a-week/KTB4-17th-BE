@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
-import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.outbox.NotificationOutboxWorker;
 import com.team.dating_backend.notification.outbox.NotificationOutboxWorkerJob;
 import com.team.dating_backend.notification.service.NotificationOutboxClaimService;
@@ -21,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -39,7 +38,7 @@ class NotificationOutboxWorkerConfigurationTest {
     private final NotificationRequestOutbox outbox = mock(NotificationRequestOutbox.class);
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class))
-        .withUserConfiguration(NotificationOutboxExecutionConfiguration.class,
+        .withUserConfiguration(
             NotificationOutboxWorkerConfiguration.class,
             NotificationOutboxWorkerJob.class, SchedulingConfiguration.class)
         .withBean(NotificationOutboxClaimService.class, () -> claims)
@@ -62,27 +61,16 @@ class NotificationOutboxWorkerConfigurationTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"false,false", "true,false", "false,true"})
-    void Worker_설정이_켜진_경우에만_작업을_등록한다(boolean relayEnabled, boolean workerEnabled) {
-        runner.withPropertyValues("app.notification.outbox.relay.enabled=" + relayEnabled,
-            "app.notification.outbox.worker.enabled=" + workerEnabled).run(context -> {
-                assertThat(context).hasNotFailed();
-                assertThat(context.containsBean("notificationOutboxWorkerJob")).isEqualTo(workerEnabled);
-                assertThat(context.containsBean("notificationOutboxWorkerScheduler")).isEqualTo(workerEnabled);
-                if (!workerEnabled) {
-                    verifyNoInteractions(claims, worker, reporter);
-                }
-            });
-    }
-
-    @Test
-    void Relay와_Worker를_동시에_켜면_작업을_시작하지_않는다() {
-        runner.withPropertyValues("app.notification.outbox.relay.enabled=true",
-            "app.notification.outbox.worker.enabled=true").run(context -> {
-                assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure()).rootCause().isInstanceOf(NotificationBusinessException.class);
+    @ValueSource(booleans = {false, true})
+    void Worker_설정이_켜진_경우에만_작업을_등록한다(boolean workerEnabled) {
+        runner.withPropertyValues("app.notification.outbox.worker.enabled=" + workerEnabled).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.containsBean("notificationOutboxWorkerJob")).isEqualTo(workerEnabled);
+            assertThat(context.containsBean("notificationOutboxWorkerScheduler")).isEqualTo(workerEnabled);
+            if (!workerEnabled) {
                 verifyNoInteractions(claims, worker, reporter);
-            });
+            }
+        });
     }
 
     @Test

@@ -1,12 +1,8 @@
 package com.team.dating_backend.notification.repository;
 
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
-import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import jakarta.persistence.LockModeType;
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -30,16 +26,6 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
             AND (processing_token IS NULL OR processing_until <= UTC_TIMESTAMP(6))
         """, nativeQuery = true)
     int claim(@Param("id") Long id, @Param("token") String token, @Param("durationMicros") long durationMicros);
-
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query(value = """
-        UPDATE notification_request_outbox
-        SET status = 'PUBLISHED', published_at = UTC_TIMESTAMP(6),
-            processing_token = NULL, processing_until = NULL
-        WHERE id = :id AND status = 'PENDING' AND processing_token = :token
-            AND processing_until > UTC_TIMESTAMP(6)
-        """, nativeQuery = true)
-    int markPublishedByToken(@Param("id") Long id, @Param("token") String token);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
@@ -78,14 +64,6 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         """, nativeQuery = true)
     int releaseByToken(@Param("id") Long id, @Param("token") String token);
 
-    @Query(value = """
-        SELECT * FROM notification_request_outbox
-        WHERE status = 'PENDING' AND next_attempt_at <= UTC_TIMESTAMP(6)
-            AND (processing_token IS NULL OR processing_until <= UTC_TIMESTAMP(6))
-        ORDER BY next_attempt_at ASC, id ASC
-        """, nativeQuery = true)
-    List<NotificationRequestOutbox> findAvailable(Pageable pageable);
-
     @Transactional(propagation = Propagation.MANDATORY)
     @Query(value = """
         SELECT * FROM notification_request_outbox
@@ -95,15 +73,5 @@ public interface NotificationRequestOutboxRepository extends JpaRepository<Notif
         LIMIT 1 FOR UPDATE SKIP LOCKED
         """, nativeQuery = true)
     Optional<NotificationRequestOutbox> findNextAvailableForUpdateSkipLocked();
-
-    @Query("""
-        SELECT outbox FROM NotificationRequestOutbox outbox
-        WHERE outbox.status = :status AND outbox.nextAttemptAt <= :now
-        ORDER BY outbox.nextAttemptAt ASC, outbox.id ASC
-        """)
-    List<NotificationRequestOutbox> findDue(
-        @Param("status") NotificationOutboxStatus status,
-        @Param("now") LocalDateTime now,
-        Pageable pageable);
 
 }

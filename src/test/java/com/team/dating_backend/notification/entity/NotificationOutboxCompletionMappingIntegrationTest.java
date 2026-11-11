@@ -43,27 +43,6 @@ class NotificationOutboxCompletionMappingIntegrationTest {
     private JdbcTemplate jdbc;
 
     @Test
-    void Worker_완료_시각과_기존_Kafka_인계_시각을_독립적으로_저장하고_복원한다() {
-        Long id = save();
-        LocalDateTime publishedAt = CREATED_AT.plusSeconds(1);
-        LocalDateTime completedAt = CREATED_AT.plusSeconds(5);
-
-        jdbc.update("""
-            UPDATE notification_request_outbox SET status = 'COMPLETED', published_at = ?, completed_at = ?
-            WHERE id = ?
-            """, publishedAt, completedAt, id);
-        entityManager.clear();
-
-        var stored = entityManager.find(NotificationRequestOutbox.class, id);
-        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
-        assertThat(stored.getPublishedAt()).isEqualTo(publishedAt);
-        assertThat(stored.getCompletedAt()).isEqualTo(completedAt);
-        assertThat(stored.getCompletedAt().getNano()).isEqualTo(123456000);
-        assertThat(stored.getCreatedAt()).isEqualTo(CREATED_AT);
-        assertThat(stored.getPayload()).isEqualTo(PAYLOAD);
-    }
-
-    @Test
     void 생성_요청_Kafka_인계_시각_없이_Worker_완료를_저장한다() {
         Long id = save();
         LocalDateTime completedAt = CREATED_AT.plusSeconds(5);
@@ -75,23 +54,21 @@ class NotificationOutboxCompletionMappingIntegrationTest {
 
         var stored = entityManager.find(NotificationRequestOutbox.class, id);
         assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
-        assertThat(stored.getPublishedAt()).isNull();
+
         assertThat(stored.getCompletedAt()).isEqualTo(completedAt);
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PENDING", "PUBLISHED", "FAILED"})
+    @EnumSource(value = NotificationOutboxStatus.class, names = {"PENDING", "FAILED"})
     void 기존_상태는_Worker_완료_시각_없이_유지한다(NotificationOutboxStatus status) {
         Long id = save();
-        LocalDateTime publishedAt = status == NotificationOutboxStatus.PUBLISHED ? CREATED_AT.plusSeconds(1) : null;
 
-        jdbc.update("UPDATE notification_request_outbox SET status = ?, published_at = ? WHERE id = ?",
-            status.name(), publishedAt, id);
+        jdbc.update("UPDATE notification_request_outbox SET status = ? WHERE id = ?", status.name(), id);
         entityManager.clear();
 
         var stored = entityManager.find(NotificationRequestOutbox.class, id);
         assertThat(stored.getStatus()).isEqualTo(status);
-        assertThat(stored.getPublishedAt()).isEqualTo(publishedAt);
+
         assertThat(stored.getCompletedAt()).isNull();
     }
 
@@ -120,9 +97,8 @@ class NotificationOutboxCompletionMappingIntegrationTest {
             var source = new DriverManagerDataSource(url, "root", MYSQL.getPassword());
             var legacy = new JdbcTemplate(source);
             Flyway.configure().dataSource(source).target("34").load().migrate();
-            for (var status : List.of(NotificationOutboxStatus.PENDING, NotificationOutboxStatus.PUBLISHED,
-                NotificationOutboxStatus.FAILED)) {
-                boolean pending = status == NotificationOutboxStatus.PENDING;
+            for (String status : List.of("PENDING", "PUBLISHED", "FAILED")) {
+                boolean pending = status.equals("PENDING");
                 legacy.update(
                     """
                         INSERT INTO notification_request_outbox
@@ -130,10 +106,10 @@ class NotificationOutboxCompletionMappingIntegrationTest {
                              last_failure_type, next_attempt_at, created_at, published_at, processing_token, processing_until)
                         VALUES (?, 7, 'LIKE', ?, ?, ?, 'PUBLISH_RESULT_TIMEOUT', ?, ?, ?, ?, ?)
                         """,
-                    "legacy-" + status.name(), PAYLOAD, status.name(),
-                    status == NotificationOutboxStatus.FAILED ? 5 : 1,
+                    "legacy-" + status, PAYLOAD, status,
+                    status.equals("FAILED") ? 5 : 1,
                     CREATED_AT.plusSeconds(2), CREATED_AT,
-                    status == NotificationOutboxStatus.PUBLISHED ? CREATED_AT.plusSeconds(1) : null,
+                    status.equals("PUBLISHED") ? CREATED_AT.plusSeconds(1) : null,
                     pending ? TOKEN : null, pending ? CREATED_AT.plusSeconds(60) : null);
             }
             var before = legacy.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");

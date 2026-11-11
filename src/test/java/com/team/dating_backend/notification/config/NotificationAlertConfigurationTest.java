@@ -65,7 +65,7 @@ class NotificationAlertConfigurationTest {
             assertThat(httpClient.followRedirects()).isEqualTo(HttpClient.Redirect.NEVER);
 
             context.getBean(NotificationFailureReporter.class)
-                .report(NotificationFailureCode.PUBLISH_CALL_FAILED, null, null);
+                .report(NotificationFailureCode.OUTBOX_DELIVERY_FAILED, null, null);
             assertThat(context.getBean(SimpleMeterRegistry.class).get("notification.failures").counter().count())
                 .isEqualTo(1);
             assertThat(executor.getThreadPoolExecutor().getTaskCount()).isZero();

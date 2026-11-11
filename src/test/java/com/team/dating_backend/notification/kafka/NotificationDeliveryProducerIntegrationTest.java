@@ -3,7 +3,6 @@ package com.team.dating_backend.notification.kafka;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
@@ -71,7 +70,7 @@ class NotificationDeliveryProducerIntegrationTest {
             })
             .run(context -> {
                 assertThat(context).hasNotFailed();
-                assertThat(context).doesNotHaveBean(NotificationCreationProperties.class);
+                assertThat(context).doesNotHaveBean("notificationCreationProperties");
                 try (Admin admin = Admin.create(context.getBean(KafkaAdmin.class).getConfigurationProperties())) {
                     admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1)))
                         .all().get(20, TimeUnit.SECONDS);

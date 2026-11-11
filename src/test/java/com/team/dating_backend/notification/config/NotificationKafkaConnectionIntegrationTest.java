@@ -3,16 +3,12 @@ package com.team.dating_backend.notification.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.kafka.NotificationKafkaTestConfiguration;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
-import com.team.dating_backend.notification.enums.NotificationType;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,13 +41,6 @@ class NotificationKafkaConnectionIntegrationTest {
     static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.3.1");
 
     @Test
-    void 생성_요청은_기존_메시지부터_소비하고_두_파티션의_새_메시지를_복원한다() {
-        var message = new NotificationCreateRequested("source-create", 101L, NotificationType.LIKE,
-            "좋아요", "새로운 알림", null, null, Instant.parse("2026-10-20T01:02:03.123456Z"));
-        assertRoundTrip("notificationCreateRequestedKafkaListenerContainerFactory", message, true);
-    }
-
-    @Test
     void delivery는_시작_이후_두_파티션의_새_메시지만_소비한다() {
         var message = new NotificationDeliveryEvent("source-delivery", 101L,
             new NotificationEventResponse(501L, "LIKE", "좋아요", "새로운 알림", null, null, null,
@@ -62,9 +51,7 @@ class NotificationKafkaConnectionIntegrationTest {
     private void assertRoundTrip(String factoryName, Object message, boolean readsHistory) {
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
-            .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationRecoveryTestConfiguration.class)
-            .withBean(NotificationCreationProperties.class, NotificationCreationProperties::new)
-            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
+            .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationKafkaTestConfiguration.class)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withInitializer(context -> {
                 var sources = context.getEnvironment().getPropertySources();

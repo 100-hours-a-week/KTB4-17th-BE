@@ -95,9 +95,8 @@ public class NotificationFailureReporter {
             return context.outboxDetails().status() == NotificationOutboxStatus.FAILED;
         }
         return switch (context.errorCode()) {
-            case RETRY_PUBLISH_FAILED, DLT_PUBLISH_FAILED, ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED,
-                OUTBOX_RESTORE_FAILED, OUTBOX_PUBLISH_REQUIRES_ATTENTION, OUTBOX_STATE_UPDATE_FAILED,
-                OUTBOX_LOOKUP_FAILED, OUTBOX_RELAY_FAILED, OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST,
+            case ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED, OUTBOX_RESTORE_FAILED,
+                OUTBOX_STATE_UPDATE_FAILED, OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST,
                 OUTBOX_RELEASE_FAILED -> false;
             default -> true;
         };

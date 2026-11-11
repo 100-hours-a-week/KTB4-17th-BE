@@ -15,7 +15,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.notification.alert.DiscordWebhookClient;
 import com.team.dating_backend.notification.alert.NotificationFailureContext;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
@@ -49,7 +48,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
@@ -213,9 +211,8 @@ class NotificationDeliveryConsumerIntegrationTest {
         return new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
             .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationDeliveryConsumer.class,
-                NotificationDeliveryEventValidator.class, NotificationRecoveryTestConfiguration.class,
+                NotificationDeliveryEventValidator.class, NotificationKafkaTestConfiguration.class,
                 TestApplication.class)
-            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("NOTIFICATION_DELIVERY_TOPIC=" + topic,
                 "APP_NOTIFICATION_DELIVERY_ENABLED=false",
@@ -305,7 +302,6 @@ class NotificationDeliveryConsumerIntegrationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableKafka
-    @EnableConfigurationProperties(NotificationCreationProperties.class)
     static class TestApplication {
 
         @Bean

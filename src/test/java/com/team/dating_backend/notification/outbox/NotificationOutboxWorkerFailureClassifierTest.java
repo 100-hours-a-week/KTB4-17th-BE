@@ -6,7 +6,6 @@ import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.exception.NotificationInvalidCreateRequestException;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.outbox.NotificationOutboxWorkerFailureClassifier.Result;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
@@ -37,8 +36,7 @@ import org.springframework.transaction.TransactionSystemException;
 
 class NotificationOutboxWorkerFailureClassifierTest {
 
-    private final NotificationOutboxWorkerFailureClassifier classifier = new NotificationOutboxWorkerFailureClassifier(
-        new NotificationCreationFailureClassifier());
+    private final NotificationOutboxWorkerFailureClassifier classifier = new NotificationOutboxWorkerFailureClassifier();
 
     @ParameterizedTest
     @MethodSource("retryableFailures")
@@ -160,8 +158,7 @@ class NotificationOutboxWorkerFailureClassifierTest {
     }
 
     private static Stream<Throwable> interruptions() {
-        return Stream.of(new InterruptedException(), new InterruptException(new InterruptedException()),
-            new NotificationBusinessException(NotificationErrorCode.OUTBOX_PUBLISH_INTERRUPTED));
+        return Stream.of(new InterruptedException(), new InterruptException(new InterruptedException()));
     }
 
     private static Stream<Arguments> specialFailures() {

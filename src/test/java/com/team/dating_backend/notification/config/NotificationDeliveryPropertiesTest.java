@@ -42,38 +42,19 @@ class NotificationDeliveryPropertiesTest {
         });
     }
 
-    @ParameterizedTest
-    @ValueSource(
-        strings = {"APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS",
-            "APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS"}
-    )
-    void 신규와_기존_환경변수는_생성_요청_발행_대기와_독립적으로_적용한다(String variable) {
-        runner.withPropertyValues(variable + "=7000", "APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS=9000")
-            .run(context -> {
-                assertThat(context).hasNotFailed();
-                assertThat(context.getBean(NotificationDeliveryProperties.class).getResultTimeoutMs()).isEqualTo(7000L);
-                assertThat(context.getBean(NotificationPublishProperties.class).getResultTimeoutMs()).isEqualTo(9000L);
-            });
-    }
-
-    @ParameterizedTest
-    @ValueSource(longs = {7000L, -1L})
-    void 신규_환경변수가_있으면_기존_환경변수보다_우선한다(long legacyTimeoutMs) {
-        runner.withPropertyValues("APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS=6000",
-            "APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS=" + legacyTimeoutMs)
-            .run(context -> {
-                assertThat(context).hasNotFailed();
-                assertThat(context.getBean(NotificationDeliveryProperties.class).getResultTimeoutMs()).isEqualTo(6000L);
-            });
+    @Test
+    void Delivery_환경변수로_발행_결과_대기_시간을_변경한다() {
+        runner.withPropertyValues("APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS=7000").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(NotificationDeliveryProperties.class).getResultTimeoutMs()).isEqualTo(7000L);
+        });
     }
 
     @ParameterizedTest
     @CsvSource(
-        {"APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS,0", "APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS,-1",
-            "APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS,0",
-            "APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS,-1"}
+        {"APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS,0", "APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS,-1"}
     )
-    void 선택된_신규와_기존_대기_시간이_0_이하이면_시작을_거부한다(String variable, long timeoutMs) {
+    void Delivery_대기_시간이_0_이하이면_시작을_거부한다(String variable, long timeoutMs) {
         runner.withPropertyValues(variable + "=" + timeoutMs).run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(BindValidationException.class);
@@ -90,6 +71,6 @@ class NotificationDeliveryPropertiesTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({NotificationDeliveryProperties.class, NotificationPublishProperties.class})
+    @EnableConfigurationProperties(NotificationDeliveryProperties.class)
     static class PropertiesConfiguration {}
 }

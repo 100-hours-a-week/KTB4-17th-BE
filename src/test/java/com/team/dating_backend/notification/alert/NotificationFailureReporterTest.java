@@ -52,118 +52,26 @@ class NotificationFailureReporterTest {
         registry.close();
     }
 
-    @ParameterizedTest
-    @CsvSource(
-        {"OUTBOX_RESTORE_FAILED,OUTBOX_RESTORE", "OUTBOX_PUBLISH_REQUIRES_ATTENTION,PUBLISH",
-            "OUTBOX_STATE_UPDATE_FAILED,OUTBOX_STATE_UPDATE", "OUTBOX_RETRY_LIMIT_EXCEEDED,OUTBOX_RETRY",
-            "OUTBOX_LOOKUP_FAILED,OUTBOX_LOOKUP", "OUTBOX_RELAY_FAILED,OUTBOX_RELAY",
-            "OUTBOX_CLAIM_FAILED,OUTBOX_CLAIM", "OUTBOX_CLAIM_LOST,OUTBOX_CLAIM",
-            "OUTBOX_RELEASE_FAILED,OUTBOX_RELEASE"}
-    )
-    void Outbox_오류는_식별정보와_단계를_유지하고_payload를_노출하지_않는다(
-        NotificationFailureCode code, String stage, CapturedOutput output) {
-        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE,
-            "{\"secret\":\"private-payload\"}", LocalDateTime.of(2026, 10, 30, 12, 0));
-        boolean unrecorded = code == NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED
-            || code == NotificationFailureCode.OUTBOX_LOOKUP_FAILED
-            || code == NotificationFailureCode.OUTBOX_RELAY_FAILED
-            || code == NotificationFailureCode.OUTBOX_CLAIM_FAILED
-            || code == NotificationFailureCode.OUTBOX_CLAIM_LOST
-            || code == NotificationFailureCode.OUTBOX_RELEASE_FAILED;
-        var context = NotificationFailureContext.fromOutbox(code, outbox, null,
-            new TimeoutException("private-exception"), Instant.now(),
-            unrecorded ? null : 2,
-            unrecorded
-                ? null
-                : code != NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED);
-
-        reporter.report(context);
-
-        if (code != NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED) {
-            verifyNoInteractions(dispatcher);
-        } else {
-            verify(dispatcher).dispatch(context);
-        }
-        assertThat(output.getAll()).contains("errorCode=" + code, "failureStage=" + stage,
-            "sourceEventId=outbox-source", "recipientUserId=7", "requestedAt=null")
-            .doesNotContain("private-payload", "private-exception");
-        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count()).isEqualTo(1);
-        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().getId().getTags())
-            .hasSize(1);
-    }
-
-    @ParameterizedTest
-    @EnumSource(
-        value = NotificationFailureCode.class,
-        names = {"OUTBOX_RESTORE_FAILED", "OUTBOX_PUBLISH_REQUIRES_ATTENTION", "PUBLISH_CALL_FAILED",
-            "PUBLISH_RESULT_FAILED", "PUBLISH_RESULT_TIMEOUT", "PUBLISH_INTERRUPTED"}
-    )
-    void Outbox_재시도와_중단은_Discord_없이_로그와_지표에_남긴다(NotificationFailureCode code,
-        CapturedOutput output) {
-        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE, "{}",
-            LocalDateTime.of(2026, 11, 1, 12, 0));
-        var context = NotificationFailureContext.fromOutbox(code, outbox, null,
-            new TimeoutException("private-message"), Instant.now(), 1, true);
-
-        reporter.report(context, false);
-
-        verifyNoInteractions(dispatcher);
-        assertThat(output.getAll()).contains("errorCode=" + code, "sourceEventId=outbox-source")
-            .doesNotContain("private-message");
-        assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count())
-            .isEqualTo(1);
-    }
-
-    @Test
-    void Outbox_한도_소진과_기존_DLT는_같은_Discord_웹훅_경로를_사용한다() {
-        var properties = new NotificationAlertProperties();
-        properties.setEnabled(true);
-        var client = mock(DiscordWebhookClient.class);
-        var sharedDispatcher = new NotificationAlertDispatcher(Runnable::run, client, properties, registry);
-        var sharedReporter = new NotificationFailureReporter(sharedDispatcher, registry);
-        var outbox = new NotificationRequestOutbox("outbox-source", 7L, NotificationType.LIKE, "{}",
-            LocalDateTime.of(2026, 11, 1, 12, 0));
-        for (int count = 1; count <= 5; count++) {
-            sharedReporter.report(NotificationFailureContext.fromOutbox(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT,
-                outbox, null, new TimeoutException(), Instant.now(), count, count < 5), false);
-        }
-        verifyNoInteractions(client);
-        var exhausted = NotificationFailureContext.fromOutbox(NotificationFailureCode.OUTBOX_RETRY_LIMIT_EXCEEDED,
-            outbox, null, new TimeoutException(), Instant.now(), 5, false);
-
-        sharedReporter.report(exhausted, true);
-        var dlt = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
-        sharedReporter.report(dlt);
-
-        var contexts = ArgumentCaptor.forClass(NotificationFailureContext.class);
-        verify(client, times(2)).send(contexts.capture());
-        assertThat(contexts.getAllValues()).containsExactly(exhausted, dlt);
-        assertThat(registry.get("notification.failures").tag("error_code", "PUBLISH_RESULT_TIMEOUT")
-            .counter().count()).isEqualTo(5);
-        assertThat(registry.get("notification.failures").tag("error_code", "OUTBOX_RETRY_LIMIT_EXCEEDED")
-            .counter().count()).isEqualTo(1);
-    }
-
     @Test
     void 원본_정보를_유지하고_민감한_내용_없이_통보보다_먼저_기록한다(CapturedOutput output) {
         Instant requestedAt = Instant.parse("2026-10-20T01:00:00Z");
         var request = new NotificationCreateRequested("event-123", 7L, NotificationType.LIKE,
             "private-title", "private-body", null, null, requestedAt);
         doAnswer(invocation -> {
-            assertThat(registry.get("notification.failures").tag("error_code", "PUBLISH_RESULT_TIMEOUT")
+            assertThat(registry.get("notification.failures").tag("error_code", "OUTBOX_DELIVERY_FAILED")
                 .counter().count()).isEqualTo(1);
-            assertThat(output.getAll()).contains("errorCode=PUBLISH_RESULT_TIMEOUT", "sourceEventId=event-123")
+            assertThat(output.getAll()).contains("errorCode=OUTBOX_DELIVERY_FAILED", "sourceEventId=event-123")
                 .doesNotContain("private-title", "private-body", "private-exception", "private-cause");
             return null;
         }).when(dispatcher).dispatch(any());
 
-        reporter.report(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, request,
+        reporter.report(NotificationFailureCode.OUTBOX_DELIVERY_FAILED, request,
             new ExecutionException("private-exception", new TimeoutException("private-cause")));
 
         var context = ArgumentCaptor.forClass(NotificationFailureContext.class);
         verify(dispatcher).dispatch(context.capture());
         assertThat(context.getValue()).isEqualTo(new NotificationFailureContext(
-            NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, "event-123", 7L, NotificationType.LIKE,
+            NotificationFailureCode.OUTBOX_DELIVERY_FAILED, "event-123", 7L, NotificationType.LIKE,
             requestedAt, Instant.ofEpochMilli(clock.wallTime()), "ExecutionException", "TimeoutException"));
         assertThat(registry.get("notification.failures").counter().getId().getTags())
             .hasSize(1).allSatisfy(tag -> assertThat(tag.getKey()).isEqualTo("error_code"));
@@ -191,7 +99,7 @@ class NotificationFailureReporterTest {
 
     @Test
     void 요청과_예외가_없어도_실패를_보고한다() {
-        reporter.report(NotificationFailureCode.PUBLISH_CALL_FAILED, null, null);
+        reporter.report(NotificationFailureCode.OUTBOX_DELIVERY_FAILED, null, null);
 
         var context = ArgumentCaptor.forClass(NotificationFailureContext.class);
         verify(dispatcher).dispatch(context.capture());
@@ -211,23 +119,23 @@ class NotificationFailureReporterTest {
     }
 
     @Test
-    void Kafka_문맥을_기록하고_DLT_통보에도_같은_문맥을_전달한다(CapturedOutput output) {
+    void Kafka_문맥을_기록하고_Delivery_통보에도_같은_문맥을_전달한다(CapturedOutput output) {
         var details = KafkaFailureDetails.from("retry-group", new KafkaLocation("create", 0, 4L),
             new KafkaLocation("create-retry-1", 1, 8L), new KafkaLocation("create-dlt", 1, 99L),
             3, true, new TimeoutException("private-processing"));
-        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null,
+        var context = NotificationFailureContext.from(NotificationFailureCode.DELIVERY_INVALID_EVENT, null,
             new TimeoutException("private-exception"), Instant.now(), details);
         reporter.report(context);
         verify(dispatcher).dispatch(context);
-        assertThat(output.getAll()).contains("failureStage=CREATION_PROCESSING", "consumerGroup=retry-group",
+        assertThat(output.getAll()).contains("failureStage=DELIVERY_CONSUMPTION", "consumerGroup=retry-group",
             "originalLocation=create:0:4", "inputLocation=create-retry-1:1:8", "destinationLocation=create-dlt:1:99",
             "attempt=3", "retryable=true", "processingExceptionType=TimeoutException")
             .doesNotContain("private-processing", "private-exception");
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationFailureCode.class, names = {"RETRY_PUBLISH_FAILED", "DLT_PUBLISH_FAILED"})
-    void 인계_실패는_지표에_기록하고_Discord를_제출하지_않는다(NotificationFailureCode code) {
+    @EnumSource(value = NotificationFailureCode.class, names = {"OUTBOX_CLAIM_FAILED", "OUTBOX_CLAIM_LOST"})
+    void 점유_실패는_지표에_기록하고_Discord를_제출하지_않는다(NotificationFailureCode code) {
         reporter.report(code, null, new TimeoutException());
         verifyNoInteractions(dispatcher);
         assertThat(registry.get("notification.failures").tag("error_code", code.name()).counter().count()).isEqualTo(1);
@@ -237,9 +145,10 @@ class NotificationFailureReporterTest {
     void 지표_실패에도_통보를_시도하고_통보_제출_예외를_전파하지_않는다() {
         var failingRegistry = spy(registry);
         doThrow(new IllegalStateException()).when(failingRegistry)
-            .counter("notification.failures", "error_code", "DLT_RECORDED");
+            .counter("notification.failures", "error_code", "DELIVERY_INVALID_EVENT");
         doThrow(new IllegalStateException()).when(dispatcher).dispatch(any());
-        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        var context = NotificationFailureContext.from(NotificationFailureCode.DELIVERY_INVALID_EVENT, null, null,
+            Instant.now());
         assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
             .doesNotThrowAnyException();
         verify(dispatcher).dispatch(context);
@@ -250,7 +159,7 @@ class NotificationFailureReporterTest {
     }
 
     @Test
-    void DLT_통보의_거절과_웹훅_실패는_기록하고_전파하지_않는다() {
+    void Delivery_통보의_거절과_웹훅_실패는_기록하고_전파하지_않는다() {
         var properties = new NotificationAlertProperties();
         properties.setEnabled(true);
         var client = mock(DiscordWebhookClient.class);
@@ -258,7 +167,8 @@ class NotificationFailureReporterTest {
             throw new java.util.concurrent.RejectedExecutionException();
         },
             client, properties, registry);
-        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        var context = NotificationFailureContext.from(NotificationFailureCode.DELIVERY_INVALID_EVENT, null, null,
+            Instant.now());
         assertThatCode(() -> new NotificationFailureReporter(rejected, registry).report(context))
             .doesNotThrowAnyException();
         verifyNoInteractions(client);
@@ -266,7 +176,7 @@ class NotificationFailureReporterTest {
         var failed = new NotificationAlertDispatcher(Runnable::run, client, properties, registry);
         assertThatCode(() -> new NotificationFailureReporter(failed, registry).report(context))
             .doesNotThrowAnyException();
-        assertThat(registry.get("notification.failures").tag("error_code", "DLT_RECORDED").counter().count())
+        assertThat(registry.get("notification.failures").tag("error_code", "DELIVERY_INVALID_EVENT").counter().count())
             .isEqualTo(2);
         assertThat(registry.get("notification.alert.failures").tag("error_code", "ALERT_SUBMISSION_REJECTED").counter()
             .count()).isEqualTo(1);
@@ -280,7 +190,8 @@ class NotificationFailureReporterTest {
         var failingRegistry = mock(io.micrometer.core.instrument.MeterRegistry.class);
         org.mockito.Mockito.when(failingRegistry.counter(any(String.class), any(String[].class)))
             .thenThrow(new IllegalStateException("private-metric"));
-        var context = NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now());
+        var context = NotificationFailureContext.from(NotificationFailureCode.DELIVERY_INVALID_EVENT, null, null,
+            Instant.now());
         assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
             .doesNotThrowAnyException();
         verify(dispatcher).dispatch(context);
@@ -357,7 +268,7 @@ class NotificationFailureReporterTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationFailureCode.class, names = {"PUBLISH_CALL_FAILED", "DLT_RECORDED"})
+    @EnumSource(value = NotificationFailureCode.class, names = {"OUTBOX_DELIVERY_FAILED", "DELIVERY_INVALID_EVENT"})
     void 빈도_제한으로_통보가_생략돼도_원본_실패는_모두_기록한다(NotificationFailureCode code) {
         var properties = new NotificationAlertProperties();
         properties.setEnabled(true);

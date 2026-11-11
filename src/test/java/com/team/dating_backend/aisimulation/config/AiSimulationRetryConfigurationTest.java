@@ -26,13 +26,8 @@ import com.team.dating_backend.common.kafka.KafkaRetryPolicy;
 import java.util.List;
 import java.util.Set;
 import org.springframework.kafka.retrytopic.DeadLetterPublishingRecovererFactory;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
-import com.team.dating_backend.notification.config.NotificationPublishProperties;
-import com.team.dating_backend.notification.config.NotificationRetryConfiguration;
-import com.team.dating_backend.notification.config.NotificationRetryProperties;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
-import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
+import com.team.dating_backend.notification.kafka.NotificationKafkaTestConfiguration;
 import java.util.HashSet;
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
@@ -63,7 +58,6 @@ import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.retrytopic.DestinationTopicResolver;
 import org.springframework.kafka.retrytopic.DestinationTopic;
-import org.springframework.kafka.retrytopic.RetryTopicConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class AiSimulationRetryConfigurationTest {
@@ -72,15 +66,13 @@ class AiSimulationRetryConfigurationTest {
         .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class,
             TaskSchedulingAutoConfiguration.class))
         .withUserConfiguration(SchedulingConfig.class, NotificationKafkaConfiguration.class,
-            NotificationRetryConfiguration.class, NotificationRecoveryTestConfiguration.class,
+            NotificationKafkaTestConfiguration.class,
             AiSimulationKafkaConfiguration.class, AiSimulationRetryConfiguration.class,
             AiSimulationKafkaTopicConfiguration.class, PropertiesConfiguration.class, TestListeners.class)
-        .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
         .withBean(AiSimulationPersistenceService.class, () -> mock(AiSimulationPersistenceService.class))
         .withBean(AiSimulationFailureReporter.class, () -> mock(AiSimulationFailureReporter.class))
         .withPropertyValues(
             "spring.kafka.admin.auto-create=false",
-            "app.notification.kafka.create-requested-topic=local-notification-create-requested-v1",
             "app.notification.kafka.delivery-topic=local-notification-delivery-v1");
 
     @Test
@@ -124,9 +116,7 @@ class AiSimulationRetryConfigurationTest {
             assertThat(topicNames).hasSize(10);
             assertThat(context).hasSingleBean(ProducerFactory.class).hasSingleBean(KafkaTemplate.class);
             assertThat(context.getBean(KafkaTemplate.class)).isSameAs(context.getBean("kafkaTemplate"));
-            var notification = context.getBean("notificationRetryTopicConfiguration", RetryTopicConfiguration.class);
-            assertThat(notification.getDestinationTopicProperties()).extracting(destination -> destination.suffix())
-                .containsExactly("", "-retry", "-dlt");
+            assertThat(context).doesNotHaveBean("notificationRetryTopicConfiguration");
         });
     }
 
@@ -179,7 +169,7 @@ class AiSimulationRetryConfigurationTest {
         var notificationPolicy = new KafkaRetryPolicy() {
             @Override
             public Set<String> listenerIds() {
-                return Set.of("notificationCreationConsumer");
+                return Set.of("otherConsumer");
             }
 
             @Override
@@ -195,7 +185,7 @@ class AiSimulationRetryConfigurationTest {
         var factory = new KafkaRetryComponentFactory(() -> List.of(notificationPolicy,
             simulationPolicy()))
             .deadLetterPublishingRecovererFactory(mock(DestinationTopicResolver.class));
-        assertThat(factory.create("notificationCreationConsumer")).isSameAs(notificationRecoverer);
+        assertThat(factory.create("otherConsumer")).isSameAs(notificationRecoverer);
         assertThat(factory.create(AiSimulationKafkaListeners.GENERATION)).isNotSameAs(notificationRecoverer);
         runner.run(context -> {
             var producer = context.getBean(DefaultKafkaProducerFactory.class);
@@ -240,8 +230,7 @@ class AiSimulationRetryConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(
-        {AiSimulationKafkaProperties.class, NotificationCreationProperties.class,
-            NotificationPublishProperties.class, NotificationRetryProperties.class}
+        {AiSimulationKafkaProperties.class}
     )
     static class PropertiesConfiguration {}
 
