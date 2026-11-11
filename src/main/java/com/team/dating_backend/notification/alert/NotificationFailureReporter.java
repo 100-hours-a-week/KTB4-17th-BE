@@ -6,6 +6,7 @@ import com.team.dating_backend.notification.alert.NotificationFailureContext.Kaf
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
@@ -44,7 +45,16 @@ public class NotificationFailureReporter {
         safely("METRIC", context.errorCode(), () -> meterRegistry
             .counter("notification.failures", "error_code", context.errorCode().name()).increment());
 
-        if (alertRequested && shouldAlert(context.errorCode())) {
+        if (context.outboxDetails() != null) {
+            safely("OUTBOX_METRIC", context.errorCode(),
+                () -> meterRegistry.counter("notification.outbox.worker.failures",
+                    "error_code", context.errorCode().name(), "failure_stage", context.failureStage().name(),
+                    "status",
+                    context.outboxDetails().status() == null ? "UNKNOWN" : context.outboxDetails().status().name())
+                    .increment());
+        }
+
+        if (alertRequested && shouldAlert(context)) {
             safely("ALERT_DISPATCH", context.errorCode(), () -> alertDispatcher.dispatch(context));
         }
     }
@@ -52,8 +62,9 @@ public class NotificationFailureReporter {
     private void logFailure(NotificationFailureContext context) {
         KafkaFailureDetails details = context.kafkaDetails();
         DeliveryFailureDetails delivery = context.deliveryDetails();
+        var outbox = context.outboxDetails();
         log.error(
-            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}, deliverySchemaVersion={}, notificationId={}, notificationCreatedAt={}",
+            "errorCode={}, failureStage={}, sourceEventId={}, recipientUserId={}, type={}, requestedAt={}, occurredAt={}, exceptionType={}, causeType={}, consumerGroup={}, originalLocation={}, inputLocation={}, destinationLocation={}, attempt={}, retryable={}, processingExceptionType={}, processingCauseType={}, notificationId={}, notificationCreatedAt={}, outboxId={}, failureCount={}, outboxStatus={}, outboxRetryable={}",
             context.errorCode(),
             context.failureStage(),
             valueForLog(context.sourceEventId(), 128),
@@ -71,16 +82,21 @@ public class NotificationFailureReporter {
             details == null ? null : details.retryable(),
             details == null ? null : valueForLog(details.processingExceptionType(), 128),
             details == null ? null : valueForLog(details.processingCauseType(), 128),
-            delivery == null ? null : delivery.schemaVersion(),
             delivery == null ? null : delivery.notificationId(),
-            delivery == null ? null : delivery.createdAt());
+            delivery == null ? null : delivery.createdAt(),
+            outbox == null ? null : outbox.outboxId(),
+            outbox == null ? null : outbox.failureCount(),
+            outbox == null ? null : outbox.status(),
+            outbox == null ? null : outbox.retryable());
     }
 
-    private boolean shouldAlert(NotificationFailureCode errorCode) {
-        return switch (errorCode) {
-            case RETRY_PUBLISH_FAILED, DLT_PUBLISH_FAILED, ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED,
-                OUTBOX_RESTORE_FAILED, OUTBOX_PUBLISH_REQUIRES_ATTENTION, OUTBOX_STATE_UPDATE_FAILED,
-                OUTBOX_LOOKUP_FAILED, OUTBOX_RELAY_FAILED, OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST,
+    private boolean shouldAlert(NotificationFailureContext context) {
+        if (context.outboxDetails() != null) {
+            return context.outboxDetails().status() == NotificationOutboxStatus.FAILED;
+        }
+        return switch (context.errorCode()) {
+            case ALERT_SUBMISSION_REJECTED, ALERT_WEBHOOK_FAILED, OUTBOX_RESTORE_FAILED,
+                OUTBOX_STATE_UPDATE_FAILED, OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST,
                 OUTBOX_RELEASE_FAILED -> false;
             default -> true;
         };

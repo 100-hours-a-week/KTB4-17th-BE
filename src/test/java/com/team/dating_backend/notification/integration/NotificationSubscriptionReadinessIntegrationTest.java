@@ -9,16 +9,14 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 import com.team.dating_backend.notification.enums.NotificationErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryConsumer;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryReadinessListener;
-import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
+import com.team.dating_backend.notification.kafka.NotificationKafkaTestConfiguration;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeliveryEventValidator;
 import com.team.dating_backend.notification.sse.NotificationDeliveryReadinessTracker;
@@ -56,7 +54,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
@@ -104,7 +101,7 @@ class NotificationSubscriptionReadinessIntegrationTest {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
         registry.add("app.notification.kafka.delivery-topic", () -> TOPIC);
-        registry.add("app.notification.kafka.create-requested-topic", () -> TOPIC + "-create");
+
     }
 
     @LocalServerPort
@@ -295,7 +292,7 @@ class NotificationSubscriptionReadinessIntegrationTest {
     }
 
     private NotificationDeliveryEvent event(long id) {
-        return new NotificationDeliveryEvent(1, "source-" + id, 42L,
+        return new NotificationDeliveryEvent("source-" + id, 42L,
             new NotificationEventResponse(id, "LIKE", "제목", "본문", null, null, null,
                 LocalDateTime.of(2026, 10, 23, 12, 0)));
     }
@@ -305,11 +302,10 @@ class NotificationSubscriptionReadinessIntegrationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableKafka
-    @EnableConfigurationProperties(NotificationCreationProperties.class)
     @Import(
         {NotificationStreamIntegrationTest.TestApplication.class, NotificationKafkaConfiguration.class,
             NotificationDeliveryConsumer.class, NotificationDeliveryEventValidator.class,
-            NotificationRecoveryTestConfiguration.class, NotificationCreationFailureClassifier.class,
+            NotificationKafkaTestConfiguration.class,
             NotificationSseMetrics.class}
     )
     static class TestApplication {

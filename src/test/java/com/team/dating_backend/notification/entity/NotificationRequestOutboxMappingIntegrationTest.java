@@ -36,7 +36,7 @@ class NotificationRequestOutboxMappingIntegrationTest {
 
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 30, 12, 0, 0, 123456789);
     private static final String PAYLOAD = """
-        {"schemaVersion":1,"sourceEventId":"LIKE_SENT:501","recipientUserId":7,"type":"LIKE",
+        {"sourceEventId":"LIKE_SENT:501","recipientUserId":7,"type":"LIKE",
          "title":"새로운 좋아요😀","body":"하늘님이 마음을 전했어요.","targetType":"PROFILE","targetId":8,
          "requestedAt":"2026-10-30T01:02:03.123456789Z"}
         """;
@@ -65,7 +65,7 @@ class NotificationRequestOutboxMappingIntegrationTest {
         assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PENDING);
         assertThat(stored.getFailureCount()).isZero();
         assertThat(stored.getLastFailureType()).isNull();
-        assertThat(stored.getPublishedAt()).isNull();
+        assertThat(stored.getCompletedAt()).isNull();
         assertThat(stored.getProcessingToken()).isNull();
         assertThat(stored.getProcessingUntil()).isNull();
         assertThat(stored.getCreatedAt()).isEqualTo(CREATED_AT.truncatedTo(ChronoUnit.MICROS));
@@ -80,7 +80,7 @@ class NotificationRequestOutboxMappingIntegrationTest {
         assertThat(row.get("status")).isEqualTo("PENDING");
         assertThat(row.get("failure_count")).isEqualTo(0);
         assertThat(row.get("last_failure_type")).isNull();
-        assertThat(row.get("published_at")).isNull();
+        assertThat(row.get("completed_at")).isNull();
         assertThat(row.get("processing_token")).isNull();
         assertThat(row.get("processing_until")).isNull();
         assertThat(row.get("created_at")).isNotNull().isEqualTo(row.get("next_attempt_at"));

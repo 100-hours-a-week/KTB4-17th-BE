@@ -9,13 +9,11 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import com.team.dating_backend.auth.service.JwtService;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import com.team.dating_backend.notification.kafka.NotificationDeliveryConsumer;
-import com.team.dating_backend.notification.kafka.NotificationRecoveryTestConfiguration;
+import com.team.dating_backend.notification.kafka.NotificationKafkaTestConfiguration;
 import com.team.dating_backend.notification.service.NotificationAccessService;
 import com.team.dating_backend.notification.service.NotificationDeliveryEventValidator;
 import com.team.dating_backend.notification.sse.NotificationEmitterRegistry;
@@ -58,7 +56,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -173,7 +170,7 @@ class NotificationSseShutdownIntegrationTest {
                 "--spring.kafka.bootstrap-servers=" + KAFKA.getBootstrapServers(),
                 "--spring.kafka.admin.auto-create=false",
                 "--spring.kafka.consumer.properties.allow.auto.create.topics=false",
-                "--app.notification.kafka.create-requested-topic=" + topic + "-create",
+
                 "--app.notification.kafka.delivery-topic=" + topic,
                 "--app.notification.delivery.enabled=" + enabled,
                 "--app.notification.sse.timeout-ms=60000", "--app.notification.sse.heartbeat-delay-ms=50",
@@ -240,7 +237,7 @@ class NotificationSseShutdownIntegrationTest {
             LocalDateTime.of(2026, 10, 24, 12, 0));
         if (enabled) {
             context.getBean(KafkaTemplate.class).send(topic, 0, 42L,
-                new NotificationDeliveryEvent(1, "source-" + id, 42L, snapshot)).get(10, TimeUnit.SECONDS);
+                new NotificationDeliveryEvent("source-" + id, 42L, snapshot)).get(10, TimeUnit.SECONDS);
         } else {
             context.getBean(NotificationSseSender.class).sendNotification(42L, snapshot);
         }
@@ -274,11 +271,10 @@ class NotificationSseShutdownIntegrationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableKafka
-    @EnableConfigurationProperties(NotificationCreationProperties.class)
     @Import(
         {NotificationStreamIntegrationTest.TestApplication.class, NotificationKafkaConfiguration.class,
             NotificationDeliveryConsumer.class, NotificationDeliveryEventValidator.class,
-            NotificationRecoveryTestConfiguration.class, NotificationCreationFailureClassifier.class,
+            NotificationKafkaTestConfiguration.class,
             NotificationSseMetrics.class, NotificationSseShutdownCoordinator.class}
     )
     static class TestApplication {

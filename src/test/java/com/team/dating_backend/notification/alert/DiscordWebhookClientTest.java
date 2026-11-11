@@ -12,6 +12,8 @@ import com.team.dating_backend.common.alert.DiscordWebhookSender;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
@@ -28,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
@@ -59,7 +62,7 @@ class DiscordWebhookClientTest {
                     .readTree(((MockClientHttpRequest) request).getBodyAsString());
                 assertThat(payload.path("content").stringValue())
                     .startsWith("@everyone 알림 처리 실패\n")
-                    .contains("environment: dev", "errorCode: PUBLISH_RESULT_TIMEOUT", "sourceEventId: event-123",
+                    .contains("environment: dev", "errorCode: OUTBOX_DELIVERY_FAILED", "sourceEventId: event-123",
                         "recipientUserId: 7", "type: LIKE", "requestedAt: 2026-10-20T01:00:00Z",
                         "occurredAt: 2026-10-20T01:01:00Z", "exceptionType: TimeoutException")
                     .doesNotContain("test-token", "https://");
@@ -94,13 +97,13 @@ class DiscordWebhookClientTest {
     }
 
     @Test
-    void DLT_위치와_시도를_표시하고_미확인_값은_구분한다() {
+    void Kafka_위치와_미확인_값을_구분한다() {
         server.expect(requestTo(WEBHOOK + "?wait=true"))
             .andExpect(request -> {
                 String content = JsonMapper.builder().build()
                     .readTree(((MockClientHttpRequest) request).getBodyAsString())
                     .path("content").stringValue();
-                assertThat(content).contains("failureStage: CREATION_PROCESSING", "consumerGroup: retry-group",
+                assertThat(content).contains("failureStage: DELIVERY_CONSUMPTION", "consumerGroup: retry-group",
                     "originalTopic: create", "originalPartition: 0", "originalOffset: 7",
                     "inputTopic: create-retry-1", "inputOffset: 11", "destinationTopic: create-dlt",
                     "destinationOffset: 99", "attempt: 3", "retryable: true",
@@ -111,7 +114,8 @@ class DiscordWebhookClientTest {
             new KafkaLocation("create-retry-1", 0, 11L), new KafkaLocation("create-dlt", 0, 99L),
             3, true, "TimeoutException", null);
         client.send(
-            NotificationFailureContext.from(NotificationFailureCode.DLT_RECORDED, null, null, Instant.now(), details));
+            NotificationFailureContext.from(NotificationFailureCode.DELIVERY_INVALID_EVENT, null, null, Instant.now(),
+                details));
         server.verify();
     }
 
@@ -128,7 +132,7 @@ class DiscordWebhookClientTest {
                     "destinationTopic: ",
                     "destinationOffset: 9223372036854775807", "attempt: 32767", "retryable: false",
                     "processingCauseType: ", "errorCode: DELIVERY_INVALID_EVENT",
-                    "deliverySchemaVersion: 2147483647", "notificationId: 9223372036854775807",
+                    "notificationId: 9223372036854775807",
                     "notificationCreatedAt: ");
                 assertThat(content.chars().filter(character -> character == '`').count()).isEqualTo(6);
                 assertThat(content).doesNotContain("\u2028", "\u202e");
@@ -149,7 +153,7 @@ class DiscordWebhookClientTest {
         client.send(
             new NotificationFailureContext(NotificationFailureCode.DELIVERY_INVALID_EVENT, longValue, Long.MAX_VALUE,
                 NotificationType.LIKE, null, Instant.now(), longValue, longValue, details,
-                new DeliveryFailureDetails(Integer.MAX_VALUE, Long.MAX_VALUE, LocalDateTime.MAX)));
+                new DeliveryFailureDetails(Long.MAX_VALUE, LocalDateTime.MAX)));
         server.verify();
     }
 
@@ -161,7 +165,7 @@ class DiscordWebhookClientTest {
                     .readTree(((MockClientHttpRequest) request).getBodyAsString())
                     .path("content").stringValue();
                 assertThat(content).contains("errorCode: DELIVERY_INVALID_EVENT", "failureStage: DELIVERY_CONSUMPTION",
-                    "deliverySchemaVersion: 99", "notificationId: 31", "notificationCreatedAt: 2026-10-23T12:00",
+                    "notificationId: 31", "notificationCreatedAt: 2026-10-23T12:00",
                     "requestedAt: -", "type: -", "inputTopic: delivery", "inputOffset: 18")
                     .doesNotContain("private-title", "private-body");
             }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
@@ -170,7 +174,7 @@ class DiscordWebhookClientTest {
         var details = new KafkaFailureDetails("process-group", null, new KafkaLocation("delivery", 2, 18L), null,
             null, false, "NotificationInvalidDeliveryEventException", null);
         client.send(NotificationFailureContext.fromDelivery(NotificationFailureCode.DELIVERY_INVALID_EVENT,
-            new NotificationDeliveryEvent(99, "source", 7L, snapshot), null, Instant.now(), details));
+            new NotificationDeliveryEvent("source", 7L, snapshot), null, Instant.now(), details));
         server.verify();
     }
 
@@ -179,6 +183,29 @@ class DiscordWebhookClientTest {
         properties.setEnabled(false);
 
         client.send(context("event-123"));
+
+        server.verify();
+    }
+
+    @Test
+    void Worker_최종_실패의_Outbox_식별자와_실패_횟수를_전송한다() {
+        server.expect(requestTo(WEBHOOK + "?wait=true"))
+            .andExpect(request -> {
+                String content = JsonMapper.builder().build()
+                    .readTree(((MockClientHttpRequest) request).getBodyAsString()).path("content").stringValue();
+                assertThat(content).contains("outboxId: 31", "failureCount: 5", "outboxStatus: FAILED",
+                    "sourceEventId: worker-source", "recipientUserId: 7", "failureStage: PUBLISH_RESULT",
+                    "errorCode: OUTBOX_DELIVERY_FAILED", "exceptionType: TimeoutException", "retryable: true")
+                    .doesNotContain("private-payload", "private-exception", "consumerGroup:");
+                assertThat(content.length()).isLessThanOrEqualTo(2000);
+            }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
+        var outbox = new NotificationRequestOutbox("worker-source", 7L, NotificationType.LIKE,
+            "private-payload", LocalDateTime.now());
+        ReflectionTestUtils.setField(outbox, "id", 31L);
+
+        client.send(NotificationFailureContext.fromWorker(NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
+            outbox, null, new java.util.concurrent.TimeoutException("private-exception"), Instant.now(),
+            5, NotificationOutboxStatus.FAILED, true));
 
         server.verify();
     }
@@ -209,7 +236,7 @@ class DiscordWebhookClientTest {
     }
 
     private NotificationFailureContext context(String sourceEventId) {
-        return new NotificationFailureContext(NotificationFailureCode.PUBLISH_RESULT_TIMEOUT,
+        return new NotificationFailureContext(NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
             sourceEventId, 7L, NotificationType.LIKE, Instant.parse("2026-10-20T01:00:00Z"),
             Instant.parse("2026-10-20T01:01:00Z"), "TimeoutException", null);
     }

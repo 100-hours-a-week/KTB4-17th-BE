@@ -109,41 +109,27 @@ app:
     outbox:
       claim:
         duration-ms: ${APP_NOTIFICATION_OUTBOX_CLAIM_DURATION_MS:60000}
-      relay:
-        enabled: ${APP_NOTIFICATION_OUTBOX_RELAY_ENABLED:false}
-        fixed-delay-ms: ${APP_NOTIFICATION_OUTBOX_RELAY_FIXED_DELAY_MS:1000}
-        batch-size: ${APP_NOTIFICATION_OUTBOX_RELAY_BATCH_SIZE:100}
-        shutdown-wait-seconds: ${APP_NOTIFICATION_OUTBOX_RELAY_SHUTDOWN_WAIT_SECONDS:20}
+      worker:
+        enabled: ${APP_NOTIFICATION_OUTBOX_WORKER_ENABLED:false}
+        fixed-delay-ms: ${APP_NOTIFICATION_OUTBOX_WORKER_FIXED_DELAY_MS:1000}
+        max-requests-per-run: ${APP_NOTIFICATION_OUTBOX_WORKER_MAX_REQUESTS_PER_RUN:100}
+        shutdown-wait-seconds: ${APP_NOTIFICATION_OUTBOX_WORKER_SHUTDOWN_WAIT_SECONDS:20}
       retry:
         max-failures: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_FAILURES:5}
         initial-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_INITIAL_DELAY_MS:1000}
         max-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_DELAY_MS:60000}
     kafka:
-      create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
       delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
-    publish:
-      result-timeout-ms: ${APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS:15000}
-    creation:
-      enabled: ${APP_NOTIFICATION_CREATION_ENABLED:false}
-      group-id: ${APP_NOTIFICATION_CREATION_GROUP_ID:${spring.profiles.active:local}-notification-create-v1}
-      concurrency: ${APP_NOTIFICATION_CREATION_CONCURRENCY:1}
-      max-poll-records: ${APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS:1}
-      max-poll-interval-ms: ${APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS:300000}
-      delivery-result-timeout-ms: ${APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
     chat-message:
       enabled: ${APP_NOTIFICATION_CHAT_MESSAGE_ENABLED:false}
       group-id: notification-chat-message-v1
     delivery:
+      result-timeout-ms: ${APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
       enabled: ${APP_NOTIFICATION_DELIVERY_ENABLED:false}
       group-id-prefix: ${APP_NOTIFICATION_DELIVERY_GROUP_ID_PREFIX:${spring.profiles.active:local}-notification-sse-v1}
       concurrency: ${APP_NOTIFICATION_DELIVERY_CONCURRENCY:1}
       max-poll-records: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_RECORDS:1}
       max-poll-interval-ms: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_INTERVAL_MS:300000}
-    retry:
-      max-attempts: ${APP_NOTIFICATION_RETRY_MAX_ATTEMPTS:4}
-      delay-ms: ${APP_NOTIFICATION_RETRY_DELAY_MS:5000}
-      concurrency: ${APP_NOTIFICATION_RETRY_CONCURRENCY:1}
-      publish-result-timeout-ms: ${APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS:15000}
     alert:
       enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
       environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}

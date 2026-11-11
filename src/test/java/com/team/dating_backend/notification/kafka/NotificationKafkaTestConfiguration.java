@@ -20,11 +20,11 @@ import org.springframework.context.annotation.Import;
 @TestConfiguration(proxyBeanMethods = false)
 @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationDeliveryProperties.class})
 @Import(
-    {NotificationRecoveryReporter.class, NotificationFailureReporter.class,
+    {NotificationFailureReporter.class,
         NotificationDeliveryFailureRecoverer.class, NotificationDeliveryReadinessTracker.class,
         NotificationDeliveryReadinessListener.class}
 )
-public class NotificationRecoveryTestConfiguration {
+public class NotificationKafkaTestConfiguration {
 
     @Bean
     public NotificationSseProcessIdentity notificationSseProcessIdentity(NotificationDeliveryProperties properties) {

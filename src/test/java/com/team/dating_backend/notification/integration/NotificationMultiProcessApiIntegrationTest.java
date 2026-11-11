@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.team.dating_backend.notification.support.NotificationMultiProcessTestSupport;
+import com.team.dating_backend.notification.support.NotificationIntegrationEnvironment;
 import com.team.dating_backend.user.enums.UserStatus;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -19,6 +20,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Tag("notification-multiprocess")
 @Timeout(90)
 class NotificationMultiProcessApiIntegrationTest extends NotificationMultiProcessTestSupport {
+
+    @Override
+    protected NotificationIntegrationEnvironment createEnvironment() {
+        return NotificationIntegrationEnvironment.worker(NotificationIntegrationEnvironment.Mode.NORMAL);
+    }
 
     @ParameterizedTest
     @ValueSource(

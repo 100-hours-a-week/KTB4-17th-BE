@@ -1,6 +1,8 @@
 package com.team.dating_backend.notification.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
@@ -18,11 +20,19 @@ import com.team.dating_backend.notification.dto.response.NotificationEventRespon
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import com.team.dating_backend.notification.enums.NotificationSseCloseReason;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -143,12 +153,206 @@ class NotificationSseSenderTest {
             NotificationSseCloseReason.TRANSPORT_ERROR, failure);
     }
 
+    @Test
+    void 같은_ID의_내용이_바뀌어도_같은_연결에는_한_번만_전송한다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+        var original = notification();
+        var changed = new NotificationEventResponse(original.notificationId(), "LIKE", "변경 제목", "변경 본문",
+            null, null, NOW, NOW);
+
+        sender.sendNotification(1L, original);
+        sender.sendNotification(1L, changed);
+
+        var event = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
+        verify(emitter).send(event.capture());
+        assertThat(event.getValue().build().stream().map(SseEmitter.DataWithMediaType::getData)).contains(original);
+        verifyNoInteractions(observation);
+    }
+
+    @Test
+    void 같은_사용자의_여러_연결은_각각_독립적으로_한_번씩_전송한다() throws Exception {
+        var first = connection("first", mock(SseEmitter.class));
+        var second = connection("second", mock(SseEmitter.class));
+        when(registry.findByUserId(1L)).thenReturn(List.of(first, second));
+
+        sender.sendNotification(1L, notification());
+        sender.sendNotification(1L, notification());
+
+        verify(first.getEmitter()).send(any(SseEmitter.SseEventBuilder.class));
+        verify(second.getEmitter()).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void 전송_성공_후에만_이력을_기록하고_실패한_ID는_기록하지_않는다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+        doAnswer(invocation -> {
+            assertThat(connection.hasSentNotification(10L)).isFalse();
+            throw new IOException();
+        }).doAnswer(invocation -> {
+            assertThat(connection.hasSentNotification(10L)).isFalse();
+            return null;
+        }).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        sender.sendNotification(1L, notification());
+        assertThat(connection.hasSentNotification(10L)).isFalse();
+        sender.sendNotification(1L, notification());
+
+        assertThat(connection.hasSentNotification(10L)).isTrue();
+        verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void 최근_256개만_유지하고_중복_수신은_오래된_ID의_순서를_갱신하지_않는다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+        for (long id = 1; id <= 256; id++) {
+            sender.sendNotification(1L, notification(id));
+        }
+
+        sender.sendNotification(1L, notification(1L));
+        sender.sendNotification(1L, notification(257L));
+
+        assertThat(connection.hasSentNotification(1L)).isFalse();
+        assertThat(connection.hasSentNotification(2L)).isTrue();
+        assertThat(connection.hasSentNotification(257L)).isTrue();
+        sender.sendNotification(1L, notification(2L));
+        sender.sendNotification(1L, notification(1L));
+        verify(emitter, times(258)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void 알림_중복_검사는_connected와_heartbeat_반복_전송을_막지_않는다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+
+        sender.sendNotification(1L, notification());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            sender.sendConnected(connection);
+            sender.sendHeartbeat(connection);
+            sender.sendNotification(1L, notification());
+        }
+
+        var events = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
+        verify(emitter, times(5)).send(events.capture());
+        assertThat(events.getAllValues().stream().map(this::text).filter(value -> value.contains("event:connected")))
+            .hasSize(2);
+        assertThat(events.getAllValues().stream().map(this::text).filter(value -> value.contains(":heartbeat")))
+            .hasSize(2);
+    }
+
+    @Test
+    void 연결_종료로_이력을_비우고_새_연결은_같은_ID를_받을_수_있다() throws Exception {
+        var realRegistry = new NotificationEmitterRegistry(observation);
+        var realSender = new NotificationSseSender(realRegistry, observation);
+        var first = connection("first", mock(SseEmitter.class));
+        realRegistry.register(first);
+        realSender.sendNotification(1L, notification());
+        assertThat(first.hasSentNotification(10L)).isTrue();
+
+        realRegistry.remove(first);
+        var replacement = connection("replacement", mock(SseEmitter.class));
+        realRegistry.register(replacement);
+        realSender.sendNotification(1L, notification());
+
+        assertThat(first.hasSentNotification(10L)).isFalse();
+        verify(first.getEmitter()).send(any(SseEmitter.SseEventBuilder.class));
+        verify(replacement.getEmitter()).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void 동시_중복_요청은_전송_잠금_안에서_검사하여_한_번만_보낸다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+        var sending = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        var secondThread = new AtomicReference<Thread>();
+        doAnswer(invocation -> {
+            sending.countDown();
+            assertThat(finish.await(5, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            try {
+                var first = executor.submit(() -> sender.sendNotification(1L, notification()));
+                assertThat(sending.await(5, TimeUnit.SECONDS)).isTrue();
+                var second = executor.submit(() -> {
+                    secondThread.set(Thread.currentThread());
+                    sender.sendNotification(1L, notification());
+                });
+                await().atMost(Duration.ofSeconds(5)).until(() -> secondThread.get() != null
+                    && secondThread.get().getState() == Thread.State.WAITING);
+                finish.countDown();
+                first.get(5, TimeUnit.SECONDS);
+                second.get(5, TimeUnit.SECONDS);
+            } finally {
+                finish.countDown();
+            }
+        }
+
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void 전송_중_종료는_네트워크_완료를_기다리지_않고_복귀하며_이력이_다시_생기지_않는다() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var connection = connection("first", emitter);
+        when(registry.findByUserId(1L)).thenReturn(List.of(connection));
+        sender.sendNotification(1L, notification(1L));
+        var sending = new CountDownLatch(1);
+        var finish = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            sending.countDown();
+            assertThat(finish.await(5, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            try {
+                var send = executor.submit(() -> sender.sendNotification(1L, notification(2L)));
+                assertThat(sending.await(5, TimeUnit.SECONDS)).isTrue();
+                var close = executor.submit(connection::markClosed);
+                assertThat(close.get(1, TimeUnit.SECONDS)).isTrue();
+                assertThat(connection.hasSentNotification(1L)).isFalse();
+                finish.countDown();
+                send.get(5, TimeUnit.SECONDS);
+            } finally {
+                finish.countDown();
+            }
+        }
+
+        assertThat(connection.hasSentNotification(2L)).isFalse();
+        sender.sendNotification(1L, notification(3L));
+        verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(longs = {0, -1})
+    void 알림_ID가_유효하지_않으면_전송하지_않는다(Long id) {
+        assertThatThrownBy(() -> sender.sendNotification(1L, notification(id)))
+            .isInstanceOf(NotificationBusinessException.class);
+
+        verifyNoInteractions(registry);
+    }
+
     private NotificationSseConnection connection(String id, SseEmitter emitter) {
         return new NotificationSseConnection(1L, id, emitter, NOW);
     }
 
     private NotificationEventResponse notification() {
-        return new NotificationEventResponse(10L, "LIKE", "관심", "관심 도착", null, null, null, NOW);
+        return notification(10L);
+    }
+
+    private NotificationEventResponse notification(Long id) {
+        return new NotificationEventResponse(id, "LIKE", "관심", "관심 도착", null, null, null, NOW);
     }
 
     private String text(SseEmitter.SseEventBuilder event) {

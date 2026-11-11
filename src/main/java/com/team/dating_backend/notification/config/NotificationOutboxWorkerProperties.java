@@ -10,8 +10,8 @@ import org.springframework.validation.annotation.Validated;
 @Getter
 @Setter
 @Validated
-@ConfigurationProperties(prefix = "app.notification.outbox.relay")
-public class NotificationOutboxRelayProperties {
+@ConfigurationProperties(prefix = "app.notification.outbox.worker")
+public class NotificationOutboxWorkerProperties {
 
     private boolean enabled;
 
@@ -19,7 +19,7 @@ public class NotificationOutboxRelayProperties {
     private long fixedDelayMs = 1000L;
 
     @Positive(message = "INTERNAL_SERVER_ERROR")
-    private int batchSize = 100;
+    private int maxRequestsPerRun = 100;
 
     @PositiveOrZero(message = "INTERNAL_SERVER_ERROR")
     private int shutdownWaitSeconds = 20;

@@ -19,15 +19,16 @@ class NotificationFailureContextTest {
     @Test
     void 기존_생성자와_factory는_Kafka_문맥_없이_같은_결과를_만든다() {
         Instant now = Instant.now();
-        var context = NotificationFailureContext.from(NotificationFailureCode.PUBLISH_CALL_FAILED, null, null, now);
-        assertThat(context).isEqualTo(new NotificationFailureContext(NotificationFailureCode.PUBLISH_CALL_FAILED,
+        var context = NotificationFailureContext.from(NotificationFailureCode.OUTBOX_DELIVERY_FAILED, null, null, now);
+        assertThat(context).isEqualTo(new NotificationFailureContext(NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
             null, null, null, null, now, null, null));
         assertThat(context.kafkaDetails()).isNull();
     }
 
     @ParameterizedTest
     @CsvSource(
-        {"RETRY_PUBLISH_FAILED,RETRY_PUBLISH", "DLT_PUBLISH_FAILED,DLT_PUBLISH", "DLT_RECORDED,CREATION_PROCESSING"}
+        {"OUTBOX_RESTORE_FAILED,OUTBOX_RESTORE", "OUTBOX_DELIVERY_FAILED,PUBLISH_RESULT",
+            "OUTBOX_CREATION_FAILED,CREATION_PROCESSING"}
     )
     void 실패_코드에서_단계를_결정한다(NotificationFailureCode code, FailureStage stage) {
         assertThat(NotificationFailureContext.from(code, null, null, Instant.now()).failureStage()).isEqualTo(stage);

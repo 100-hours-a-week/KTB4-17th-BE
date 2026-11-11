@@ -35,7 +35,7 @@ public class NotificationSseSender {
 
         boolean sent;
         try {
-            sent = send(connection, event);
+            sent = send(connection, event, null);
         } catch (IOException | RuntimeException exception) {
             if (!isCompletionRace(connection, exception)) {
                 observation.sendFailed(connection, EventKind.CONNECTED, failureReason(exception), exception);
@@ -49,11 +49,11 @@ public class NotificationSseSender {
 
     public void sendHeartbeat(NotificationSseConnection connection) {
         requireConnection(connection);
-        sendSafely(connection, SseEmitter.event().comment(HEARTBEAT_COMMENT), EventKind.HEARTBEAT);
+        sendSafely(connection, SseEmitter.event().comment(HEARTBEAT_COMMENT), EventKind.HEARTBEAT, null);
     }
 
     public void sendNotification(Long userId, NotificationEventResponse response) {
-        if (response == null) {
+        if (response == null || response.notificationId() == null || response.notificationId() <= 0) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
 
@@ -61,19 +61,23 @@ public class NotificationSseSender {
             SseEmitter.SseEventBuilder event = SseEmitter.event()
                 .name(NOTIFICATION_EVENT)
                 .data(response, MediaType.APPLICATION_JSON);
-            sendSafely(connection, event, EventKind.NOTIFICATION);
+            sendSafely(connection, event, EventKind.NOTIFICATION, response.notificationId());
         }
     }
 
-    private boolean send(NotificationSseConnection connection, SseEmitter.SseEventBuilder event)
+    private boolean send(NotificationSseConnection connection, SseEmitter.SseEventBuilder event, Long notificationId)
         throws IOException {
         connection.lockForSend();
         try {
-            if (connection.isClosed()) {
+            if (connection.isClosed()
+                || (notificationId != null && connection.hasSentNotification(notificationId))) {
                 return false;
             }
 
             connection.getEmitter().send(event);
+            if (notificationId != null) {
+                connection.recordSentNotification(notificationId);
+            }
             return true;
         } finally {
             connection.unlockForSend();
@@ -81,9 +85,10 @@ public class NotificationSseSender {
     }
 
     private void sendSafely(
-        NotificationSseConnection connection, SseEmitter.SseEventBuilder event, EventKind eventKind) {
+        NotificationSseConnection connection, SseEmitter.SseEventBuilder event, EventKind eventKind,
+        Long notificationId) {
         try {
-            send(connection, event);
+            send(connection, event, notificationId);
         } catch (IOException | RuntimeException exception) {
             handleSendFailure(connection, eventKind, exception);
         }

@@ -170,7 +170,7 @@ class LikeSendServiceTest {
             .containsExactly(2L, 1L);
         assertThat(requests.getAllValues()).allSatisfy(request -> {
             assertThat(request.requestedAt()).isNotNull();
-            assertThat(request).isEqualTo(new NotificationCreateRequested(1, "MATCH_CREATED:30",
+            assertThat(request).isEqualTo(new NotificationCreateRequested("MATCH_CREATED:30",
                 request.recipientUserId(), NotificationType.MATCH, "매칭 성사",
                 "서로의 마음이 연결되었어요. 채팅을 시작해 보세요.", "CHAT_ROOM", 40L, request.requestedAt()));
         });
@@ -344,7 +344,7 @@ class LikeSendServiceTest {
         verify(notificationRequestService).requestNotification(captor.capture());
         var request = captor.getValue();
         assertThat(request.requestedAt()).isNotNull();
-        assertThat(request).isEqualTo(new NotificationCreateRequested(1, "LIKE_SENT:10", recipientUserId,
+        assertThat(request).isEqualTo(new NotificationCreateRequested("LIKE_SENT:10", recipientUserId,
             NotificationType.LIKE, "새로운 좋아요", body, "PROFILE", senderId, request.requestedAt()));
     }
 

@@ -38,7 +38,7 @@ class NotificationDeliveryFailureRecovererTest {
     void 알림_보고_실패와_알_수_없는_type에도_불량_레코드는_현재_위치를_기록하고_건너뛴다() {
         properties.setDeliveryTopic("delivery");
         var createdAt = LocalDateTime.of(2026, 10, 23, 12, 0);
-        var event = new NotificationDeliveryEvent(1, "source", 7L,
+        var event = new NotificationDeliveryEvent("source", 7L,
             new NotificationEventResponse(31L, "UNKNOWN", "private-title", "private-body", null, null, null,
                 createdAt));
         var failure = new ListenerExecutionFailedException("", "process-group",
@@ -55,7 +55,7 @@ class NotificationDeliveryFailureRecovererTest {
         assertThat(context.type()).isNull();
         assertThat(context.requestedAt()).isNull();
         assertThat(context.deliveryDetails())
-            .isEqualTo(new NotificationFailureContext.DeliveryFailureDetails(1, 31L, createdAt));
+            .isEqualTo(new NotificationFailureContext.DeliveryFailureDetails(31L, createdAt));
         assertThat(context.kafkaDetails().consumerGroup()).isEqualTo("process-group");
         assertThat(context.kafkaDetails().inputLocation())
             .isEqualTo(new NotificationFailureContext.KafkaLocation("delivery", 2, 18L));

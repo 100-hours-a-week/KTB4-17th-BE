@@ -67,7 +67,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.config.name=notification-stream-test",
-        "app.notification.kafka.create-requested-topic=test-create",
+
         "app.notification.kafka.delivery-topic=test-delivery",
         "server.address=127.0.0.1",
         "app.notification.sse.heartbeat-delay-ms=50"

@@ -54,6 +54,14 @@ public class DiscordWebhookClient {
         fields.put("exceptionType", context.exceptionType());
         fields.put("causeType", context.causeType());
 
+        var outbox = context.outboxDetails();
+        if (outbox != null) {
+            fields.put("outboxId", outbox.outboxId());
+            fields.put("failureCount", outbox.failureCount());
+            fields.put("outboxStatus", outbox.status());
+            fields.put("retryable", outbox.retryable());
+        }
+
         KafkaFailureDetails details = context.kafkaDetails();
         if (details != null) {
             fields.put("consumerGroup", details.consumerGroup());
@@ -68,7 +76,6 @@ public class DiscordWebhookClient {
 
         DeliveryFailureDetails delivery = context.deliveryDetails();
         if (delivery != null) {
-            fields.put("deliverySchemaVersion", delivery.schemaVersion());
             fields.put("notificationId", delivery.notificationId());
             fields.put("notificationCreatedAt", delivery.createdAt());
         }

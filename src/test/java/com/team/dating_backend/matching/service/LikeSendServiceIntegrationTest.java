@@ -194,7 +194,6 @@ class LikeSendServiceIntegrationTest {
         });
         var originalRequest = storedRequests.snapshot().getFirst();
         var originalOutboxes = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
-        assertThat(originalRequest.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
         assertThat(originalRequest.type()).isEqualTo(NotificationType.LIKE);
         assertThat(originalRequest.title()).isEqualTo("새로운 좋아요");
         assertThat(originalRequest.body()).isEqualTo("봄날님이 당신에게 마음을 전했어요.");
@@ -354,7 +353,6 @@ class LikeSendServiceIntegrationTest {
         assertThat(matchRequests).extracting(NotificationCreateRequested::recipientUserId)
             .containsExactlyInAnyOrder(senderId, receiverId);
         assertThat(matchRequests).allSatisfy(request -> {
-            assertThat(request.schemaVersion()).isEqualTo(NotificationCreateRequested.CURRENT_SCHEMA_VERSION);
             assertThat(request.title()).isEqualTo("매칭 성사");
             assertThat(request.body()).isEqualTo("서로의 마음이 연결되었어요. 채팅을 시작해 보세요.");
             assertThat(request.targetType()).isEqualTo("CHAT_ROOM");
