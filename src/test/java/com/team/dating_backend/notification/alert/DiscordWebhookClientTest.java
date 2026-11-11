@@ -12,6 +12,8 @@ import com.team.dating_backend.common.alert.DiscordWebhookSender;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaFailureDetails;
 import com.team.dating_backend.notification.alert.NotificationFailureContext.KafkaLocation;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
@@ -28,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
@@ -179,6 +182,29 @@ class DiscordWebhookClientTest {
         properties.setEnabled(false);
 
         client.send(context("event-123"));
+
+        server.verify();
+    }
+
+    @Test
+    void Worker_최종_실패의_Outbox_식별자와_실패_횟수를_전송한다() {
+        server.expect(requestTo(WEBHOOK + "?wait=true"))
+            .andExpect(request -> {
+                String content = JsonMapper.builder().build()
+                    .readTree(((MockClientHttpRequest) request).getBodyAsString()).path("content").stringValue();
+                assertThat(content).contains("outboxId: 31", "failureCount: 5", "outboxStatus: FAILED",
+                    "sourceEventId: worker-source", "recipientUserId: 7", "failureStage: PUBLISH_RESULT",
+                    "errorCode: OUTBOX_DELIVERY_FAILED", "exceptionType: TimeoutException", "retryable: true")
+                    .doesNotContain("private-payload", "private-exception", "consumerGroup:");
+                assertThat(content.length()).isLessThanOrEqualTo(2000);
+            }).andRespond(withSuccess("{\"id\":\"123\"}", MediaType.APPLICATION_JSON));
+        var outbox = new NotificationRequestOutbox("worker-source", 7L, NotificationType.LIKE,
+            "private-payload", LocalDateTime.now());
+        ReflectionTestUtils.setField(outbox, "id", 31L);
+
+        client.send(NotificationFailureContext.fromWorker(NotificationFailureCode.OUTBOX_DELIVERY_FAILED,
+            outbox, null, new java.util.concurrent.TimeoutException("private-exception"), Instant.now(),
+            5, NotificationOutboxStatus.FAILED, true));
 
         server.verify();
     }

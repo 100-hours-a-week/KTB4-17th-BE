@@ -17,6 +17,7 @@ import com.team.dating_backend.notification.alert.NotificationFailureContext.Kaf
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import io.micrometer.core.instrument.MockClock;
 import io.micrometer.core.instrument.simple.SimpleConfig;
@@ -36,6 +37,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(OutputCaptureExtension.class)
 class NotificationFailureReporterTest {
@@ -282,6 +284,76 @@ class NotificationFailureReporterTest {
         assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
             .doesNotThrowAnyException();
         verify(dispatcher).dispatch(context);
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        {
+            "OUTBOX_RESTORE_FAILED,PENDING", "OUTBOX_RESTORE_FAILED,FAILED",
+            "OUTBOX_CREATION_FAILED,PENDING", "OUTBOX_CREATION_FAILED,FAILED",
+            "OUTBOX_DELIVERY_FAILED,PENDING", "OUTBOX_DELIVERY_FAILED,FAILED",
+            "OUTBOX_STATE_UPDATE_FAILED,PENDING", "OUTBOX_STATE_UPDATE_FAILED,FAILED"
+        }
+    )
+    void Worker_실패는_단계와_DB_상태로_관측하고_FAILED만_통보한다(
+        NotificationFailureCode code, NotificationOutboxStatus status, CapturedOutput output) {
+        var outbox = new NotificationRequestOutbox("worker-source", 7L, NotificationType.LIKE,
+            "private-payload", LocalDateTime.now());
+        ReflectionTestUtils.setField(outbox, "id", 31L);
+        var context = NotificationFailureContext.fromWorker(code, outbox, null,
+            new ExecutionException("private-message", new TimeoutException("private-cause")),
+            Instant.now(), 2, status, true);
+
+        reporter.report(context);
+
+        if (status == NotificationOutboxStatus.FAILED) {
+            verify(dispatcher).dispatch(context);
+        } else {
+            verifyNoInteractions(dispatcher);
+        }
+        assertThat(output.getAll()).contains("outboxId=31", "sourceEventId=worker-source", "recipientUserId=7",
+            "failureCount=2", "outboxStatus=" + status, "exceptionType=ExecutionException",
+            "causeType=TimeoutException")
+            .doesNotContain("private-payload", "private-message", "private-cause");
+        var counter = registry.get("notification.outbox.worker.failures")
+            .tags("error_code", code.name(), "failure_stage", context.failureStage().name(), "status", status.name())
+            .counter();
+        assertThat(counter.count()).isEqualTo(1);
+        assertThat(counter.getId().getTags()).extracting(io.micrometer.core.instrument.Tag::getKey)
+            .containsExactlyInAnyOrder("error_code", "failure_stage", "status");
+    }
+
+    @Test
+    void Worker_실패_저장_결과가_불명확하면_횟수와_상태를_추정하거나_통보하지_않는다(CapturedOutput output) {
+        var outbox = new NotificationRequestOutbox("worker-source", 7L, NotificationType.LIKE, "{}",
+            LocalDateTime.now());
+        var context = NotificationFailureContext.fromWorker(NotificationFailureCode.OUTBOX_STATE_UPDATE_FAILED,
+            outbox, null, new IllegalStateException(), Instant.now(), null, null, null);
+
+        reporter.report(context);
+
+        verifyNoInteractions(dispatcher);
+        assertThat(output.getAll()).contains("failureCount=null", "outboxStatus=null");
+        assertThat(registry.get("notification.outbox.worker.failures").tag("status", "UNKNOWN").counter().count())
+            .isEqualTo(1);
+    }
+
+    @Test
+    void Worker_지표_실패에도_최종_실패_통보를_시도한다() {
+        var outbox = new NotificationRequestOutbox("worker-source", 7L, NotificationType.LIKE, "{}",
+            LocalDateTime.now());
+        var context = NotificationFailureContext.fromWorker(NotificationFailureCode.OUTBOX_RESTORE_FAILED,
+            outbox, null, null, Instant.now(), 1, NotificationOutboxStatus.FAILED, false);
+        var failingRegistry = spy(registry);
+        doThrow(new IllegalStateException()).when(failingRegistry).counter("notification.outbox.worker.failures",
+            "error_code", "OUTBOX_RESTORE_FAILED", "failure_stage", "OUTBOX_RESTORE", "status", "FAILED");
+
+        assertThatCode(() -> new NotificationFailureReporter(dispatcher, failingRegistry).report(context))
+            .doesNotThrowAnyException();
+
+        verify(dispatcher).dispatch(context);
+        assertThat(registry.get("notification.reporting.failures").tag("operation", "OUTBOX_METRIC")
+            .counter().count()).isEqualTo(1);
     }
 
     @ParameterizedTest
