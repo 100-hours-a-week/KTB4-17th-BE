@@ -14,6 +14,8 @@ import com.team.dating_backend.notification.alert.NotificationAlertDispatcher;
 import com.team.dating_backend.notification.alert.NotificationFailureContext;
 import com.team.dating_backend.notification.alert.NotificationFailureReporter;
 import com.team.dating_backend.notification.config.NotificationAlertProperties;
+import com.team.dating_backend.notification.config.NotificationOutboxWorkerConfiguration;
+import com.team.dating_backend.notification.config.NotificationOutboxWorkerProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
@@ -48,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.admin.Admin;
@@ -146,6 +149,8 @@ class NotificationOutboxWorkerIntegrationTest {
     private NotificationDeliveryProducer producer;
     @MockitoSpyBean
     private NotificationPersistenceService persistence;
+    @Autowired
+    private NotificationFailureReporter reporter;
     @MockitoBean
     private DiscordWebhookClient webhook;
 
@@ -205,6 +210,53 @@ class NotificationOutboxWorkerIntegrationTest {
         assertThat(event.recipientUserId()).isEqualTo(userId);
         assertThat(event.notification().notificationId()).isEqualTo(notificationId());
         assertThat(event.notification().createdAt()).isEqualTo(CREATED_AT);
+    }
+
+    @Test
+    void Job은_실제_DB에서_점유한_요청을_저장하고_Kafka에_전달한_뒤_완료한다() throws Exception {
+        assertThat(claims.release(claimed.getId(), claimed.getProcessingToken())).isTrue();
+        var properties = new NotificationOutboxWorkerProperties();
+        properties.setEnabled(true);
+
+        new NotificationOutboxWorkerJob(claims, worker, properties, reporter).processDueRequests();
+
+        assertThat(row()).containsEntry("status", "COMPLETED").containsEntry("failure_count", 0)
+            .containsEntry("processing_token", null).containsEntry("processing_until", null);
+        assertThat(notificationCount()).isEqualTo(1);
+        assertThat(deliveries(1).getFirst().notification().notificationId()).isEqualTo(notificationId());
+    }
+
+    @Test
+    void 전용_스케줄러_종료는_Delivery_대기를_중단하고_실패_횟수_없이_DB_점유를_해제한다() throws Exception {
+        assertThat(claims.release(claimed.getId(), claimed.getProcessingToken())).isTrue();
+        var properties = new NotificationOutboxWorkerProperties();
+        properties.setEnabled(true);
+        properties.setShutdownWaitSeconds(2);
+        var job = new NotificationOutboxWorkerJob(claims, worker, properties, reporter);
+        var scheduler = new NotificationOutboxWorkerConfiguration().notificationOutboxWorkerScheduler(properties);
+        var started = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            started.countDown();
+            new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+            throw new IllegalStateException("TEST_WAIT_TIMEOUT");
+        }).when(producer).publishAndAwait(any());
+        scheduler.initialize();
+        try {
+            scheduler.scheduleWithFixedDelay(job::processDueRequests, Duration.ofMillis(25));
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+            scheduler.shutdown();
+
+            assertThat(scheduler.getScheduledThreadPoolExecutor().isTerminated()).isTrue();
+            assertThat(row()).containsEntry("status", "PENDING").containsEntry("failure_count", 0)
+                .containsEntry("processing_token", null).containsEntry("processing_until", null)
+                .containsEntry("completed_at", null);
+            assertThat(notificationCount()).isEqualTo(1);
+            verify(webhook, never()).send(any());
+            deliveries(0);
+        } finally {
+            scheduler.shutdown();
+        }
     }
 
     @ParameterizedTest
