@@ -10,7 +10,7 @@ import com.team.dating_backend.notification.exception.NotificationBusinessExcept
 import java.time.Instant;
 import java.time.LocalDateTime;
 
-public record 피NotificationFailureContext(
+public record NotificationFailureContext(
     NotificationFailureCode errorCode,
     String sourceEventId,
     Long recipientUserId,
