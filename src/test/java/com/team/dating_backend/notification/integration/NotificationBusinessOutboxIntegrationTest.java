@@ -107,7 +107,7 @@ class NotificationBusinessOutboxIntegrationTest {
         assertThat(likeRepository.findById(response.likeId()).orElseThrow().getStatus()).isEqualTo(LikeStatus.PENDING);
         assertThat(outboxRepository.findAll()).singleElement().satisfies(outbox -> {
             assertThat(outbox.getStatus()).isEqualTo(NotificationOutboxStatus.PENDING);
-            assertThat(outbox.getPublishedAt()).isNull();
+            assertThat(outbox.getCompletedAt()).isNull();
             var request = outboxService.restore(outbox);
             assertThat(request.sourceEventId()).isEqualTo("LIKE_SENT:" + response.likeId());
             assertThat(request.recipientUserId()).isEqualTo(receiverId);

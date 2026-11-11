@@ -2,8 +2,8 @@ package com.team.dating_backend.notification.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.notification.exception.NotificationBusinessException;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import org.junit.jupiter.api.Test;
@@ -18,7 +18,7 @@ import org.springframework.core.io.ClassPathResource;
 class NotificationOutboxWorkerPropertiesTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-        .withUserConfiguration(NotificationOutboxExecutionConfiguration.class)
+        .withUserConfiguration(PropertiesConfiguration.class)
         .withInitializer(context -> {
             var sources = context.getEnvironment().getPropertySources();
             sources.remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
@@ -44,26 +44,17 @@ class NotificationOutboxWorkerPropertiesTest {
     }
 
     @Test
-    void Worker_환경변수는_Relay_설정과_독립적으로_적용한다() {
+    void Worker_환경변수로_활성화와_실행_설정을_바인딩한다() {
         runner.withPropertyValues("APP_NOTIFICATION_OUTBOX_WORKER_ENABLED=true",
             "APP_NOTIFICATION_OUTBOX_WORKER_FIXED_DELAY_MS=25",
             "APP_NOTIFICATION_OUTBOX_WORKER_MAX_REQUESTS_PER_RUN=2",
-            "APP_NOTIFICATION_OUTBOX_WORKER_SHUTDOWN_WAIT_SECONDS=0",
-            "APP_NOTIFICATION_OUTBOX_RELAY_FIXED_DELAY_MS=3000",
-            "APP_NOTIFICATION_OUTBOX_RELAY_BATCH_SIZE=50",
-            "APP_NOTIFICATION_OUTBOX_RELAY_SHUTDOWN_WAIT_SECONDS=10")
-            .run(context -> {
+            "APP_NOTIFICATION_OUTBOX_WORKER_SHUTDOWN_WAIT_SECONDS=0").run(context -> {
                 assertThat(context).hasNotFailed();
-                var worker = context.getBean(NotificationOutboxWorkerProperties.class);
-                assertThat(worker.isEnabled()).isTrue();
-                assertThat(worker.getFixedDelayMs()).isEqualTo(25L);
-                assertThat(worker.getMaxRequestsPerRun()).isEqualTo(2);
-                assertThat(worker.getShutdownWaitSeconds()).isZero();
-                var relay = context.getBean(NotificationOutboxRelayProperties.class);
-                assertThat(relay.isEnabled()).isFalse();
-                assertThat(relay.getFixedDelayMs()).isEqualTo(3000L);
-                assertThat(relay.getBatchSize()).isEqualTo(50);
-                assertThat(relay.getShutdownWaitSeconds()).isEqualTo(10);
+                var properties = context.getBean(NotificationOutboxWorkerProperties.class);
+                assertThat(properties.isEnabled()).isTrue();
+                assertThat(properties.getFixedDelayMs()).isEqualTo(25L);
+                assertThat(properties.getMaxRequestsPerRun()).isEqualTo(2);
+                assertThat(properties.getShutdownWaitSeconds()).isZero();
             });
     }
 
@@ -85,14 +76,7 @@ class NotificationOutboxWorkerPropertiesTest {
         });
     }
 
-    @Test
-    void 환경변수로_Relay와_Worker를_모두_켜면_시작을_거부한다() {
-        runner.withPropertyValues("APP_NOTIFICATION_OUTBOX_RELAY_ENABLED=true",
-            "APP_NOTIFICATION_OUTBOX_WORKER_ENABLED=true").run(context -> {
-                assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure()).rootCause()
-                    .isInstanceOfSatisfying(NotificationBusinessException.class,
-                        failure -> assertThat(failure.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
-            });
-    }
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(NotificationOutboxWorkerProperties.class)
+    static class PropertiesConfiguration {}
 }

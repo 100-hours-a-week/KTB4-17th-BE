@@ -28,7 +28,6 @@ import com.team.dating_backend.notification.service.NotificationCreationProcesso
 import com.team.dating_backend.notification.service.NotificationOutboxClaimService;
 import com.team.dating_backend.notification.service.NotificationOutboxFailureService;
 import com.team.dating_backend.notification.service.NotificationRequestOutboxService;
-import com.team.dating_backend.notification.kafka.NotificationCreationFailureClassifier;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -54,7 +53,7 @@ class NotificationOutboxWorkerTest {
     private final NotificationOutboxFailureService failures = mock(NotificationOutboxFailureService.class);
     private final NotificationFailureReporter reporter = mock(NotificationFailureReporter.class);
     private final NotificationOutboxWorker worker = new NotificationOutboxWorker(outboxes, processor, claims, failures,
-        new NotificationOutboxWorkerFailureClassifier(new NotificationCreationFailureClassifier()), reporter);
+        new NotificationOutboxWorkerFailureClassifier(), reporter);
     private final String token = UUID.randomUUID().toString();
     private final NotificationCreateRequested request = new NotificationCreateRequested("event:worker", 7L,
         NotificationType.LIKE, "제목", "본문", null, null, Instant.now());

@@ -333,7 +333,6 @@ class NotificationMultiProcessWorkerRecoveryIntegrationTest extends Notification
         var completed = await().atMost(Duration.ofSeconds(45)).until(() -> outbox(request),
             row -> row.status().equals("COMPLETED"));
         assertThat(completed.completedAt()).isNotNull();
-        assertThat(completed.publishedAt()).isNull();
         assertThat(completed.processingToken()).isNull();
         assertThat(completed.processingUntil()).isNull();
         return completed;

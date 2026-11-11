@@ -129,7 +129,7 @@ class NotificationOutboxProcessingMappingIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED"})
+    @EnumSource(value = NotificationOutboxStatus.class, names = {"COMPLETED", "FAILED"})
     void 결과_기록과_담당_정보_정리를_하나의_갱신으로_수행할_수_있다(NotificationOutboxStatus status) {
         Long id = save();
         jdbc.update("""
@@ -139,9 +139,9 @@ class NotificationOutboxProcessingMappingIntegrationTest {
         jdbc.update("""
             UPDATE notification_request_outbox
             SET status = ?, processing_token = NULL, processing_until = NULL,
-                failure_count = ?, published_at = ? WHERE id = ?
+                failure_count = ?, completed_at = ? WHERE id = ?
             """, status.name(), status == NotificationOutboxStatus.FAILED ? 5 : 0,
-            status == NotificationOutboxStatus.PUBLISHED ? UNTIL : null, id);
+            status == NotificationOutboxStatus.COMPLETED ? UNTIL : null, id);
         entityManager.clear();
 
         var stored = entityManager.find(NotificationRequestOutbox.class, id);
@@ -198,17 +198,16 @@ class NotificationOutboxProcessingMappingIntegrationTest {
             var source = new DriverManagerDataSource(url, "root", MYSQL.getPassword());
             var legacy = new JdbcTemplate(source);
             Flyway.configure().dataSource(source).target("29").load().migrate();
-            for (var status : List.of(NotificationOutboxStatus.PENDING, NotificationOutboxStatus.PUBLISHED,
-                NotificationOutboxStatus.FAILED)) {
+            for (String status : List.of("PENDING", "PUBLISHED", "FAILED")) {
                 legacy.update("""
                     INSERT INTO notification_request_outbox
                         (source_event_id, recipient_user_id, type, payload, status, failure_count,
                          last_failure_type, next_attempt_at, created_at, published_at)
                     VALUES (?, 7, 'LIKE', ?, ?, ?, 'PUBLISH_RESULT_TIMEOUT', ?, ?, ?)
-                    """, "legacy-" + status.name(), PAYLOAD, status.name(),
-                    status == NotificationOutboxStatus.FAILED ? 5 : 1,
+                    """, "legacy-" + status, PAYLOAD, status,
+                    status.equals("FAILED") ? 5 : 1,
                     CREATED_AT.plusSeconds(2), CREATED_AT,
-                    status == NotificationOutboxStatus.PUBLISHED ? CREATED_AT.plusSeconds(1) : null);
+                    status.equals("PUBLISHED") ? CREATED_AT.plusSeconds(1) : null);
             }
             var before = legacy.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
             Flyway upgrade = Flyway.configure().dataSource(source).target("30").load();
@@ -246,7 +245,7 @@ class NotificationOutboxProcessingMappingIntegrationTest {
             Arguments.of("", UNTIL, NotificationOutboxStatus.PENDING),
             Arguments.of(" ".repeat(36), UNTIL, NotificationOutboxStatus.PENDING),
             Arguments.of("short", UNTIL, NotificationOutboxStatus.PENDING),
-            Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.PUBLISHED),
+            Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.COMPLETED),
             Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.FAILED),
             Arguments.of(TOKEN, UNTIL, NotificationOutboxStatus.COMPLETED));
     }

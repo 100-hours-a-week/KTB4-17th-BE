@@ -9,7 +9,6 @@ import com.team.dating_backend.notification.support.NotificationMultiProcessTest
 import com.team.dating_backend.notification.support.NotificationSseProbe;
 import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
 import com.team.dating_backend.notification.enums.NotificationType;
-import com.team.dating_backend.notification.support.NotificationKafkaProbe.Position;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -66,7 +65,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         var expected = new ArrayList<Expected>();
         expected.add(likeNotification(first, activeUser(), recipient));
         checkpoint("beforeStop", expected, onFirst, onSecond);
-        var original = kafka.snapshot(environment.creationTopic()).records().stream()
+        var original = kafka.snapshot(environment.deliveryTopic()).records().stream()
             .filter(record -> JSON.readTree(record.value()).path("sourceEventId").asText()
                 .equals(expected.getFirst().sourceEventId()))
             .findFirst().orElseThrow();
@@ -76,7 +75,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
                 && partition.partition() == original.position().partition())
             .findFirst().orElseThrow();
         assertThat(inputPartition.leaderNodeId()).isNotNull();
-        assertThat(before.partitions()).hasSize(8)
+        assertThat(before.partitions()).hasSize(4)
             .allSatisfy(partition -> assertThat(partition.inSyncReplicas()).containsExactly(1, 2, 3));
         int nodeId = inputPartition.leaderNodeId();
         evidence.put("target", Map.of("input", original, "partition", inputPartition,
@@ -87,7 +86,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
             awaitTwoReplicas(nodeId, before.clusterId());
             expected.add(likeNotification(first, activeUser(), recipient));
             checkpoint("whileStopped", expected, onFirst, onSecond);
-            var duringInput = kafka.snapshot(environment.creationTopic()).records().stream()
+            var duringInput = kafka.snapshot(environment.deliveryTopic()).records().stream()
                 .filter(record -> JSON.readTree(record.value()).path("sourceEventId").asText()
                     .equals(expected.getLast().sourceEventId()))
                 .findFirst().orElseThrow();
@@ -108,21 +107,25 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         }
         expected.add(likeNotification(first, activeUser(), recipient));
         checkpoint("afterRestore", expected, onFirst, onSecond);
-        assertThat(kafka.snapshot(environment.creationTopic()).records()).contains(original);
+        assertThat(kafka.snapshot(environment.deliveryTopic()).records()).contains(original);
         assertThat(kafka.topology().clusterId()).isEqualTo(before.clusterId());
         evidence.put("completed", true);
     }
 
     @Test
-    void 한_Broker_중단_중_쌓인_20개_입력을_보존하고_잠금_해제_후_모두_전달한다() throws Exception {
+    void 한_Broker_중단_중_쌓인_20개_Outbox를_보존하고_잠금_해제_후_모두_전달한다() throws Exception {
         long recipient = activeUser();
         var onFirst = subscribe(first, recipient);
         var onSecond = subscribe(second, recipient);
         var expected = new ArrayList<Expected>();
         var warmup = notice(recipient);
-        Position warmupInput = kafka.publish(warmup);
+        append(warmup);
         expected.add(new Expected(warmup.sourceEventId(), recipient, "NOTICE"));
         checkpoint("beforeBacklog", expected, onFirst, onSecond);
+        var warmupInput = kafka.snapshot(environment.deliveryTopic()).records().stream()
+            .filter(
+                record -> JSON.readTree(record.value()).path("sourceEventId").asText().equals(warmup.sourceEventId()))
+            .findFirst().orElseThrow().position();
         var before = kafka.topology();
         int nodeId = before.partitions().stream()
             .filter(partition -> partition.topic().equals(warmupInput.topic())
@@ -134,7 +137,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
             awaitTwoReplicas(nodeId, before.clusterId());
             evidence.put("resourcesBefore", resourceSample());
             var requests = new ArrayList<NotificationCreateRequested>();
-            var inputs = new ArrayList<Position>();
+            var inputs = new ArrayList<Long>();
             var sentAt = new HashMap<String, Long>();
             long inputStartedAt = System.nanoTime();
             long releaseRequestedAt;
@@ -144,17 +147,18 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
                     requests.add(request);
                     expected.add(new Expected(request.sourceEventId(), recipient, "NOTICE"));
                     sentAt.put(request.sourceEventId(), System.nanoTime());
-                    var input = kafka.publish(request);
-                    assertThat(input.topicPartition()).isEqualTo(warmupInput.topicPartition());
-                    inputs.add(input);
+                    append(request);
+                    inputs
+                        .add(jdbc.queryForObject("SELECT id FROM notification_request_outbox WHERE source_event_id = ?",
+                            Long.class, request.sourceEventId()));
                 }
-                var waits = lock.awaitWaitingTransactions(1);
-                var progress = kafka.progress(environment.creationGroup(), environment.creationTopic());
-                var blocked = progress.partitions().stream()
-                    .filter(partition -> partition.partition() == warmupInput.partition()).findFirst().orElseThrow();
-                assertThat(blocked.committedOffset()).isEqualTo(warmupInput.offset() + 1);
-                assertThat(blocked.endOffset()).isEqualTo(warmupInput.offset() + 21);
-                assertThat(blocked.lag()).isEqualTo(20);
+                var waits = lock.awaitWaitingTransactions(2);
+                var progress = jdbc.queryForList("""
+                    SELECT id, status, processing_token, processing_until FROM notification_request_outbox
+                    WHERE recipient_user_id = ? AND status = 'PENDING' ORDER BY id
+                    """, recipient);
+                assertThat(progress).hasSize(20);
+                assertThat(progress).filteredOn(row -> row.get("processing_token") != null).hasSize(2);
                 assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE user_id = ?", Long.class,
                     recipient)).isEqualTo(1);
                 assertThat(onFirst.notifications()).hasSize(1);
@@ -207,6 +211,14 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         evidence.put("completed", true);
     }
 
+    private void append(NotificationCreateRequested request) {
+        jdbc.update("""
+            INSERT INTO notification_request_outbox (source_event_id, recipient_user_id, type, payload)
+            VALUES (?, ?, ?, ?)
+            """, request.sourceEventId(), request.recipientUserId(), request.type().name(),
+            JSON.writeValueAsString(request));
+    }
+
     private NotificationCreateRequested notice(long recipient) {
         return new NotificationCreateRequested("PR27_BACKLOG:" + UUID.randomUUID(), recipient,
             NotificationType.NOTICE, "복구 확인", "처리 대기 알림", null, null, Instant.now().truncatedTo(ChronoUnit.MICROS));
@@ -216,7 +228,7 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         await().atMost(Duration.ofSeconds(45)).untilAsserted(() -> {
             var down = kafka.topologyWithConsumerOffsets();
             assertThat(down.clusterId()).isEqualTo(clusterId);
-            assertThat(down.partitions()).hasSize(11).allSatisfy(partition -> {
+            assertThat(down.partitions()).hasSize(7).allSatisfy(partition -> {
                 assertThat(partition.leaderNodeId()).isNotNull().isNotEqualTo(nodeId);
                 assertThat(partition.replicas()).containsExactly(1, 2, 3);
                 assertThat(partition.inSyncReplicas()).hasSize(2).doesNotContain(nodeId);
@@ -261,10 +273,10 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         var ids = stored.stream().map(notification -> notification.notificationId()).toList();
         assertThat(jdbc.queryForList("SELECT id FROM notifications WHERE user_id = ?", Long.class,
             expected.getFirst().recipientUserId())).containsExactlyInAnyOrderElementsOf(ids);
-        await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+        await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
             for (var connection : connections) {
                 connection.assertHealthy();
-                assertThat(connection.notifications()).containsAll(stored).isSubsetOf(stored);
+                assertThat(connection.notifications()).containsExactlyInAnyOrderElementsOf(stored);
             }
         });
         var streams = new ArrayList<Map<String, Object>>();
@@ -279,14 +291,14 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
         state.put("connections", streams);
         state.put("topology", kafka.topologyWithConsumerOffsets());
         evidence.put(phase, state);
+        environment.awaitProcessed();
         await().atMost(Duration.ofSeconds(60)).ignoreExceptions().untilAsserted(() -> {
             var groups = new ArrayList<NotificationKafkaProbe.GroupProgress>();
-            groups.add(kafka.progress(environment.creationGroup(), environment.creationTopic()));
             for (String group : environment.deliveryGroups()) {
                 groups.add(kafka.progress(group, environment.deliveryTopic()));
             }
             state.put("groups", List.copyOf(groups));
-            assertThat(groups).hasSize(3).allSatisfy(group -> {
+            assertThat(groups).hasSize(2).allSatisfy(group -> {
                 assertThat(group.partitions()).hasSize(2).allSatisfy(partition -> {
                     if (partition.endOffset() > 0) {
                         assertThat(partition.committedOffset()).isNotNull().isEqualTo(partition.endOffset());
@@ -295,7 +307,6 @@ class NotificationMultiProcessBrokerIntegrationTest extends NotificationMultiPro
                 });
             });
         });
-        assertThat(kafka.snapshot(environment.retryTopic()).records()).isEmpty();
-        assertThat(kafka.snapshot(environment.dltTopic()).records()).isEmpty();
+
     }
 }

@@ -89,7 +89,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     }
 
     public NotificationIntegrationEnvironment(Mode mode) {
-        this(mode, Map.of());
+        this(mode, workerSettings(mode));
     }
 
     public NotificationIntegrationEnvironment(Mode mode, Map<String, String> settingsOverrides) {
@@ -105,17 +105,17 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     }
 
     public static NotificationIntegrationEnvironment worker(Mode mode) {
-        var settings = new HashMap<>(Map.of("OUTBOX_RELAY_ENABLED", "false", "OUTBOX_WORKER_ENABLED", "true",
+        return new NotificationIntegrationEnvironment(mode);
+    }
+
+    private static Map<String, String> workerSettings(Mode mode) {
+        var settings = new HashMap<>(Map.of("OUTBOX_WORKER_ENABLED", "true",
             "OUTBOX_CLAIM_DURATION_MS", "30000", "AI_KAFKA_ENABLED", Boolean.toString(mode == Mode.NORMAL)));
         if (mode == Mode.RECOVERY) {
             settings.putAll(Map.of("DELIVERY_RESULT_TIMEOUT_MS", "90000",
                 "PRODUCER_MAX_BLOCK_MS", "60000", "PRODUCER_DELIVERY_TIMEOUT_MS", "60000"));
         }
-        return new NotificationIntegrationEnvironment(mode, settings);
-    }
-
-    private boolean usesWorker() {
-        return Boolean.parseBoolean(settingsOverrides.get("OUTBOX_WORKER_ENABLED"));
+        return settings;
     }
 
     public void start() throws Exception {
@@ -163,16 +163,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         resource(() -> admin.close(Duration.ofSeconds(5)));
         assertThat(admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)).hasSize(3);
         var topicNames = new ArrayList<>(
-            List.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic()));
+            List.of(deliveryTopic(), chatMessageTopic()));
         if (usesAiKafka()) {
             topicNames.addAll(aiTopics());
         }
         var topics = topicNames.stream()
             .map(name -> (mode == Mode.BROKER
                 ? new NewTopic(name, Map.of(0, List.of(1, 2, 3), 1, List.of(3, 2, 1)))
-                : new NewTopic(name, 2, (short) 3)).configs(name.equals(dltTopic())
-                    ? Map.of("min.insync.replicas", "2", "retention.ms", "1209600000", "retention.bytes", "-1")
-                    : Map.of("min.insync.replicas", "2")))
+                : new NewTopic(name, 2, (short) 3)).configs(Map.of("min.insync.replicas", "2")))
             .toList();
         admin.createTopics(topics).all().get(20, TimeUnit.SECONDS);
         var configurations = admin.describeConfigs(topics.stream()
@@ -180,8 +178,6 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             .all().get(10, TimeUnit.SECONDS);
         assertThat(configurations.values())
             .allSatisfy(config -> assertThat(config.get("min.insync.replicas").value()).isEqualTo("2"));
-        var dltConfiguration = configurations.get(new ConfigResource(ConfigResource.Type.TOPIC, dltTopic()));
-        assertThat(dltConfiguration.get("retention.ms").value()).isEqualTo("1209600000");
         await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> {
             var descriptions = admin.describeTopics(topics.stream().map(NewTopic::name).toList())
                 .allTopicNames().get(10, TimeUnit.SECONDS);
@@ -202,7 +198,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         var settings = new HashMap<>(Map.of(
             "DB_URL", mysql.getJdbcUrl(), "DB_USERNAME", mysql.getUsername(), "DB_PASSWORD", mysql.getPassword(),
             "BOOTSTRAP_SERVERS", bootstrap, "JWT_SECRET", jwtSecret, "AI_URL", aiUrl,
-            "CREATION_TOPIC", creationTopic(), "DELIVERY_TOPIC", deliveryTopic(), "CREATION_GROUP", creationGroup()));
+            "DELIVERY_TOPIC", deliveryTopic()));
         settings.put("CHAT_MESSAGE_TOPIC", chatMessageTopic());
         settings.put("CHAT_MESSAGE_GROUP", chatMessageGroup());
         settings.put("AI_REQUESTED_TOPIC", runId + "-ai-requested");
@@ -221,7 +217,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         settings.put("MANAGEMENT_ENDPOINTS", mode == Mode.LIFECYCLE ? "health,prometheus" : "health");
         settings.put("PROCESS", "a");
         settings.put("DELIVERY_PREFIX", runId + "-sse-a");
-        settings.put("CREATION_ENABLED", Boolean.toString(!usesWorker() && mode != Mode.LIFECYCLE));
+
         settings.put("PRODUCER_BOOTSTRAP_SERVERS", kafkaFaultProxy == null
             ? bootstrap
             : kafkaFaultProxy.bootstrapServers(Channel.PRODUCER));
@@ -234,10 +230,8 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         second = resource(new NotificationBackendProcess("b", directory));
         settings.put("PROCESS", "b");
         settings.put("DELIVERY_PREFIX", runId + "-sse-b");
-        settings.put("CREATION_ENABLED", Boolean.toString(!usesWorker() && mode != Mode.RECOVERY));
-        if (usesWorker()) {
-            settings.put("OUTBOX_WORKER_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
-        }
+
+        settings.put("OUTBOX_WORKER_ENABLED", Boolean.toString(mode != Mode.RECOVERY));
         settings.put("PRODUCER_BOOTSTRAP_SERVERS", secondProducerUsesProxy && kafkaFaultProxy != null
             ? kafkaFaultProxy.bootstrapServers(Channel.PRODUCER)
             : bootstrap);
@@ -250,7 +244,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         assertGroupsReady();
         report("environment", Map.of("runId", runId, "mode", mode.name(), "clusterId", clusterId,
             "brokers", bootstrap, "replicationFactor", 3, "minInSyncReplicas", 2,
-            "creationGroup", creationGroup(), "deliveryGroups", deliveryGroups(),
+            "deliveryGroups", deliveryGroups(),
             "backends", List.of(processDescription(first), processDescription(second))));
         if (kafkaFaultProxy != null) {
             report("kafka-routes", kafkaFaultProxy.description());
@@ -301,31 +295,6 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     public void assertGroupsReady() {
         await().atMost(Duration.ofSeconds(45)).failFast(() -> !first.isAlive() || !second.isAlive())
             .ignoreExceptions().untilAsserted(() -> {
-                if (usesWorker()) {
-                    assertThat(admin.listGroups().all().get(10, TimeUnit.SECONDS))
-                        .noneMatch(group -> group.groupId().equals(creationGroup()));
-                } else {
-                    var creation = admin.describeConsumerGroups(List.of(creationGroup())).all()
-                        .get(10, TimeUnit.SECONDS)
-                        .get(creationGroup());
-                    int members = mode == Mode.NORMAL || mode == Mode.BROKER ? 2 : 1;
-                    assertThat(creation.members()).hasSize(members)
-                        .allSatisfy(member -> assertThat(member.assignment().topicPartitions()).hasSize(2 / members));
-                    var creators = switch (mode) {
-                        case NORMAL, BROKER -> List.of(first, second);
-                        case RECOVERY -> List.of(first);
-                        case LIFECYCLE -> List.of(second);
-                    };
-                    for (var backend : creators) {
-                        String prefix = backend.deliveryGroupPrefix();
-                        assertThat(creation.members()).filteredOn(member -> member.clientId().equals(prefix)
-                            || member.clientId().startsWith(prefix + "-")).hasSize(1);
-                    }
-                    assertThat(
-                        creation.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()))
-                        .containsExactlyInAnyOrder(new TopicPartition(creationTopic(), 0),
-                            new TopicPartition(creationTopic(), 1));
-                }
                 var chatMessage = admin.describeConsumerGroups(List.of(chatMessageGroup())).all()
                     .get(10, TimeUnit.SECONDS).get(chatMessageGroup());
                 assertThat(chatMessage.members()).hasSize(2);
@@ -360,20 +329,14 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
 
     public void awaitProcessed() {
         await().atMost(Duration.ofSeconds(30)).ignoreExceptions().untilAsserted(() -> {
-            if (usesWorker()) {
-                assertThat(jdbc.queryForObject("""
-                    SELECT COUNT(*) FROM notification_request_outbox WHERE status <> 'COMPLETED'
-                    """, Long.class)).isZero();
-                assertThat(endOffsets(creationTopic()).values()).containsOnly(0L);
-            } else {
-                assertCommitted(creationGroup(), creationTopic());
-            }
+            assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM notification_request_outbox WHERE status <> 'COMPLETED'
+                """, Long.class)).isZero();
             assertCommitted(chatMessageGroup(), chatMessageTopic());
             for (String group : deliveryGroups()) {
                 assertCommitted(group, deliveryTopic());
             }
-            assertThat(endOffsets(retryTopic()).values()).containsOnly(0L);
-            assertThat(endOffsets(dltTopic()).values()).containsOnly(0L);
+
             if (usesAiKafka()) {
                 for (var entry : aiGroups().entrySet()) {
                     assertCommitted(entry.getKey(), entry.getValue());
@@ -481,8 +444,8 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
     public NotificationKafkaProbe kafkaProbe() {
         assertThat(admin).isNotNull();
         if (kafkaProbe == null) {
-            kafkaProbe = resource(new NotificationKafkaProbe(admin, bootstrap, creationTopic(),
-                Set.of(creationTopic(), retryTopic(), dltTopic(), deliveryTopic(), chatMessageTopic())));
+            kafkaProbe = resource(new NotificationKafkaProbe(admin, bootstrap,
+                Set.of(deliveryTopic(), chatMessageTopic())));
         }
         return kafkaProbe;
     }
@@ -550,7 +513,7 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
             assertThat(topology.clusterId()).isEqualTo(clusterId);
             assertThat(topology.brokerIds()).containsExactly(1, 2, 3);
             assertThat(topology.endpoints()).containsEntry(nodeId, expected.clientEndpoint());
-            assertThat(topology.partitions()).hasSize(11).allSatisfy(partition -> {
+            assertThat(topology.partitions()).hasSize(7).allSatisfy(partition -> {
                 assertThat(partition.leaderNodeId()).isNotNull();
                 assertThat(partition.replicas()).containsExactly(1, 2, 3);
                 assertThat(partition.inSyncReplicas()).containsExactly(1, 2, 3);
@@ -608,28 +571,12 @@ public final class NotificationIntegrationEnvironment implements AutoCloseable {
         return Map.copyOf(groups);
     }
 
-    public String creationTopic() {
-        return runId + "-create";
-    }
-
-    public String retryTopic() {
-        return creationTopic() + "-retry";
-    }
-
-    public String dltTopic() {
-        return creationTopic() + "-dlt";
-    }
-
     public String deliveryTopic() {
         return runId + "-delivery";
     }
 
     public String chatMessageTopic() {
         return runId + "-chat-message";
-    }
-
-    public String creationGroup() {
-        return runId + "-creation";
     }
 
     public String chatMessageGroup() {

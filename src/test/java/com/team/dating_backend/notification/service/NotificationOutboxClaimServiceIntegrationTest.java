@@ -58,7 +58,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Testcontainers
 class NotificationOutboxClaimServiceIntegrationTest {
 
-    private static final NotificationFailureCode FAILURE = NotificationFailureCode.PUBLISH_RESULT_TIMEOUT;
+    private static final NotificationFailureCode FAILURE = NotificationFailureCode.OUTBOX_DELIVERY_FAILED;
 
     @Container
     @ServiceConnection
@@ -102,7 +102,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 담당_확보는_DB_시각에_설정_기간을_더하고_원본과_이력을_보존한다() {
         jdbc.update("""
             UPDATE notification_request_outbox
-            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            SET failure_count = 2, last_failure_type = 'OUTBOX_DELIVERY_FAILED' WHERE id = ?
             """, id);
         var before = withoutProcessing(row());
         properties.setDurationMs(90_123L);
@@ -159,7 +159,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED", "COMPLETED"})
+    @EnumSource(value = NotificationOutboxStatus.class, names = {"FAILED", "COMPLETED"})
     void 종료된_요청은_확보하거나_결과와_담당을_변경하지_않는다(NotificationOutboxStatus status) {
         jdbc.update("UPDATE notification_request_outbox SET status = ? WHERE id = ?", status.name(), id);
         var before = row();
@@ -167,9 +167,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
 
         assertThat(service.tryClaim(id)).isEmpty();
         assertThat(service.tryClaimNext()).isEmpty();
-        assertThat(service.markPublished(id, token)).isFalse();
         assertThat(service.markCompleted(id, token)).isFalse();
-        assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
+        assertThat(failures.recordWorkerFailure(id, token, FAILURE, true)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
         assertThat(row()).isEqualTo(before);
     }
@@ -200,26 +199,26 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 현재_담당만_성공을_기록하고_담당_정보를_함께_정리한다() {
         jdbc.update("""
             UPDATE notification_request_outbox
-            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            SET failure_count = 2, last_failure_type = 'OUTBOX_DELIVERY_FAILED' WHERE id = ?
             """, id);
         String token = claim().getProcessingToken();
         var before = new LinkedHashMap<>(row());
         var started = dbNow();
 
-        assertThat(service.markPublished(id, token)).isTrue();
+        assertThat(service.markCompleted(id, token)).isTrue();
 
         var stored = repository.findById(id).orElseThrow();
-        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
-        assertThat(stored.getPublishedAt()).isBetween(started, dbNow());
+        assertThat(stored.getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
+        assertThat(stored.getCompletedAt()).isBetween(started, dbNow());
         assertThat(stored.getProcessingToken()).isNull();
         assertThat(stored.getProcessingUntil()).isNull();
-        for (String field : List.of("status", "published_at", "processing_token", "processing_until")) {
+        for (String field : List.of("status", "completed_at", "processing_token", "processing_until")) {
             before.remove(field);
         }
         assertThat(row()).containsAllEntriesOf(before);
         var published = row();
-        assertThat(service.markPublished(id, token)).isFalse();
-        assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
+        assertThat(service.markCompleted(id, token)).isFalse();
+        assertThat(failures.recordWorkerFailure(id, token, FAILURE, true)).isEmpty();
         assertThat(row()).isEqualTo(published);
     }
 
@@ -230,12 +229,11 @@ class NotificationOutboxClaimServiceIntegrationTest {
         String current = claim().getProcessingToken();
         var before = row();
 
-        assertThat(service.markPublished(id, old)).isFalse();
         assertThat(service.markCompleted(id, old)).isFalse();
-        assertThat(failures.recordFailure(id, old, FAILURE)).isEmpty();
+        assertThat(failures.recordWorkerFailure(id, old, FAILURE, true)).isEmpty();
         assertThat(service.release(id, old)).isFalse();
         assertThat(row()).isEqualTo(before);
-        assertThat(service.markPublished(id, current)).isTrue();
+        assertThat(service.markCompleted(id, current)).isTrue();
     }
 
     @Test
@@ -244,9 +242,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
         expire();
         var before = row();
 
-        assertThat(service.markPublished(id, token)).isFalse();
         assertThat(service.markCompleted(id, token)).isFalse();
-        assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
+        assertThat(failures.recordWorkerFailure(id, token, FAILURE, true)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
         assertThat(row()).isEqualTo(before);
     }
@@ -260,9 +257,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
             """, token, id);
         var before = row();
         for (String other : List.of(UUID.randomUUID().toString(), token.toUpperCase(java.util.Locale.ROOT))) {
-            assertThat(service.markPublished(id, other)).isFalse();
             assertThat(service.markCompleted(id, other)).isFalse();
-            assertThat(failures.recordFailure(id, other, FAILURE)).isEmpty();
+            assertThat(failures.recordWorkerFailure(id, other, FAILURE, true)).isEmpty();
             assertThat(service.release(id, other)).isFalse();
         }
         assertThat(row()).isEqualTo(before);
@@ -270,9 +266,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(
-        value = NotificationFailureCode.class, names = {"OUTBOX_RESTORE_FAILED",
-            "OUTBOX_PUBLISH_REQUIRES_ATTENTION", "PUBLISH_CALL_FAILED", "PUBLISH_RESULT_FAILED",
-            "PUBLISH_RESULT_TIMEOUT"}
+        value = NotificationFailureCode.class, names = {"OUTBOX_RESTORE_FAILED", "OUTBOX_DELIVERY_FAILED"}
     )
     void 실패는_기존_한도와_지수_대기시간을_유지하고_담당을_정리한다(NotificationFailureCode code) {
         var original = withoutProcessing(row());
@@ -281,12 +275,12 @@ class NotificationOutboxClaimServiceIntegrationTest {
             String token = claim().getProcessingToken();
             var started = dbNow();
 
-            var result = failures.recordFailure(id, token, code).orElseThrow();
+            var result = failures.recordWorkerFailure(id, token, code, true).orElseThrow();
 
             var ended = dbNow();
             var stored = repository.findById(id).orElseThrow();
             assertThat(result.failureCount()).isEqualTo(count);
-            assertThat(result.exhausted()).isEqualTo(count == 5);
+            assertThat(result.status() == NotificationOutboxStatus.FAILED).isEqualTo(count == 5);
             assertThat(stored.getFailureCount()).isEqualTo(count);
             assertThat(stored.getLastFailureType()).isEqualTo(code.name());
             assertThat(stored.getStatus()).isEqualTo(count == 5
@@ -297,7 +291,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
             assertThat(stored.getProcessingToken()).isNull();
             assertThat(stored.getProcessingUntil()).isNull();
             var recorded = row();
-            assertThat(failures.recordFailure(id, token, code)).isEmpty();
+            assertThat(failures.recordWorkerFailure(id, token, code, true)).isEmpty();
             assertThat(row()).isEqualTo(recorded);
             if (count < 5) {
                 assertThat(service.tryClaim(id)).isEmpty();
@@ -314,8 +308,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 같은_담당의_실패를_동시에_기록해도_횟수는_한_번만_증가한다() throws Exception {
         String token = claim().getProcessingToken();
 
-        var results = concurrently(() -> failures.recordFailure(id, token, FAILURE),
-            () -> failures.recordFailure(id, token, FAILURE));
+        var results = concurrently(() -> failures.recordWorkerFailure(id, token, FAILURE, true),
+            () -> failures.recordWorkerFailure(id, token, FAILURE, true));
 
         assertThat(results.stream().flatMap(Optional::stream).toList()).hasSize(1);
         assertThat(repository.findById(id).orElseThrow().getFailureCount()).isEqualTo(1);
@@ -325,13 +319,13 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 성공과_실패를_동시에_기록하면_하나의_결과만_반영한다() throws Exception {
         String token = claim().getProcessingToken();
 
-        var results = concurrently(() -> service.markPublished(id, token),
-            () -> failures.recordFailure(id, token, FAILURE).isPresent());
+        var results = concurrently(() -> service.markCompleted(id, token),
+            () -> failures.recordWorkerFailure(id, token, FAILURE, true).isPresent());
 
         assertThat(results).containsExactlyInAnyOrder(true, false);
         var stored = repository.findById(id).orElseThrow();
         assertThat(stored.getFailureCount())
-            .isEqualTo(stored.getStatus() == NotificationOutboxStatus.PUBLISHED ? 0 : 1);
+            .isEqualTo(stored.getStatus() == NotificationOutboxStatus.COMPLETED ? 0 : 1);
         assertThat(stored.getProcessingToken()).isNull();
         assertThat(stored.getProcessingUntil()).isNull();
     }
@@ -372,7 +366,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         });
         assertThat(repository.findById(id).orElseThrow().getProcessingToken()).isEqualTo(token);
         transaction.executeWithoutResult(tx -> {
-            assertThat(failures.recordFailure(id, token, FAILURE)).isPresent();
+            assertThat(failures.recordWorkerFailure(id, token, FAILURE, true)).isPresent();
             tx.setRollbackOnly();
         });
         assertThat(repository.findById(id).orElseThrow().getFailureCount()).isEqualTo(1);
@@ -385,10 +379,10 @@ class NotificationOutboxClaimServiceIntegrationTest {
         assertThat(repository.findById(id).orElseThrow().getProcessingToken()).isNull();
         String third = claim().getProcessingToken();
         transaction.executeWithoutResult(tx -> {
-            assertThat(service.markPublished(id, third)).isTrue();
+            assertThat(service.markCompleted(id, third)).isTrue();
             tx.setRollbackOnly();
         });
-        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.PUBLISHED);
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(NotificationOutboxStatus.COMPLETED);
     }
 
     @ParameterizedTest
@@ -398,9 +392,9 @@ class NotificationOutboxClaimServiceIntegrationTest {
         String token = claim().getProcessingToken();
         try (var holder = lockRow(); var executor = Executors.newSingleThreadExecutor()) {
             var result = executor.submit(() -> switch (operation) {
-                case "success" -> service.markPublished(id, token);
+                case "success" -> service.markCompleted(id, token);
                 case "complete" -> service.markCompleted(id, token);
-                case "failure" -> failures.recordFailure(id, token, FAILURE).isPresent();
+                case "failure" -> failures.recordWorkerFailure(id, token, FAILURE, true).isPresent();
                 case "workerRetry" -> failures.recordWorkerFailure(id, token, FAILURE, true).isPresent();
                 case "workerTerminal" -> failures.recordWorkerFailure(id, token, FAILURE, false).isPresent();
                 default -> service.release(id, token);
@@ -465,9 +459,9 @@ class NotificationOutboxClaimServiceIntegrationTest {
                 switch (operation) {
                     case "claim" -> service.tryClaim(id);
                     case "claimNext" -> service.tryClaimNext();
-                    case "success" -> service.markPublished(id, token);
+                    case "success" -> service.markCompleted(id, token);
                     case "complete" -> service.markCompleted(id, token);
-                    case "failure" -> failures.recordFailure(id, token, FAILURE);
+                    case "failure" -> failures.recordWorkerFailure(id, token, FAILURE, true);
                     default -> service.release(id, token);
                 }
             }).isInstanceOf(DataAccessException.class);
@@ -486,20 +480,20 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 잘못된_ID는_에러코드로_거절한다(Long invalid) {
         String token = UUID.randomUUID().toString();
         assertInternalError(() -> service.tryClaim(invalid));
-        assertInternalError(() -> service.markPublished(invalid, token));
+        assertInternalError(() -> service.markCompleted(invalid, token));
         assertInternalError(() -> service.markCompleted(invalid, token));
         assertInternalError(() -> service.release(invalid, token));
-        assertInternalError(() -> failures.recordFailure(invalid, token, FAILURE));
+        assertInternalError(() -> failures.recordWorkerFailure(invalid, token, FAILURE, true));
     }
 
     @ParameterizedTest
     @NullSource
     @ValueSource(strings = {"", "short", "                                    "})
     void 누락되거나_길이가_다르거나_공백인_토큰은_에러코드로_거절한다(String token) {
-        assertInternalError(() -> service.markPublished(id, token));
+        assertInternalError(() -> service.markCompleted(id, token));
         assertInternalError(() -> service.markCompleted(id, token));
         assertInternalError(() -> service.release(id, token));
-        assertInternalError(() -> failures.recordFailure(id, token, FAILURE));
+        assertInternalError(() -> failures.recordWorkerFailure(id, token, FAILURE, true));
     }
 
     @ParameterizedTest
@@ -517,14 +511,14 @@ class NotificationOutboxClaimServiceIntegrationTest {
     @ParameterizedTest
     @EnumSource(
         value = NotificationFailureCode.class,
-        names = {"PUBLISH_INTERRUPTED", "OUTBOX_STATE_UPDATE_FAILED", "OUTBOX_RETRY_LIMIT_EXCEEDED"}
+        names = {"PUBLISH_INTERRUPTED"}
     )
     void 중단과_DB_오류와_소진_보고는_담당이_있어도_발행_실패로_계산하지_않는다(NotificationFailureCode code) {
         String token = claim().getProcessingToken();
         var before = row();
 
-        assertInternalError(() -> failures.recordFailure(id, token, code));
-        assertInternalError(() -> failures.recordFailure(id, token, null));
+        assertInternalError(() -> failures.recordWorkerFailure(id, token, code, true));
+        assertInternalError(() -> failures.recordWorkerFailure(id, token, null, true));
 
         assertThat(row()).isEqualTo(before);
     }
@@ -534,9 +528,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
         String token = UUID.randomUUID().toString();
         assertThat(service.tryClaim(Long.MAX_VALUE)).isEmpty();
         for (Long target : List.of(id, Long.MAX_VALUE)) {
-            assertThat(service.markPublished(target, token)).isFalse();
             assertThat(service.markCompleted(target, token)).isFalse();
-            assertThat(failures.recordFailure(target, token, FAILURE)).isEmpty();
+            assertThat(failures.recordWorkerFailure(target, token, FAILURE, true)).isEmpty();
             assertThat(service.release(target, token)).isFalse();
         }
         assertThat(repository.findById(id).orElseThrow().getFailureCount()).isZero();
@@ -548,7 +541,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         properties.setDurationMs(duration);
         jdbc.update("""
             UPDATE notification_request_outbox
-            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            SET failure_count = 2, last_failure_type = 'OUTBOX_DELIVERY_FAILED' WHERE id = ?
             """, id);
         var before = withoutProcessing(row());
         var started = dbNow();
@@ -661,8 +654,8 @@ class NotificationOutboxClaimServiceIntegrationTest {
         var before = row();
 
         assertThat(current).isNotEqualTo(old);
-        assertThat(service.markPublished(id, old)).isFalse();
-        assertThat(failures.recordFailure(id, old, FAILURE)).isEmpty();
+        assertThat(service.markCompleted(id, old)).isFalse();
+        assertThat(failures.recordWorkerFailure(id, old, FAILURE, true)).isEmpty();
         assertThat(service.release(id, old)).isFalse();
         assertThat(row()).isEqualTo(before);
         assertThat(service.release(id, current)).isTrue();
@@ -672,7 +665,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
     void 현재_점유자만_완료를_기록하고_원본과_실패_이력을_보존한다() {
         jdbc.update("""
             UPDATE notification_request_outbox
-            SET failure_count = 2, last_failure_type = 'PUBLISH_CALL_FAILED' WHERE id = ?
+            SET failure_count = 2, last_failure_type = 'OUTBOX_DELIVERY_FAILED' WHERE id = ?
             """, id);
         String token = service.tryClaimNext().orElseThrow().getProcessingToken();
         var before = new LinkedHashMap<>(row());
@@ -691,8 +684,7 @@ class NotificationOutboxClaimServiceIntegrationTest {
         assertThat(row()).containsAllEntriesOf(before);
         var completed = row();
         assertThat(service.markCompleted(id, token)).isFalse();
-        assertThat(service.markPublished(id, token)).isFalse();
-        assertThat(failures.recordFailure(id, token, FAILURE)).isEmpty();
+        assertThat(failures.recordWorkerFailure(id, token, FAILURE, true)).isEmpty();
         assertThat(service.release(id, token)).isFalse();
         assertThat(service.tryClaimNext()).isEmpty();
         assertThat(row()).isEqualTo(completed);

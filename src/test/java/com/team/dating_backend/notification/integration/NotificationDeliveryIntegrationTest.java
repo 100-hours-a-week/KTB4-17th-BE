@@ -97,7 +97,7 @@ import tools.jackson.databind.ObjectMapper;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
         "spring.config.name=notification-delivery-test",
-        "app.notification.kafka.create-requested-topic=test-create",
+
         "app.notification.kafka.delivery-topic=test-delivery",
         "server.address=127.0.0.1",
         "spring.flyway.enabled=true",

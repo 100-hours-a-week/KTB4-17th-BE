@@ -68,7 +68,7 @@ class NotificationRequestOutboxRepositoryIntegrationTest {
         Long expected = save(now.minusMinutes(2));
         save(now.minusMinutes(2));
         jdbc.update("""
-            UPDATE notification_request_outbox SET failure_count = 2, last_failure_type = 'PUBLISH_RESULT_TIMEOUT'
+            UPDATE notification_request_outbox SET failure_count = 2, last_failure_type = 'OUTBOX_DELIVERY_FAILED'
             WHERE id = ?
             """, expected);
         var before = jdbc.queryForList("SELECT * FROM notification_request_outbox ORDER BY id");
@@ -111,7 +111,7 @@ class NotificationRequestOutboxRepositoryIntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = NotificationOutboxStatus.class, names = {"PUBLISHED", "FAILED", "COMPLETED"})
+    @EnumSource(value = NotificationOutboxStatus.class, names = {"FAILED", "COMPLETED"})
     void 종료된_요청은_선택하지_않는다(NotificationOutboxStatus status) {
         Long id = save(now.minusMinutes(1));
         jdbc.update("UPDATE notification_request_outbox SET status = ? WHERE id = ?", status.name(), id);
