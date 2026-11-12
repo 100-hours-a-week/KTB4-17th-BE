@@ -125,9 +125,11 @@ SOURCE_COMMIT
 
 이번 staging/version 후속 작업은 main의 기존 prod 변경을 기준으로 별도 worktree와 CI 전용 검증 사본에서 수행했다. 원본 작업 폴더의 미추적 SQS/Valkey 앱 파일은 포함하지 않았다.
 
-- 로컬 Python 행동 테스트 **77개 통과**: 기존 prod 회귀, staging 분리·파일 부재, 최신 source/ref 경합, 허용 파일/필드, tag/digest 동시 변경·충돌·멱등성, workflow 실패/무릴리스/태그 commit 확인, ECR retag/권한/overwrite 거절, Argo 현재 관찰 spec·삭제·동일 revision 검사.
+- 로컬 Python 행동 테스트 **81개 통과**: 기존 prod 회귀, staging 분리·파일 부재, 최신 source/ref 경합, 허용 파일/필드, tag/digest 동시 변경·충돌·멱등성, workflow 실패/무릴리스/태그 commit 확인, ECR retag/권한/overwrite 거절, Argo 현재 관찰 spec·삭제·동일 revision 검사.
 - 실제 controller의 Declarative linter: `Jenkinsfile successfully validated.`
-- 기존 executor에서 게시 없는 `ci/backend-contract-validation` **#2 SUCCESS**, Python **3.9.25**, 보조 도구 테스트 **77개 통과**. CI 전용 사본을 업로드한 검사이며 앱 branch build나 실제 이미지 게시를 대신하지 않는다. #1은 테스트 73개 통과 후 검증 wrapper 줄바꿈 오류로 실패했고 wrapper 수정 후 #2를 실행했다.
+- Python 3.9 구문 14개 파일·Bash 블록 12개·IAM JSON·RBAC 12개 get-only 대상 파싱·기존 Actions 3개 actionlint·CI 사본 Gitleaks 검사 통과.
+- 실제 main `e6f91c8a7c5996a4be4cf11a603b558eeb6d30a5`에 대해 [release run 43144094902](https://github.com/100-hours-a-week/KTB4-17th-BE/actions/runs/43144094902) 성공/무릴리스를 읽어 `sha-e6f91c8a7c5996a4be4cf11a603b558eeb6d30a5` 선택을 확인했다. 로컬 GitHub CLI 읽기 전송을 사용했으며 Jenkins App 권한 확인을 대신하지 않는다. 로컬 Python의 직접 GitHub HTTP 연결은 실패했고 보안 검증을 완화하지 않았다.
+- 기존 executor에서 게시 없는 `ci/backend-contract-validation` **#3 SUCCESS**, Python **3.9.25**, 보조 도구 테스트 **81개 통과**. CI 전용 사본을 업로드한 검사이며 앱 branch build나 실제 이미지 게시를 대신하지 않는다. #1은 테스트 73개 통과 후 검증 wrapper 줄바꿈 오류로 실패했다. wrapper 수정 후 #2에서 77개, 최종 #3에서 CLI 경계 검사 포함 81개를 통과했다.
 - Jenkins `ci/backend` main/dev job과 executor 1개 확인. 전역·ci·backend context credential ID 목록은 모두 비어 있었으며 자동 flag 두 개는 미설정이다.
 - Jenkins instance role `star23-ci-controller`로 AWS 계정 확인 성공. ECR `DescribeRepositories`와 제어 EKS `DescribeCluster`는 **AccessDeniedException**. ECR manifest/tag/immutability 실제 조회·게시와 Jenkins 역할의 Argo 조회는 아직 검증할 수 없다.
 - staging values/Application/앱 namespace·Argo 연결은 준비 전 계약이다. CLOUD 설정 쓰기, ECR push/retag, staging/prod 실제 배포, IAM/Terraform 변경은 실행하지 않았다.
