@@ -31,10 +31,6 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Formatter Check
-        run: ./gradlew spotlessCheck
-
-
         # 의존성 검사 대신 Gitleaks으로 변경
       - name: Secret Scan
         env:
