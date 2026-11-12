@@ -1,0 +1,76 @@
+name: Build Staging Dev Image
+
+on:
+  push:
+    branches:
+      - codex/deploy-staging-dev-20261112
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: staging-dev-image-20261112
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: development
+    env:
+      SOURCE_COMMIT: 500f47dd7cebe64acd7dacb76d44dd0628ee8729
+      AWS_REGION: ap-northeast-2
+      ECR_REGISTRY: 975779326240.dkr.ecr.ap-northeast-2.amazonaws.com
+      ECR_REPOSITORY: star23/be
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 500f47dd7cebe64acd7dacb76d44dd0628ee8729
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Verify source and application tests
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          ./gradlew spotlessCheck unitTest apiTest --console=plain
+      - name: Verify real MySQL migrations and socket fanout
+        run: |
+          ./gradlew test \
+            --tests com.team.dating_backend.migration.FlywayMigrationIntegrationTest \
+            --tests com.team.dating_backend.migration.FlywayJpaIntegrationTest \
+            --tests 'com.team.dating_backend.chat.security.ChatWebSocketHandshakeTest.같은_계정으로_연결된_모든_세션이_AI_연습_이벤트를_수신한다' \
+            --console=plain
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Build and publish the development image only
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = '975779326240'
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$SOURCE_COMMIT"
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
+            --label 'org.opencontainers.image.source=https://github.com/100-hours-a-week/KTB4-17th-BE' \
+            -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$SOURCE_COMMIT" \
+            --query 'imageDetails[0].{digest:imageDigest,tags:imageTags,pushed:imagePushedAt}' \
+            --output json > staging-image.json
+          jq -e '.digest | test("^sha256:[0-9a-f]{64}$")' staging-image.json
+          cat staging-image.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-dev-verification
+          path: |
+            staging-image.json
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
