@@ -28,6 +28,7 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
     public RestAiPracticeAiClient(RestClient.Builder restClientBuilder,
         AiPracticeProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMs()))
             .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);

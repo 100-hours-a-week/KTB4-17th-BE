@@ -1,0 +1,71 @@
+name: Emergency AI Hotfix Image
+
+on:
+  push:
+    branches:
+      - codex/fix-production-ai
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: emergency-ai-hotfix-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REGISTRY: 975779326240.dkr.ecr.ap-northeast-2.amazonaws.com
+      ECR_REPOSITORY: star23/be
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Verify the two emergency fixes
+        run: |
+          ./gradlew test \
+            --tests com.team.dating_backend.aipractice.client.RestAiPracticeAiClientTest \
+            --tests 'com.team.dating_backend.chat.security.ChatWebSocketHandshakeTest.같은_계정으로_연결된_모든_세션이_AI_연습_이벤트를_수신한다' \
+            --console=plain
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify the destination and log in to ECR
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = '975779326240'
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Build and publish only the emergency image
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="hotfix-ai-${GITHUB_SHA}"
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label 'org.opencontainers.image.source=https://github.com/100-hours-a-week/KTB4-17th-BE' \
+            -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            --query 'imageDetails[0].{digest:imageDigest,tags:imageTags,pushed:imagePushedAt}' \
+            --output json > hotfix-image.json
+          DIGEST=$(jq -er '.digest' hotfix-image.json)
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'HOTFIX_IMAGE_DIGEST=%s\n' "$DIGEST"
+          printf '### Emergency AI hotfix image\n\nSource: `%s`\n\nImage: `%s/%s@%s`\n' \
+            "$GITHUB_SHA" "$ECR_REGISTRY" "$ECR_REPOSITORY" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emergency-ai-hotfix-image
+          path: hotfix-image.json
+          retention-days: 7
