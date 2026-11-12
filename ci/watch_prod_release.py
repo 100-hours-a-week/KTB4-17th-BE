@@ -14,12 +14,14 @@ import time
 import urllib.error
 import urllib.request
 
-from prepare_prod_release import IMAGE, ROLES, VALUES, replace_image_digest
+from deployment_contract import (IMAGE, ROLES, NAMESPACES, SOURCE_REPO, CONTROL_CLUSTER, CONTROL_CLUSTER_ARN,
+                                 contract_for_branch, validate_image_tag)
+from prepare_prod_release import replace_image
 from publish_prod_release import CLOUD_REPO, CHART, GitHubAPI, NoRedirect, RemoteError, file_at, main_revision, revision
 
 REGION = "ap-northeast-2"
-CLUSTER = "star-EKS-v3"
-CLUSTER_ARN = "arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3"
+CLUSTER = CONTROL_CLUSTER
+CLUSTER_ARN = CONTROL_CLUSTER_ARN
 NAMESPACES = {"auth-api": "auth", "user-api": "user", "onboarding-api": "user",
               "chat-api": "chat", "chat-socket": "chat", "recommend-api": "recommend"}
 
@@ -35,7 +37,8 @@ def aws_json(*arguments):
 
 
 class EKSApplications:
-    def __init__(self):
+    def __init__(self, source_branch="main"):
+        self.contract = contract_for_branch(source_branch)
         cluster = aws_json("eks", "describe-cluster", "--name", CLUSTER)["cluster"]
         if cluster["arn"] != CLUSTER_ARN or not cluster["endpoint"].startswith("https://"):
             raise ValueError("Unexpected EKS cluster")
@@ -47,7 +50,7 @@ class EKSApplications:
         self.expires = 0
 
     def application(self, name):
-        if name not in ROLES:
+        if name not in self.contract.applications:
             raise ValueError("Unexpected Argo Application")
         if not self.token or time.time() >= self.expires - 60:
             payload = aws_json("eks", "get-token", "--cluster-name", CLUSTER)["status"]
@@ -65,17 +68,22 @@ class EKSApplications:
             raise RemoteError(0, "GET", path) from None
 
 
-def check_application(app, role):
+def check_application(app, role, source_branch="main"):
+    contract = contract_for_branch(source_branch)
+    if role not in ROLES:
+        raise ValueError("Unexpected BE role")
+    if app.get("metadata", {}).get("deletionTimestamp"):
+        raise ValueError("Argo Application is being deleted: " + role)
     spec = app.get("spec", {})
     source = spec.get("source", {})
     destination = spec.get("destination", {})
-    if (app.get("metadata", {}).get("name") != role
+    if (spec.get("sources") or app.get("metadata", {}).get("name") != contract.prefix + role
             or app.get("metadata", {}).get("namespace") != "argocd"
-            or spec.get("project") != "star23-apps"
+            or spec.get("project") != contract.project
             or source.get("repoURL", "").removesuffix(".git") != "https://github.com/" + CLOUD_REPO
             or source.get("targetRevision") != "main" or source.get("path") != CHART
-            or source.get("helm", {}).get("valueFiles") != ["values/" + role + ".yaml"]
-            or destination.get("server") != "https://kubernetes.default.svc"
+            or source.get("helm", {}).get("valueFiles") != [("values/staging/" if source_branch == "dev" else "values/") + role + ".yaml"]
+            or destination.get("server") != contract.server
             or destination.get("namespace") != NAMESPACES[role]):
         raise ValueError("Unexpected Argo Application configuration: " + role)
     automated = spec.get("syncPolicy", {}).get("automated")
@@ -87,10 +95,13 @@ def wait_for_release(reader, cloud, release, timeout=900, interval=10,
                      clock=time.monotonic, sleep=time.sleep, progress=None):
     commit = revision(release["gitops_commit"])
     revision(release["source_commit"])
+    contract = contract_for_branch(release.get("source_branch"))
+    tag = validate_image_tag(contract.branch, release["source_commit"], release.get("image_tag"))
     digest = release["image_digest"]
-    if (release.get("gitops_repository") != CLOUD_REPO or release.get("gitops_branch") != "main"
+    if (release.get("source_repository") != SOURCE_REPO or release.get("environment") != contract.environment
+            or release.get("values_files") != list(contract.paths) or release.get("gitops_repository") != CLOUD_REPO or release.get("gitops_branch") != "main"
             or release.get("image") != IMAGE + "@" + digest):
-        raise ValueError("Unexpected production deployment metadata")
+        raise ValueError("Unexpected deployment metadata")
     # Reuse digest validation before any observer API requests.
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest) or timeout <= 0 or interval <= 0:
         raise ValueError("Invalid deployment digest or timeout")
@@ -105,12 +116,12 @@ def wait_for_release(reader, cloud, release, timeout=900, interval=10,
         if head != commit:
             relationship = cloud.request("GET", f"/compare/{commit}...{head}")["status"]
             if relationship not in ("ahead", "identical"):
-                raise ValueError("CLOUD/main no longer contains the published production release")
+                raise ValueError("CLOUD/main no longer contains the published release")
         for role in ROLES:
-            path = (VALUES / (role + ".yaml")).as_posix()
-            _, desired = replace_image_digest(file_at(cloud, path, head), digest, path)
-            if desired != digest:
-                raise ValueError("Production release was superseded in CLOUD/main: " + role)
+            path = (contract.values / (role + ".yaml")).as_posix()
+            _, desired = replace_image(file_at(cloud, path, head), tag, digest, path)
+            if desired != {"tag": tag, "digest": digest}:
+                raise ValueError("Release was superseded in CLOUD/main: " + role)
         checked_heads.add(head)
 
     while True:
@@ -118,12 +129,16 @@ def wait_for_release(reader, cloud, release, timeout=900, interval=10,
         applications = {}
         for role in ROLES:
             state = {"ready": False}
-            applications[role] = state
+            applications[contract.prefix + role] = state
             try:
-                app = reader.application(role)
-                check_application(app, role)
+                app = reader.application(contract.prefix + role)
+                check_application(app, role, contract.branch)
                 status = app.get("status", {})
                 synced = status.get("sync", {})
+                compared = synced.get("comparedTo", {})
+                if any(compared.get(key) != app["spec"].get(key) for key in ("source", "destination")) or compared.get("sources"):
+                    state["pending_reason"] = "Argo status has not observed the current Application source/destination"
+                    continue
                 current = synced.get("revision", "")
                 health = status.get("health", {}).get("status")
                 images = status.get("summary", {}).get("images", [])
@@ -143,10 +158,10 @@ def wait_for_release(reader, cloud, release, timeout=900, interval=10,
                 if not contains_commit:
                     continue
                 if (current, role) not in checked_values:
-                    path = (VALUES / (role + ".yaml")).as_posix()
-                    _, desired = replace_image_digest(file_at(cloud, path, current), digest, path)
-                    if desired != digest:
-                        raise ValueError("Production release was superseded: " + role)
+                    path = (contract.values / (role + ".yaml")).as_posix()
+                    _, desired = replace_image(file_at(cloud, path, current), tag, digest, path)
+                    if desired != {"tag": tag, "digest": digest}:
+                        raise ValueError("Release was superseded: " + role)
                     checked_values.add((current, role))
                 if health == "Degraded":
                     raise ValueError("Argo Application Degraded: " + role)
@@ -166,25 +181,30 @@ def wait_for_release(reader, cloud, release, timeout=900, interval=10,
                     raise
                 state["api_error"] = str(failure)
         ready = sum(state["ready"] for state in applications.values())
-        if ready == len(ROLES):
+        common_revision = len({state.get("revision") for state in applications.values()}) == 1
+        deployed = ready == len(ROLES) and common_revision
+        if deployed:
             # Argo status may be stale while a newer CLOUD/main is already published.
             verify_current_cloud_head()
-        result = {"status": "deployed" if ready == len(ROLES) else "waiting-for-argocd",
-                  "gitops_commit": commit, "image": expected_image, "applications": applications,
+        result = {"status": "deployed" if deployed else "waiting-for-argocd",
+                  "gitops_commit": commit, "image": expected_image, "image_tag": tag, "image_digest": digest,
+                  "source_commit": release["source_commit"], "source_branch": contract.branch,
+                  "environment": contract.environment, "common_revision": common_revision, "applications": applications,
                   "observed_at": datetime.now(timezone.utc).isoformat()}
         if progress:
             progress(result)
-        if ready == len(ROLES):
+        if deployed:
             return result
         remaining = deadline - clock()
         if remaining <= 0:
             pending = ", ".join(role for role, state in applications.items() if not state["ready"])
-            raise TimeoutError("Argo rollout timed out: " + pending)
+            raise TimeoutError("Argo rollout timed out: " + (pending or "waiting for common CLOUD revision"))
         sleep(min(interval, remaining))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-branch", required=True, choices=["main", "dev"])
     parser.add_argument("--check-access", action="store_true")
     parser.add_argument("--deployment-file", type=Path, default=Path("release/deployment.json"))
     parser.add_argument("--output-file", type=Path, default=Path("release/argocd-status.json"))
@@ -201,17 +221,28 @@ def main():
             print(f"Argo CD: {ready}/{len(ROLES)} applications deployed", flush=True)
 
     try:
-        reader = EKSApplications()
+        contract = contract_for_branch(args.source_branch)
+        reader = EKSApplications(args.source_branch)
         if args.check_access:
+            if not os.environ.get("CLOUD_READ_TOKEN"):
+                raise ValueError("CLOUD read credential required for deployment observation")
+            cloud = GitHubAPI(CLOUD_REPO, os.environ["CLOUD_READ_TOKEN"], read_only=True)
+            if cloud.request("GET", "").get("permissions", {}).get("push") is not False:
+                raise ValueError("Observer credential must confirm CLOUD read-only access")
+            base = main_revision(cloud)
+            for path in contract.paths:
+                replace_image(file_at(cloud, path, base), "preflight", "sha256:" + "0" * 64, path)
             for role in ROLES:
-                check_application(reader.application(role), role)
-            record({"status": "read-access-verified", "applications_checked": list(ROLES)})
+                check_application(reader.application(contract.prefix + role), role, args.source_branch)
+            record({"status": "read-access-verified", "applications_checked": list(contract.applications), "environment": contract.environment, "control_cluster": CLUSTER})
             print("EKS read access and six Argo Application configurations verified; no cluster writes performed.")
             return
-        if not os.environ.get("GITOPS_TOKEN"):
+        if not os.environ.get("CLOUD_READ_TOKEN"):
             raise ValueError("Argo rollout observation requires the CLOUD read token")
         release = json.loads(args.deployment_file.read_text())
-        result = wait_for_release(reader, GitHubAPI(CLOUD_REPO, os.environ["GITOPS_TOKEN"]), release,
+        if release.get("source_branch") != args.source_branch:
+            raise ValueError("Observer branch does not match deployment metadata")
+        result = wait_for_release(reader, GitHubAPI(CLOUD_REPO, os.environ["CLOUD_READ_TOKEN"], read_only=True), release,
                                   timeout=args.timeout_seconds, progress=record)
         record(result)
     except (OSError, ValueError, RemoteError, KeyError, TimeoutError) as failure:

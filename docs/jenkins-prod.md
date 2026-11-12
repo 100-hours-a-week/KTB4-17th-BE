@@ -1,164 +1,144 @@
-# BE Jenkins prod CI/CD — EKS / Argo CD
+# BE Jenkins staging/prod CI/CD — EKS / Argo CD
 
-prod 배포 경로는 `Jenkins → ECR → CLOUD/main → Argo CD → EKS`다. Jenkins가 BE 역할 6개의 `image.digest`를 원자적으로 갱신하고 실제 Argo 배포 상태를 확인한다. ECS는 사용하지 않는다.
+`dev`는 staging, `main`은 prod로 배포한다. 기존 `ci/backend` Multibranch job, `linux && docker` label, 전체 executor 1개를 재사용한다. Jenkins는 CI 후 ECR 이미지에 태그를 연결하고 CLOUD/main의 BE values 여섯 개를 한 commit으로 갱신한다. Argo CD가 적용하고 Jenkins가 배포 상태를 조회한다.
 
-이번 코드 검증에서는 ECR 게시·CLOUD 배포 설정 커밋·운영 배포를 실행하지 않는다. BE 코드의 커밋·push 및 PR 생성과 운영 배포는 별도 단계다. 아래 CD 코드는 연결과 활성화 이후 Jenkins 빌드가 실행할 자동화다.
+## 브랜치와 버전 계약
 
-## 코드 변경과 GitHub Actions
+| 소스 | 환경 / 대상 EKS | SHA 이미지 태그 | 추가 ECR 태그 및 CLOUD `image.tag` |
+| --- | --- | --- | --- |
+| `dev` | staging / `star-EKS-v3-staging` | 전체 source SHA | `dev-<전체 source SHA>` |
+| `main`, 정식 릴리스 있음 | prod / `star-EKS-v3` | 전체 source SHA | 같은 commit의 기존 Git 릴리스 태그, 예: `v3.1.0` |
+| `main`, workflow 성공·릴리스 없음 | prod / `star-EKS-v3` | 전체 source SHA | `sha-<전체 source SHA>` |
 
-- 루트 `Jenkinsfile`: 기존 CI와 이미지 빌드, 운영 연결 사전 검사, ECR 게시, GitOps 갱신, 배포 확인.
-- `ci/publish_prod_release.py`: GitHub API로 CLOUD/main의 BE digest 6개를 한 커밋으로 갱신. 기본 실행은 미리보기이며 `--execute`를 지정해야 게시한다.
-- `ci/watch_prod_release.py`: EKS API에서 Argo Application 6개를 읽고 배포 완료를 확인한다. 클러스터 변경 API를 호출하지 않는다.
-- `ci/prepare_prod_release.py`: 기존 수동 검토용 패치 생성 기능을 유지한다.
-- 기존 ECS `.github/workflows/prod-cd.yml`은 삭제하고 `release.yml`의 호출도 제거했다. GitHub Actions의 semantic-release는 버전 생성만 담당하며 기존 BE CI는 유지한다.
-- staging 준비 기간에는 `dev-cd.yml`의 이미지 게시·배포 job을 `if: ${{ false }}`로 일시중지한다. Jenkins도 dev에서는 운영 배포를 실행하지 않는다. staging 배포 대상과 검증이 정해진 뒤 재개한다. GitHub workflow 자체의 비활성화는 브랜치 병합 전에도 적용할 수 있으며, 코드의 중지 조건은 해당 변경이 들어간 브랜치부터 적용된다.
-  - 2026-11-12 GitHub의 `dev-cd.yml` workflow도 즉시 비활성화했고 `disabled_manually` 상태를 확인했다. staging 구성 후 재개할 때는 코드의 중지 조건과 workflow 비활성화 상태를 모두 확인한다.
+Jenkins가 버전을 증가시키거나 Git 태그를 발급하지 않는다. `.github/workflows/release.yml`과 `release.config.cjs`의 semantic-release를 그대로 사용한다. 기존 BE 버전 이력과 minor/patch/major 판단을 유지한다. merge 메시지 하나나 작업 브랜치 이름으로 버전을 추측하지 않는다.
 
-## 실행 환경과 파라미터
+`ci/resolve_image_version.py`는 정확한 main SHA의 push release workflow를 최대 600초 기다린다. 동일 실행 attempt의 `Semantic Release` job과 step이 실제 성공했는지도 확인한다. Git ref가 lightweight/annotated인 경우 모두 실제 commit까지 해석한다. 동일 SHA의 정식 태그가 하나일 때만 사용하고, 성공했으나 해당 태그가 없을 때만 SHA 태그를 선택한다. 실패·취소·skip·조회 오류·시간 초과·여러 태그의 모호함·오래된 소스 SHA는 중단하며 과거 버전을 재사용하지 않는다. Jenkins stage에도 12분 제한이 있다.
 
-`ci/backend` Multibranch Pipeline이 `main`, `dev`를 5분 주기로 스캔한다. 루트 Jenkinsfile이 해당 브랜치에 있어야 한다.
+이미지를 버전 태그용으로 다시 빌드하지 않는다. 검증한 `star23/be:<SHA>`의 manifest를 ECR에서 읽어 같은 digest로 추가 태그를 연결한다. `ci/tag_ecr_image.py`는 계정·repository·SHA 태그·manifest hash·추가 태그의 digest를 확인한다. 같은 tag/digest 재실행은 조회만 수행하고, 다른 digest의 기존 태그는 덮어쓰지 않는다. 조회 오류를 이미지 부재로 처리하지 않는다.
 
-Linux EC2에 `linux docker` label, 전체 executor 1개, Bash·Git·Docker·Python 3.9 이상·AWS CLI가 필요하다. Java 25 검사와 Dockerfile 빌드는 `linux/amd64`로 실행한다. Docker Pipeline 플러그인은 필요 없다. Pipeline·Git·GitHub Branch Source·Credentials Binding·JUnit 플러그인을 사용한다.
+ECR `PutImage`에는 mutable 태그의 조건부 생성이 없으므로, 신규 게시 전에 SHA와 버전 태그에 유효한 **immutability**를 검사한다. `IMMUTABLE` 또는 해당 태그를 보호하는 exclusion 설정이 필요하다. mutable이면 실패하며 코드가 저장소 설정을 변경하지 않는다. 이 검사는 조회 후 게시 사이에 다른 게시자가 태그를 차지하는 경합도 막기 위한 조건이다.
 
-AWS CLI는 EC2 호스트의 instance profile로 실행한다. 테스트 컨테이너에 AWS 토큰이나 Docker socket을 넘기지 않는다. 현재 단일 VM과 기존 분리 agent 모두 동일한 label·경로·권한 조건에서 사용할 수 있다.
+배포 이미지 선택은 계속 `repository@digest`다. CLOUD chart는 `image.tag`를 `app.kubernetes.io/version` label에 사용한다. digest를 제거하거나 `repository:tag@digest` 형태로 차트를 바꾸지 않는다.
 
-| 설정 | 기본값 | 동작 |
+## 환경별 고정 대상
+
+차트: `manifest/helm/star23-service`, GitOps 저장소: `100-hours-a-week/KTB4-17th-CLOUD`, 브랜치: `main`.
+
+| 역할 | 앱 namespace | prod Application / values | staging Application / values |
+| --- | --- | --- | --- |
+| auth-api | auth | `auth-api` / `values/auth-api.yaml` | `staging-auth-api` / `values/staging/auth-api.yaml` |
+| user-api | user | `user-api` / `values/user-api.yaml` | `staging-user-api` / `values/staging/user-api.yaml` |
+| onboarding-api | user | `onboarding-api` / `values/onboarding-api.yaml` | `staging-onboarding-api` / `values/staging/onboarding-api.yaml` |
+| chat-api | chat | `chat-api` / `values/chat-api.yaml` | `staging-chat-api` / `values/staging/chat-api.yaml` |
+| chat-socket | chat | `chat-socket` / `values/chat-socket.yaml` | `staging-chat-socket` / `values/staging/chat-socket.yaml` |
+| recommend-api | recommend | `recommend-api` / `values/recommend-api.yaml` | `staging-recommend-api` / `values/staging/recommend-api.yaml` |
+
+values는 위 차트 기준 상대 경로다. 두 환경 모두 기존 AppProject `star23-apps`를 사용한다(CLOUD 담당 확인). observer는 항상 **prod 제어 클러스터 `star-EKS-v3`**의 `argocd` Application CRD를 조회한다. staging에 Argo CD가 있다고 가정하지 않는다.
+
+- prod 목적지: `https://kubernetes.default.svc`
+- staging 목적지: `https://FD1D5E0955692E6EA1E41FADBE848111.gr7.ap-northeast-2.eks.amazonaws.com`
+- staging ARN: `arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3-staging`
+
+`ci/deployment_contract.py`가 브랜치별 경로·Application·클러스터 계약을 고정한다. 환경 문자열 파라미터는 없다. feature/fork/PR job, `CHANGE_ID`, dev에서 prod 배포 요청, main에서 staging 요청은 거절한다. staging 파일이 없으면 실패하며 prod 파일로 대체하지 않는다.
+
+## CI와 GitOps 동작
+
+1. `checkout scm` 후 BE repository와 전체 source SHA를 확인한다. CLOUD checkout이 소스 SHA를 덮어쓰지 않도록 `SOURCE_COMMIT`을 보존한다.
+2. 배포 요청이면 소스 최신 tip, CLOUD 쓰기/읽기 credential, 여섯 values와 Argo 설정을 사전 조회한다.
+3. Gitleaks v8.30.1, `unitTest`, `apiTest`, `bootJar`, Dockerfile의 `linux/amd64` 빌드를 실행한다. Java 25는 빌드 컨테이너에서 준비하며 Docker Pipeline 플러그인은 필요 없다. 사용자가 제거한 Spotless 검사는 재도입하지 않는다.
+4. source 버전을 확정하고 ECR SHA 이미지를 게시하거나 기존 digest를 재사용한다. AWS CLI는 EC2 호스트의 instance profile로 실행한다. Docker bridge에 AWS 토큰이나 IMDS 접근을 주지 않는다.
+5. 같은 manifest에 추가 태그를 연결하고 SHA/버전 태그의 동일 digest를 조회로 검증한다.
+6. `ci/publish_prod_release.py --execute`가 버전 결과를 다시 조회하고 검증된 ECR 산출물과 대조한다. 해당 환경의 여섯 파일에서 `image.tag`와 `image.digest`만 같은 CLOUD commit으로 변경한다. 기존 values에 tag가 없으면 image 블록에 추가한다. 다른 repository·환경·역할·시크릿은 유지한다.
+7. CLOUD/main을 non-force로 갱신한다. 최대 세 번 새 HEAD로 재검토하며 다른 환경·AI 변경은 보존한다. 자신의 tag 또는 digest가 다른 릴리스로 바뀌면 중단한다. 두 필드 모두 같을 때만 commit 없이 멱등 처리한다. source tip은 읽기 직후와 **CLOUD ref 갱신 직전**에도 검사한다. 보호 브랜치 거절은 실패이며 정책 우회나 수동 CLOUD PR로 대체하지 않는다.
+8. `ci/watch_prod_release.py`가 최대 15분 여섯 앱을 조회한다. 현재 spec과 `status.sync.comparedTo`의 source/destination이 일치하고 삭제 중이 아니어야 한다. repo·main·chart·values·project·대상 클러스터·namespace·자동 sync를 검증한다.
+9. 여섯 앱 모두 **동일한 CLOUD revision**, `Synced / Healthy`, 의도한 digest만 실행 중이어야 한다. revision은 게시 commit 또는 그 후손이며 해당 revision의 tag/digest와 현재 CLOUD/main의 여섯 필드가 모두 기대값이어야 한다. 이전/혼합 이미지, superseded release, 현재 revision의 sync 실패, Degraded, timeout은 성공으로 판정하지 않는다.
+
+observer는 Application 조회만 한다. 클러스터 변경·sync 명령·직접 kubectl 배포는 하지 않는다. Argo Health/이미지 정보를 이용한 검증이며 실제 로그인·API·채팅 smoke test는 배포 이후 별도 확인한다.
+
+## Jenkins 최초 연결과 한 번의 활성화
+
+호스트에 Bash·Git·Docker·Python 3.9 이상·AWS CLI, Pipeline·Git·GitHub Branch Source·Credentials Binding·JUnit 플러그인이 필요하다. 현재 private EC2는 `i-068114cc973f72fdc`, private IP `10.1.64.105`다.
+
+| credential ID | 설치 범위 / 권한 |
+| --- | --- |
+| `github-app-star23` | BE Contents/Metadata read, **Actions read**. checkout·branch/tag·workflow runs/jobs 조회 |
+| `github-app-star23-gitops` | CLOUD에 한정한 Contents write 및 Metadata read. Git tree/commit/ref 갱신 |
+| `github-app-star23-cloud-read` | CLOUD Contents/Metadata read. observer와 수동 preview checkout용 별도 읽기 credential |
+
+GitHub App은 접근할 저장소에 설치해야 한다. `usernamePassword` binding이 발급한 설치 토큰을 사용하며 private key·토큰을 코드·로그·산출물에 저장하지 않는다. CLOUD 읽기 credential ID는 `CLOUD_READ_CREDENTIALS_ID`로 지정할 수 있지만 쓰기 credential과 달라야 하며 observer 사전 검사에서 read-only 접근을 확인한다. GitOps 쓰기는 `github-app-star23-gitops`만 허용한다. App의 설치 범위·accessible repositories와 발급 토큰 권한도 함께 맞춰야 한다.
+
+CLOUD/main의 ruleset/branch protection이 해당 App의 직접 non-force 갱신을 허용해야 한다. 허용되지 않으면 연결 차단 항목으로 보고하고 정책 변경은 CLOUD 담당이 결정한다.
+
+Jenkins 역할에는 ECR 조회/게시 권한과 아래 조회 권한이 필요하다. 이 작업은 IAM·EKS·Terraform을 변경하지 않는다.
+
+- ECR `star23/be`: `DescribeRepositories`, `DescribeImages`, `BatchGetImage`, Docker push의 `BatchCheckLayerAvailability`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`, `PutImage`; 로그인 `GetAuthorizationToken`.
+- `ci/jenkins-eks-observer-policy.json`: Argo **제어 클러스터**의 `eks:DescribeCluster`만 허용하는 제안 정책.
+- 제어 클러스터 access entry에 Jenkins 역할과 `star23-jenkins-observers` 그룹 연결 필요.
+- `ci/jenkins-argocd-observer.yaml`: 제어 클러스터의 `argocd`에서 prod/staging Application 12개에 대한 `get`만 제안한다. Secret 조회·앱 수정·sync 권한은 없다.
+- 호스트에서 제어 EKS endpoint 443 접근 필요. staging 관리 권한과 네트워크는 Argo CD 쪽에서 준비한다.
+
+| 설정 | 초기값 | 용도 |
 | --- | --- | --- |
-| `PUSH_IMAGE` | `false` | CI 통과 후 ECR 게시 또는 기존 SHA 이미지 재사용 |
-| `PREPARE_PROD_RELEASE` | `false` | main에서 게시한 digest의 검토용 CLOUD 패치 생성 |
-| `DEPLOY_PRODUCTION` | `false` | main에서 ECR 게시·CLOUD 갱신·Argo 배포 확인을 모두 실행 |
-| `CLOUD_READ_CREDENTIALS_ID` | 빈 문자열 | 수동 패치 생성용 CLOUD checkout credential |
-| `GITOPS_CREDENTIALS_ID` | `github-app-star23-gitops` | CLOUD 설정을 게시할 GitHub App credential |
-| Jenkins 환경변수 `STAR23_AUTO_DEPLOY_PROD` | 미설정 | `true`로 켜면 이후 main 빌드마다 자동으로 전체 CD 실행 |
+| `PUSH_IMAGE` | false | CI 후 SHA 및 버전 태그 게시·검증 |
+| `PREPARE_PROD_RELEASE` | false | main에서 게시 이미지의 검토용 patch 생성, CLOUD 변경 없음 |
+| `DEPLOY_PRODUCTION` | false | main 최초 배포 검증 요청 |
+| `DEPLOY_STAGING` | false | dev 최초 배포 검증 요청 |
+| `CLOUD_READ_CREDENTIALS_ID` | github-app-star23-cloud-read | CLOUD 읽기 credential |
+| `GITOPS_CREDENTIALS_ID` | github-app-star23-gitops | 고정 CLOUD 쓰기 credential |
+| `STAR23_AUTO_DEPLOY_PROD` | 미설정 = false | main 자동 CD 활성화 |
+| `STAR23_AUTO_DEPLOY_STAGING` | 미설정 = false | dev 자동 CD 활성화 |
 
-`DEPLOY_PRODUCTION=true`는 ECR 게시도 포함하므로 `PUSH_IMAGE`를 별도로 켤 필요가 없다. dev·PR 빌드는 운영 배포를 실행할 수 없다. 운영 배포 요청 시 현재 BE main tip과 checkout SHA가 일치하는지도 확인한다. 이전 소스의 빌드를 재실행해 새 운영 버전을 덮어쓰지 않는다.
+자동 flag는 Jenkins **Manage Jenkins → System → Global properties → Environment variables**에 설정한다. credentials·ECR·CLOUD·Argo 준비 후 해당 브랜치에서 최초 배포를 별도로 승인받아 검증하고, 성공한 환경만 flag를 `true`로 한 번 켠다. 이후에는 dev/main push마다 배포 체크박스를 누르지 않아도 해당 환경 CD가 실행된다. 배포 요청은 이미지 게시를 포함한다.
 
-**자동 배포 환경변수가 true이면 main의 수동 빌드에도 적용된다.** 미리보기나 CI만 실행하려면 먼저 해당 환경변수를 false로 바꾼다. 모든 파라미터와 자동 배포 환경변수가 꺼져 있으면 이미지 빌드까지만 실행한다.
+자동 flag는 수동 build에도 적용된다. CI/preview만 수행하려면 해당 flag를 먼저 false로 바꿔야 한다. 두 flag와 배포/게시 파라미터가 모두 꺼져 있으면 이미지 빌드까지만 수행한다. Jenkinsfile은 각 브랜치에 병합한 뒤 기존 job을 scan한다. 동일 브랜치의 중복 job이나 새 VM을 만들지 않는다.
 
-## CD가 수행하는 일
+## 기존 Actions 전환과 CLOUD 준비 항목
 
-1. 소스 읽기 credential, CLOUD 쓰기 접근, 최신 BE main SHA, EKS 읽기 접근과 Argo 앱 연결을 검사한다.
-2. Gitleaks, `unitTest`, `apiTest`, `bootJar`, 실제 Dockerfile 빌드를 통과한다. Gitleaks는 첫 부모 대비 merge diff를 포함한다. 요청에 따라 GitHub CI와 Jenkins의 Spotless 실행은 제외하며, Gradle의 formatter 도구 자체는 유지한다.
-3. `975779326240.dkr.ecr.ap-northeast-2.amazonaws.com/star23/be:<GIT_COMMIT>`을 게시한다. 같은 SHA 태그가 이미 있으면 기존 digest를 재사용한다. 계정·권한 오류를 이미지 없음으로 처리하지 않는다.
-4. CLOUD/main 최신 스냅샷에서 아래 여섯 파일의 `image.digest`만 변경한다.
+ECS `prod-cd.yml` 삭제와 release workflow의 ECS 호출 제거는 기존 main 변경을 유지한다. GitHub Actions semantic-release는 버전 발급만 계속 담당한다. 기존 BE GitHub CI도 유지한다. DEV EC2 `dev-cd.yml`의 이미지 게시·배포는 코드의 `if: ${{ false }}`와 GitHub workflow의 `disabled_manually`로 중지돼 있다. staging 추가 후에도 이 EC2/ECR 경로를 다시 활성화하지 않는다. dev에 Jenkins 후속 변경을 병합할 때 중지 조건도 유지해 이중 게시·배포를 막는다.
+
+CLOUD 담당이 준비해야 할 항목:
+
+- `manifest/helm/star23-service/values/staging/{auth-api,user-api,onboarding-api,chat-api,chat-socket,recommend-api}.yaml` 여섯 파일. staging DB·messaging·시크릿·Ingress·환경 설정과 초기 image digest/tag 필요.
+- 기존 Argo CD에 staging 클러스터 등록, 기존 `star23-apps` AppProject의 staging destination 허용, `staging-<role>` Application 여섯 개와 auto-sync.
+- staging 앱 namespace와 workload, 외부 시크릿 연결. `team17-v2`의 로컬 조회 성공은 Jenkins/Argo 권한을 대신하지 않는다.
+- DB `10.2.21.10`, messaging `10.2.21.20`의 포트·DB 이름·시크릿 내부 키는 추측하지 않는다. prod 주소나 `/star23/prod/` 값을 staging 대체값으로 사용하지 않는다.
+
+## 산출물과 실제 배포 확인
+
+`release/`에 다음 대응이 남는다.
 
 ```text
-manifest/helm/star23-service/values/auth-api.yaml
-manifest/helm/star23-service/values/user-api.yaml
-manifest/helm/star23-service/values/onboarding-api.yaml
-manifest/helm/star23-service/values/chat-api.yaml
-manifest/helm/star23-service/values/chat-socket.yaml
-manifest/helm/star23-service/values/recommend-api.yaml
+SOURCE_COMMIT
+ → image-version.json (dev-SHA / Git release tag / sha-SHA, workflow ID/attempt)
+ → ecr-image.json (SHA tag + version tag → 동일 image_digest)
+ → deployment.json + cloud-image-digest.patch (환경, CLOUD commit, 이전/새 tag+digest)
+ → argocd-status.json (환경, tag, digest, 여섯 Application의 동일 revision / Synced / Healthy)
 ```
 
-Git tree·commit 한 개를 만들고 main ref를 fast-forward로 갱신한다. force 갱신은 하지 않는다. 그 사이 AI나 다른 CLOUD 설정이 변경되면 새 기준에서 최대 세 번 시도하며, BE digest가 다른 배포로 바뀌었다면 중단한다. branch protection이 쓰기를 거절하면 실패하며 우회하지 않는다.
+`image-digest.txt`, `image-uri.txt`도 유지한다. `cloud-image-digest.patch`는 기존 이름을 유지하지만 tag와 digest 두 필드의 변경을 담는다. 수동 preview의 `production-release.json`은 미배포 산출물이다.
 
-5. Argo CD가 CLOUD/main 변경을 감지해 EKS에 적용한다.
-6. Jenkins는 `star-EKS-v3`의 `argocd` namespace에서 위 Application 6개를 최대 15분 확인한다. 모두 아래 조건을 충족해야 성공한다.
+성공 증거는 `dev SHA → Jenkins build URL → ECR tag/digest → CLOUD commit → staging 여섯 앱의 동일 revision Synced/Healthy`다. 동시에 prod values·Application·실행 digest가 유지됐는지 비교한다. CI 성공이나 Argo의 기존 Healthy 상태만으로 배포 완료를 판단하지 않는다. 현재 stage가 SKIPPED이면 실제 배포 증거가 아니다.
 
-- 저장소·main 브랜치·차트·역할 values·대상 namespace가 기대 설정과 일치하고 auto-sync가 켜져 있음
-- 동기화 revision이 게시한 GitOps 커밋 또는 그 후손이며 해당 revision의 BE digest가 기대값과 일치함
-- `Synced / Healthy`, 관련 sync 실패 없음, 이전 BE 이미지가 남아 있지 않음
-- 현재 CLOUD/main도 해당 배포를 포함하고 BE digest 6개가 여전히 기대값임
+게시/확인 실패 시 가능한 `build/reports/**`, JUnit XML, JAR, `release/**`를 보관한다. 현재 build의 workspace·컨테이너·로컬 이미지 태그만 정리하며 공유 cache를 prune하지 않는다. GitOps 게시 후 실패했다고 CLOUD를 자동 되돌리거나 클러스터를 직접 변경하지 않는다. ref 요청이 네트워크 오류면 후보 commit이 이미 반영됐는지 먼저 확인한다. rollback은 이전 tag/digest로 되돌리는 별도 GitOps 변경이다.
 
-이전 이미지가 Healthy인 경우 성공으로 보지 않는다. 새 배포에 의해 이미 대체된 경우, sync 실패·Degraded·타임아웃도 실패로 기록한다. Jenkins는 Argo 상태를 조회하며 실제 앱 변경은 Argo CD가 수행한다. Argo의 Health/이미지 정보에 기반한 확인이며 실제 서비스 요청을 보내는 별도 smoke test는 포함하지 않는다.
+## 2026-11-12 검증 기록과 한계
 
-## 최초 연결 작업
+이번 staging/version 후속 작업은 main의 기존 prod 변경을 기준으로 별도 worktree와 CI 전용 검증 사본에서 수행했다. 원본 작업 폴더의 미추적 SQS/Valkey 앱 파일은 포함하지 않았다.
 
-### 1. GitHub App credentials
+- 로컬 Python 행동 테스트 **81개 통과**: 기존 prod 회귀, staging 분리·파일 부재, 최신 source/ref 경합, 허용 파일/필드, tag/digest 동시 변경·충돌·멱등성, workflow 실패/무릴리스/태그 commit 확인, ECR retag/권한/overwrite 거절, Argo 현재 관찰 spec·삭제·동일 revision 검사.
+- 실제 controller의 Declarative linter: `Jenkinsfile successfully validated.`
+- Python 3.9 구문 14개 파일·Bash 블록 12개·IAM JSON·RBAC 12개 get-only 대상 파싱·기존 Actions 3개 actionlint·CI 사본 Gitleaks 검사 통과.
+- 실제 main `e6f91c8a7c5996a4be4cf11a603b558eeb6d30a5`에 대해 [release run 43144094902](https://github.com/100-hours-a-week/KTB4-17th-BE/actions/runs/43144094902) 성공/무릴리스를 읽어 `sha-e6f91c8a7c5996a4be4cf11a603b558eeb6d30a5` 선택을 확인했다. 로컬 GitHub CLI 읽기 전송을 사용했으며 Jenkins App 권한 확인을 대신하지 않는다. 로컬 Python의 직접 GitHub HTTP 연결은 실패했고 보안 검증을 완화하지 않았다.
+- 기존 executor에서 게시 없는 `ci/backend-contract-validation` **#3 SUCCESS**, Python **3.9.25**, 보조 도구 테스트 **81개 통과**. CI 전용 사본을 업로드한 검사이며 앱 branch build나 실제 이미지 게시를 대신하지 않는다. #1은 테스트 73개 통과 후 검증 wrapper 줄바꿈 오류로 실패했다. wrapper 수정 후 #2에서 77개, 최종 #3에서 CLI 경계 검사 포함 81개를 통과했다.
+- Jenkins `ci/backend` main/dev job과 executor 1개 확인. 전역·ci·backend context credential ID 목록은 모두 비어 있었으며 자동 flag 두 개는 미설정이다.
+- Jenkins instance role `star23-ci-controller`로 AWS 계정 확인 성공. ECR `DescribeRepositories`와 제어 EKS `DescribeCluster`는 **AccessDeniedException**. ECR manifest/tag/immutability 실제 조회·게시와 Jenkins 역할의 Argo 조회는 아직 검증할 수 없다.
+- staging values/Application/앱 namespace·Argo 연결은 준비 전 계약이다. CLOUD 설정 쓰기, ECR push/retag, staging/prod 실제 배포, IAM/Terraform 변경은 실행하지 않았다.
+- 기존 단계에서 기준 앱 소스 unit/API 1,822개와 JAR/amd64 이미지 빌드를 검증한 기록은 유지한다. 이번에는 앱 소스를 변경하거나 그 전체 검사를 재실행하지 않았다. 원본 미추적 SQS 코드의 SDK 누락 compile 오류는 별도 앱 작업이다.
 
-Jenkins의 System/Global credentials에 다음을 등록한다. private key와 토큰은 Git이나 채팅에 넣지 않는다.
-
-| ID | 대상과 권한 |
-| --- | --- |
-| `github-app-star23` | BE 저장소 checkout·main 읽기. 기존 Multibranch source와 같은 ID |
-| `github-app-star23-gitops` | 별도 GitHub App을 CLOUD 저장소에만 설치, Contents Read & write |
-
-GitOps credential의 repository access strategy는 **Specify accessible repositories**로 CLOUD를 지정하고, 발급 토큰의 Contents 권한에도 write가 포함되게 설정한다. BE용 credential의 저장소 추론을 그대로 쓰면 CLOUD에 접근하지 못할 수 있다. Jenkins GitHub App credential은 `usernamePassword` binding에서 비밀번호 값으로 단기 설치 토큰을 제공한다.
-
-CLOUD/main의 ruleset·branch protection도 이 자동화 App의 갱신을 허용해야 한다. 필수 PR·서명·체크 정책으로 직접 갱신을 금지하고 있다면 정책에 맞는 별도 PR 방식을 선택해야 한다. 이 코드는 정책을 강제로 우회하지 않는다.
-
-### 2. Jenkins의 EKS 읽기 권한
-
-현재 단일 VM 역할 `star23-ci-controller`에 다음 **조회 전용** IAM policy와 EKS access entry/RBAC가 필요하다. 적용 코드는 준비했으며 이번 작업에서는 권한을 부여하거나 클러스터에 적용하지 않는다.
-
-```sh
-aws iam put-role-policy \
-  --role-name star23-ci-controller \
-  --policy-name observe-prod-argocd \
-  --policy-document file://ci/jenkins-eks-observer-policy.json
-
-aws eks create-access-entry \
-  --region ap-northeast-2 --cluster-name star-EKS-v3 \
-  --principal-arn arn:aws:iam::975779326240:role/star23-ci-controller \
-  --type STANDARD --kubernetes-groups star23-jenkins-observers
-
-kubectl apply -f ci/jenkins-argocd-observer.yaml
-```
-
-이미 access entry가 있다면 기존 그룹을 확인해 병합한다. 별도 agent 모드에서는 실제 빌드 instance profile 역할에 적용한다.
-
-IAM은 해당 cluster의 `DescribeCluster`만, Kubernetes Role은 Argo Application 6개의 `get`만 허용한다. Secret 조회, 앱 수정, sync, kubectl 배포 권한은 필요 없다. 호스트에서 EKS API endpoint의 443에 연결할 수 있어야 하며, private 경로가 막히면 CI SG에서 EKS control-plane SG로의 해당 통신을 확인한다.
-
-Jenkins 호스트에서 연결만 확인할 때:
-
-```sh
-python3 -B ci/watch_prod_release.py --check-access \
-  --output-file /tmp/jenkins-argocd-preflight.json
-```
-
-### 3. 업로드·첫 실행·자동 배포 활성화
-
-1. 이번 변경을 앱 저장소에 올리고 main에 PR로 병합한다.
-2. Jenkins `ci/backend`에서 **Scan Multibranch Pipeline Now**를 실행한다.
-3. 처음에는 자동 배포 환경변수와 배포 파라미터를 꺼두고 CI·이미지 빌드를 확인한다.
-4. credential과 조회 권한을 준비한 뒤 main에서 `DEPLOY_PRODUCTION=true`로 첫 배포를 검증한다. 이 실행은 실제 ECR 게시와 CLOUD 설정 커밋 및 EKS 배포를 수행한다.
-5. 성공한 뒤 Jenkins **Manage Jenkins → System → Global properties → Environment variables**에서 `STAR23_AUTO_DEPLOY_PROD=true`를 설정한다. 이후 main 변경마다 Jenkins 검사·ECR 게시·GitOps 갱신·Argo 확인이 자동 실행된다.
-
-GitHub Actions의 ECS workflow는 제거했으므로 별도 ECS 배포 전환은 필요 없다. Jenkins 자동 배포를 활성화하기 전에는 main에 병합하는 것만으로 EKS 배포가 시작되지는 않는다.
-
-## 보고서·장애 처리
-
-배포 확인 순서:
-
-1. Jenkins `ci/backend/main`의 `Publish production GitOps release`와 `Wait for EKS Argo CD deployment`가 실제 실행됐고 SUCCESS인지 확인한다. 배포 파라미터가 꺼져 해당 단계가 SKIPPED라면 CI 성공만으로 배포 완료가 아니다.
-2. build artifact의 `release/deployment.json`에서 `gitops_commit`과 `image_digest`를 확인하고, `release/argocd-status.json`의 status가 `deployed`이며 Application 6개가 모두 ready인지 확인한다.
-3. Argo CD UI 또는 아래 읽기 명령으로 여섯 앱의 상태를 확인한다.
-
-```sh
-kubectl -n argocd get applications \
-  auth-api user-api onboarding-api chat-api chat-socket recommend-api \
-  -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REVISION:.status.sync.revision
-```
-
-REVISION은 CLOUD의 GitOps 커밋이며 BE 소스 커밋과 다르다. 단순히 기존 버전이 Synced/Healthy인 것만 확인하지 말고 Jenkins의 게시 커밋과 이미지 확인 결과를 함께 본다. 실제 서비스 확인은 배포 후 기존 prod URL에서 로그인·주요 API·채팅 연결을 확인하는 별도 단계다.
-
-실패 시에도 가능한 범위에서 `build/reports/**`, JUnit XML, JAR와 `release/**`를 보관한다. 이후 해당 빌드의 workspace·임시 컨테이너·로컬 이미지 태그를 정리한다. 공유 Docker cache 전체를 prune하지 않는다.
-
-- `release/image-digest.txt`, `image-uri.txt`: ECR의 실제 digest와 이미지 참조
-- `release/deployment.json`: 소스 SHA, GitOps 기준/게시 SHA, 대상 파일, 이전 digest, 게시 상태
-- `release/cloud-image-digest.patch`: 실제 게시 대상 digest 변경
-- `release/argocd-preflight.json`, `argocd-status.json`: 읽기 연결 검사와 역할별 배포 상태
-- 수동 패치 모드의 `production-release.json`: 미리보기 정보
-
-CLOUD 게시 후 배포 확인이 실패해도 자동으로 Git을 되돌리거나 클러스터를 직접 수정하지 않는다. Argo의 자동 재시도와 실제 상태를 확인한다. GitHub ref 요청이 네트워크 오류로 끝난 경우에도 게시됐을 수 있으므로 deployment.json의 후보 커밋과 CLOUD/main을 확인한 뒤 재실행한다. 같은 digest의 재실행은 중복 설정 커밋을 만들지 않는다. 롤백은 CLOUD에서 이전 digest로 되돌리는 별도 GitOps 변경으로 진행한다.
-
-## 검증 기록
-
-- Python 행동 테스트 32개: digest 전용 변경, 여섯 역할 원자적 갱신, 충돌·stale source·보호 브랜치 거절, 배포 완료·실패·이미지 교체·새 배포 추월 방지.
-- Bash 블록 10개와 Python/IAM JSON 구문 검사 통과.
-- 실제 Jenkins controller에서 Declarative 문법 검사 통과. 필요한 JUnit 플러그인 설치와 active 상태 확인 완료.
-- 수정한 backend-ci.yml·release.yml·dev-cd.yml은 공식 actionlint 1.7.7 실행 파일로 검사 통과. Docker 검사 명령이 응답하지 않아 해당 명령을 종료하고 로컬 실행 파일로 대체했다.
-- RBAC YAML 로컬 파싱과 조회 전용 범위 검증 통과. kubectl의 OpenAPI를 사용하는 client dry-run은 운영자 인증 오류로 완료되지 않았다. RBAC의 실제 생성·Jenkins 역할 권한은 아직 적용·검증하지 않았다.
-- 새 EKS 읽기 코드로 실제 Application 6개의 설정 조회 검증 통과. 이 검사는 로컬 운영자 AWS 자격으로 수행했으며 Jenkins 역할의 권한 검증을 대신하지 않는다.
-- 기존 기준 소스의 unit/API 테스트 1,822개, formatter·Gitleaks·JAR·linux/amd64 실제 Dockerfile 빌드는 앞선 구현 단계에서 통과했다. 이번에는 앱 코드를 변경하지 않았다.
-- 기존 미추적 SQS 소스까지 포함한 사본은 SQS SDK 의존성 누락으로 compileJava 오류 10개가 있었다. 해당 소스와 build.gradle은 수정하지 않았다.
-- CLOUD 설정 게시·새 운영 배포는 실행하지 않았다. 실제 Jenkins CD 전체 실행은 credentials·조회 권한·원격 반영 이후 별도 검증이 필요하다.
-
-로컬 테스트:
+로컬 실행:
 
 ```sh
 python3 -B -m unittest discover -s ci/tests -v
 ```
 
-근거: [GitHub Git reference API](https://docs.github.com/en/rest/git/refs), [Argo CD 자동 동기화](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/), [Jenkins GitHub App token binding](https://www.jenkins.io/blog/2020/04/16/github-app-authentication/), [EKS access entries와 RBAC](https://docs.aws.amazon.com/eks/latest/userguide/access-entries.html).
+근거: [GitHub workflow runs/Actions read](https://docs.github.com/en/rest/actions/workflow-runs), [Git refs/Contents read](https://docs.github.com/en/rest/git/refs), [annotated tags](https://docs.github.com/en/rest/git/tags), [ECR manifest retagging](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-retag.html), [Jenkins GitHub App token binding](https://www.jenkins.io/blog/2020/04/16/github-app-authentication/).

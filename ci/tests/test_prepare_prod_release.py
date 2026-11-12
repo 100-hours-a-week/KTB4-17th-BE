@@ -25,7 +25,7 @@ class PrepareProductionReleaseTest(unittest.TestCase):
         for role in ROLES:
             (self.cloud / VALUES / (role + ".yaml")).write_text(
                 "# Preserve formatting and other values.\nreplicaCount: 2\nimage:\n"
-                f"  digest: {OLD_DIGEST}\n  repository: {IMAGE}\n"
+                f"  digest: {OLD_DIGEST}\n  tag: sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  repository: {IMAGE}\n"
                 "env:\n  SOME_VALUE: unchanged\n"
             )
         (self.cloud / VALUES / "chat-ai-practice.yaml").write_text("image:\n  digest: keep-ai\n")
@@ -33,7 +33,7 @@ class PrepareProductionReleaseTest(unittest.TestCase):
     def run_generator(self, digest=NEW_DIGEST, source_commit="a" * 40):
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--cloud-repo", str(self.cloud),
-             "--digest", digest, "--source-commit", source_commit,
+             "--digest", digest, "--image-tag", "sha-" + source_commit, "--source-branch", "main", "--source-commit", source_commit,
              "--cloud-commit", "b" * 40, "--output-dir", str(self.output)],
             capture_output=True, text=True, check=False,
         )
@@ -69,7 +69,7 @@ class PrepareProductionReleaseTest(unittest.TestCase):
     def test_rejects_invalid_source_commit(self):
         result = self.run_generator(source_commit="main")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Invalid source commit", result.stderr)
+        self.assertIn("Git revision", result.stderr)
 
     def test_wrong_repository_in_last_role_produces_no_partial_release(self):
         target = self.cloud / VALUES / "recommend-api.yaml"

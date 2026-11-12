@@ -2,17 +2,18 @@ import copy
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from watch_prod_release import check_application, wait_for_release
 from publish_prod_release import CLOUD_REPO, IMAGE, RemoteError
-from test_publish_prod_release import MemoryGitHub, PATHS, ROLES, OLD, NEW, BASE, SOURCE
+from test_publish_prod_release import MemoryGitHub, PATHS, ROLES, OLD, NEW, BASE, SOURCE, TAG
 
 
 def application(role):
     namespace = {"auth-api": "auth", "user-api": "user", "onboarding-api": "user",
                  "chat-api": "chat", "chat-socket": "chat", "recommend-api": "recommend"}[role]
-    return {
+    app = {
         "metadata": {"name": role, "namespace": "argocd"},
         "spec": {"project": "star23-apps", "source": {
             "repoURL": "https://github.com/100-hours-a-week/KTB4-17th-CLOUD.git",
@@ -24,6 +25,9 @@ def application(role):
             "health": {"status": "Healthy"}, "summary": {"images": [IMAGE + "@" + NEW]},
             "operationState": {"phase": "Succeeded", "syncResult": {"revision": BASE}}},
     }
+
+    app['status']['sync']['comparedTo'] = {key: copy.deepcopy(app['spec'][key]) for key in ('source', 'destination')}
+    return app
 
 
 class Applications:
@@ -67,11 +71,13 @@ class WatchProductionReleaseTest(unittest.TestCase):
         self.reader = Applications()
         self.cloud = CloudWithHistory()
         for path in PATHS:
-            self.cloud.snapshots[BASE][path] = self.cloud.snapshots[BASE][path].replace(OLD, NEW)
+            self.cloud.snapshots[BASE][path] = self.cloud.snapshots[BASE][path].replace(OLD, NEW).replace("image:\n", "image:\n  tag: " + TAG + "\n")
         self.clock = Clock()
         self.release = {"gitops_repository": CLOUD_REPO, "gitops_branch": "main",
                         "gitops_commit": BASE, "source_commit": SOURCE,
-                        "image_digest": NEW, "image": IMAGE + "@" + NEW}
+                        "image_digest": NEW, "image": IMAGE + "@" + NEW, "image_tag": TAG,
+                        "source_repository": "100-hours-a-week/KTB4-17th-BE",
+                        "source_branch": "main", "environment": "prod", "values_files": PATHS}
 
     def wait(self):
         return wait_for_release(self.reader, self.cloud, self.release, timeout=2, interval=1,
@@ -160,6 +166,113 @@ class WatchProductionReleaseTest(unittest.TestCase):
             app["status"]["sync"]["revision"] = self.cloud.head
             app["status"]["operationState"]["syncResult"]["revision"] = self.cloud.head
         self.assertEqual(self.wait()["status"], "deployed")
+
+    def test_changed_tag_at_same_digest_is_superseded(self):
+        self.advance_cloud_head()
+        self.cloud.snapshots[self.cloud.head][PATHS[0]] = self.cloud.snapshots[self.cloud.head][PATHS[0]].replace(TAG, "v9.9.9")
+        with self.assertRaisesRegex(ValueError, "superseded"):
+            self.wait()
+
+    def test_six_apps_at_different_compatible_revisions_wait_for_common_revision(self):
+        self.advance_cloud_head()
+        self.reader.apps['chat-api']['status']['sync']['revision'] = self.cloud.head
+        with self.assertRaises(TimeoutError):
+            self.wait()
+
+    def test_healthy_status_for_a_different_observed_destination_cannot_complete(self):
+        self.reader.apps['auth-api']['status']['sync']['comparedTo']['destination']['server'] = 'https://old-cluster'
+        with self.assertRaises(TimeoutError):
+            self.wait()
+
+    def test_healthy_status_for_old_source_values_cannot_complete(self):
+        self.reader.apps['auth-api']['status']['sync']['comparedTo']['source']['helm']['valueFiles'] = ['values/old.yaml']
+        with self.assertRaises(TimeoutError):
+            self.wait()
+
+    def test_deleting_application_cannot_report_deployed(self):
+        self.reader.apps['auth-api']['metadata']['deletionTimestamp'] = '2026-11-12T00:00:00Z'
+        with self.assertRaisesRegex(ValueError, 'delet'):
+            self.wait()
+
+    def test_environment_metadata_cannot_redirect_a_dev_release_to_prod(self):
+        self.release.update(source_branch='dev', image_tag='dev-' + SOURCE)
+        with self.assertRaises(ValueError):
+            self.wait()
+
+
+class WatchStagingReleaseTest(unittest.TestCase):
+    def setUp(self):
+        from deployment_contract import contract_for_branch
+        self.contract = contract_for_branch('dev')
+        self.reader = Applications()
+        self.reader.apps = {'staging-' + role: application(role) for role in ROLES}
+        for role in ROLES:
+            app = self.reader.apps['staging-' + role]
+            app['metadata']['name'] = 'staging-' + role
+            app['spec']['source']['helm']['valueFiles'] = ['values/staging/' + role + '.yaml']
+            app['spec']['destination']['server'] = self.contract.server
+            app['status']['sync']['comparedTo'] = {key: copy.deepcopy(app['spec'][key]) for key in ('source', 'destination')}
+        self.cloud = CloudWithHistory()
+        for path in self.contract.paths:
+            self.cloud.snapshots[BASE][path] = f'image:\n  digest: {NEW}\n  tag: dev-{SOURCE}\n  repository: {IMAGE}\n'
+        self.clock = Clock()
+        self.release = {'gitops_repository': CLOUD_REPO, 'gitops_branch': 'main', 'gitops_commit': BASE,
+                        'source_commit': SOURCE, 'source_repository': '100-hours-a-week/KTB4-17th-BE',
+                        'source_branch': 'dev', 'environment': 'staging', 'values_files': list(self.contract.paths),
+                        'image_digest': NEW, 'image_tag': 'dev-' + SOURCE, 'image': IMAGE + '@' + NEW}
+
+    def wait(self):
+        return wait_for_release(self.reader, self.cloud, self.release, timeout=2, interval=1,
+                                clock=self.clock, sleep=self.clock.sleep)
+
+    def test_staging_verifies_only_its_six_apps_and_preserves_prod(self):
+        before = copy.deepcopy(self.cloud.snapshots[BASE])
+        result = self.wait()
+        self.assertEqual(result['status'], 'deployed')
+        self.assertEqual(set(result['applications']), set(self.contract.applications))
+        self.assertEqual(result['image_tag'], 'dev-' + SOURCE)
+        self.assertEqual(before, self.cloud.snapshots[BASE])
+
+    def test_prod_destination_values_project_or_names_cannot_pass_staging(self):
+        changes = [lambda app: app['spec']['destination'].update(server='https://kubernetes.default.svc'),
+                   lambda app: app['spec']['source']['helm'].update(valueFiles=['values/auth-api.yaml']),
+                   lambda app: app['spec'].update(project='default'),
+                   lambda app: app['metadata'].update(name='auth-api')]
+        for change in changes:
+            app = copy.deepcopy(self.reader.apps['staging-auth-api'])
+            change(app)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                check_application(app, 'auth-api', 'dev')
+
+    def test_missing_staging_application_fails_without_querying_prod(self):
+        self.reader.failure = RemoteError(404, 'GET', '/applications/staging-auth-api')
+        with self.assertRaises(RemoteError):
+            self.wait()
+
+
+class EKSControlClusterTest(unittest.TestCase):
+    def test_staging_reads_argocd_from_prod_control_cluster_and_rejects_prod_app_names(self):
+        from watch_prod_release import EKSApplications
+        from deployment_contract import CONTROL_CLUSTER, CONTROL_CLUSTER_ARN
+        ca = 'test-ca'
+        import base64
+        def aws(*args):
+            self.assertEqual(args, ('eks', 'describe-cluster', '--name', CONTROL_CLUSTER))
+            return {'cluster': {'arn': CONTROL_CLUSTER_ARN, 'endpoint': 'https://control.example',
+                               'certificateAuthority': {'data': base64.b64encode(ca.encode()).decode()}}}
+        with patch('watch_prod_release.aws_json', side_effect=aws), patch('watch_prod_release.ssl.create_default_context'):
+            reader = EKSApplications('dev')
+            self.assertEqual(reader.endpoint, 'https://control.example')
+            with self.assertRaises(ValueError):
+                reader.application('auth-api')
+
+    def test_another_account_or_staging_as_control_cluster_is_rejected(self):
+        from watch_prod_release import EKSApplications
+        for arn in ['arn:aws:eks:ap-northeast-2:000000000000:cluster/star-EKS-v3',
+                    'arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3-staging']:
+            with patch('watch_prod_release.aws_json', return_value={'cluster': {'arn': arn, 'endpoint': 'https://other'}}):
+                with self.subTest(arn=arn), self.assertRaises(ValueError):
+                    EKSApplications('dev')
 
 
 if __name__ == "__main__":
