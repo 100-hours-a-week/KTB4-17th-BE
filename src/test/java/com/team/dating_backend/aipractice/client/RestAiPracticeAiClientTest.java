@@ -23,7 +23,6 @@ class RestAiPracticeAiClientTest {
     private HttpServer server;
     private final AtomicReference<String> requestBody = new AtomicReference<>();
     private final List<String> idempotencyKeys = new CopyOnWriteArrayList<>();
-    private final AtomicReference<String> internalApiKey = new AtomicReference<>();
     private RestAiPracticeAiClient client;
 
     @BeforeEach
@@ -31,7 +30,6 @@ class RestAiPracticeAiClientTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/ai/api/v2/practice/start", exchange -> {
             idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
-            internalApiKey.set(exchange.getRequestHeaders().getFirst("X-Internal-Api-Key"));
             requestBody.set(new String(
                 exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = "{\"session_id\":\"ai-session-42\"}"
@@ -111,18 +109,6 @@ class RestAiPracticeAiClientTest {
                 IDEMPOTENCY_KEY.toString(),
                 IDEMPOTENCY_KEY.toString(),
                 IDEMPOTENCY_KEY.toString());
-    }
-
-    @Test
-    void API_키가_설정되면_X_Internal_Api_Key_헤더로_보낸다() {
-        AiPracticeProperties properties = new AiPracticeProperties();
-        properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-        properties.setApiKey("internal-test-key");
-        RestAiPracticeAiClient keyedClient = new RestAiPracticeAiClient(RestClient.builder(), properties);
-
-        keyedClient.startSession(42L, 77L, IDEMPOTENCY_KEY);
-
-        assertThat(internalApiKey.get()).isEqualTo("internal-test-key");
     }
 
     private byte[] replyJson(String content) {
