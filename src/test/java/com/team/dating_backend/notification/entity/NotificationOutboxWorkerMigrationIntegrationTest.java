@@ -98,11 +98,13 @@ class NotificationOutboxWorkerMigrationIntegrationTest {
     }
 
     private void insertPublished(JdbcTemplate jdbc, String sourceEventId) {
-        jdbc.update("""
-            INSERT INTO notification_request_outbox
-                (source_event_id, recipient_user_id, type, payload, status, failure_count, last_failure_type, published_at)
-            VALUES (?, 7, 'LIKE', ?, 'PUBLISHED', 3, 'OUTBOX_DELIVERY_FAILED', ?)
-            """, sourceEventId, PAYLOAD, CREATED_AT);
+        jdbc.update(
+            """
+                INSERT INTO notification_request_outbox
+                    (source_event_id, recipient_user_id, type, payload, status, failure_count, last_failure_type, published_at)
+                VALUES (?, 7, 'LIKE', ?, 'PUBLISHED', 3, 'OUTBOX_DELIVERY_FAILED', ?)
+                """,
+            sourceEventId, PAYLOAD, CREATED_AT);
     }
 
     private String status(JdbcTemplate jdbc, String sourceEventId) {
