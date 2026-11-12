@@ -1,0 +1,30 @@
+name: Verify Staging Outbox Migration
+on:
+  push:
+    branches:
+      - codex/verify-staging-migration-20261112
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 500f47dd7cebe64acd7dacb76d44dd0628ee8729
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Verify notification outbox cutover on real MySQL
+        run: ./gradlew test --tests com.team.dating_backend.notification.entity.NotificationOutboxWorkerMigrationIntegrationTest --console=plain
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-outbox-migration-results
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+          retention-days: 7
