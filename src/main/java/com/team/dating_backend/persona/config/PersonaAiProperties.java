@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class PersonaAiProperties {
 
     private String baseUrl = "";
+    private String internalApiKey = "";
     private String startPath = "/ai/api/v1/persona/onboarding/start";
     private String nicknamePath = "/ai/api/v1/persona/nickname";
     private String answerPath = "/ai/api/v1/persona/onboarding/%s/answer";
@@ -17,4 +18,6 @@ public class PersonaAiProperties {
     private String finishPath = "/ai/api/v1/persona/onboarding/%s/finish";
     private String buildPath = "/ai/api/v1/persona/%s/build";
     private String confirmPath = "/ai/api/v1/persona/%s/confirm";
+    private String feedbackCardsNextPath = "/ai/api/v1/feedback-cards/next";
+    private String feedbackCardsAnswerPath = "/ai/api/v1/feedback-cards/%s/answer";
 }
