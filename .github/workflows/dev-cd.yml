@@ -21,6 +21,8 @@ env:
 jobs:
 
     build_image:
+        # Temporarily paused while the staging deployment environment is prepared.
+        if: ${{ false }}
         name: Build and Push DEV Image
         runs-on: ubuntu-latest
         steps:
@@ -54,6 +56,8 @@ jobs:
 
     deploy:
 
+        # Resume only after replacing/validating the staging deployment target.
+        if: ${{ false }}
         name: Deploy Backend to DEV
         needs: build_image
         runs-on: ubuntu-latest
