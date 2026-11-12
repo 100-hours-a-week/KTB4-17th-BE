@@ -21,7 +21,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class RestAiPracticeAiClient implements AiPracticeAiClient {
 
     private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
-    private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
 
     private final RestClient restClient;
     private final AiPracticeProperties properties;
@@ -105,7 +104,7 @@ public class RestAiPracticeAiClient implements AiPracticeAiClient {
         request.accept(MediaType.APPLICATION_JSON);
         request.header(IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString());
         if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
-            request.header(INTERNAL_API_KEY_HEADER, properties.getApiKey());
+            request.header("X-API-Key", properties.getApiKey());
         }
         return request;
     }
