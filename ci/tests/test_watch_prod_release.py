@@ -205,10 +205,10 @@ class WatchStagingReleaseTest(unittest.TestCase):
         from deployment_contract import contract_for_branch
         self.contract = contract_for_branch('dev')
         self.reader = Applications()
-        self.reader.apps = {'staging-' + role: application(role) for role in ROLES}
+        self.reader.apps = {role: application(role) for role in ROLES}
         for role in ROLES:
-            app = self.reader.apps['staging-' + role]
-            app['metadata']['name'] = 'staging-' + role
+            app = self.reader.apps[role]
+            app['metadata']['name'] = role
             app['spec']['source']['helm']['valueFiles'] = ['values/staging/' + role + '.yaml']
             app['spec']['destination']['server'] = self.contract.server
             app['status']['sync']['comparedTo'] = {key: copy.deepcopy(app['spec'][key]) for key in ('source', 'destination')}
@@ -234,12 +234,12 @@ class WatchStagingReleaseTest(unittest.TestCase):
         self.assertEqual(before, self.cloud.snapshots[BASE])
 
     def test_prod_destination_values_project_or_names_cannot_pass_staging(self):
-        changes = [lambda app: app['spec']['destination'].update(server='https://kubernetes.default.svc'),
+        changes = [lambda app: app['spec']['destination'].update(server='https://wrong-cluster.example'),
                    lambda app: app['spec']['source']['helm'].update(valueFiles=['values/auth-api.yaml']),
                    lambda app: app['spec'].update(project='default'),
-                   lambda app: app['metadata'].update(name='auth-api')]
+                   lambda app: app['metadata'].update(name='staging-auth-api')]
         for change in changes:
-            app = copy.deepcopy(self.reader.apps['staging-auth-api'])
+            app = copy.deepcopy(self.reader.apps['auth-api'])
             change(app)
             with self.subTest(change=change), self.assertRaises(ValueError):
                 check_application(app, 'auth-api', 'dev')
@@ -251,25 +251,25 @@ class WatchStagingReleaseTest(unittest.TestCase):
 
 
 class EKSControlClusterTest(unittest.TestCase):
-    def test_staging_reads_argocd_from_prod_control_cluster_and_rejects_prod_app_names(self):
+    def test_staging_reads_its_own_control_cluster_and_rejects_unknown_app_names(self):
         from watch_prod_release import EKSApplications
         from deployment_contract import CONTROL_CLUSTER, CONTROL_CLUSTER_ARN
         ca = 'test-ca'
         import base64
         def aws(*args):
-            self.assertEqual(args, ('eks', 'describe-cluster', '--name', CONTROL_CLUSTER))
-            return {'cluster': {'arn': CONTROL_CLUSTER_ARN, 'endpoint': 'https://control.example',
+            self.assertEqual(args, ('eks', 'describe-cluster', '--name', 'star-EKS-v3-staging'))
+            return {'cluster': {'arn': CONTROL_CLUSTER_ARN + '-staging', 'endpoint': 'https://control.example',
                                'certificateAuthority': {'data': base64.b64encode(ca.encode()).decode()}}}
         with patch('watch_prod_release.aws_json', side_effect=aws), patch('watch_prod_release.ssl.create_default_context'):
             reader = EKSApplications('dev')
             self.assertEqual(reader.endpoint, 'https://control.example')
             with self.assertRaises(ValueError):
-                reader.application('auth-api')
+                reader.application('staging-auth-api')
 
-    def test_another_account_or_staging_as_control_cluster_is_rejected(self):
+    def test_another_account_or_prod_as_staging_control_cluster_is_rejected(self):
         from watch_prod_release import EKSApplications
         for arn in ['arn:aws:eks:ap-northeast-2:000000000000:cluster/star-EKS-v3',
-                    'arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3-staging']:
+                    'arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3']:
             with patch('watch_prod_release.aws_json', return_value={'cluster': {'arn': arn, 'endpoint': 'https://other'}}):
                 with self.subTest(arn=arn), self.assertRaises(ValueError):
                     EKSApplications('dev')

@@ -26,17 +26,17 @@ ECR `PutImage`에는 mutable 태그의 조건부 생성이 없으므로, 신규 
 
 | 역할 | 앱 namespace | prod Application / values | staging Application / values |
 | --- | --- | --- | --- |
-| auth-api | auth | `auth-api` / `values/auth-api.yaml` | `staging-auth-api` / `values/staging/auth-api.yaml` |
-| user-api | user | `user-api` / `values/user-api.yaml` | `staging-user-api` / `values/staging/user-api.yaml` |
-| onboarding-api | user | `onboarding-api` / `values/onboarding-api.yaml` | `staging-onboarding-api` / `values/staging/onboarding-api.yaml` |
-| chat-api | chat | `chat-api` / `values/chat-api.yaml` | `staging-chat-api` / `values/staging/chat-api.yaml` |
-| chat-socket | chat | `chat-socket` / `values/chat-socket.yaml` | `staging-chat-socket` / `values/staging/chat-socket.yaml` |
-| recommend-api | recommend | `recommend-api` / `values/recommend-api.yaml` | `staging-recommend-api` / `values/staging/recommend-api.yaml` |
+| auth-api | auth | `auth-api` / `values/auth-api.yaml` | `auth-api` / `values/staging/auth-api.yaml` |
+| user-api | user | `user-api` / `values/user-api.yaml` | `user-api` / `values/staging/user-api.yaml` |
+| onboarding-api | user | `onboarding-api` / `values/onboarding-api.yaml` | `onboarding-api` / `values/staging/onboarding-api.yaml` |
+| chat-api | chat | `chat-api` / `values/chat-api.yaml` | `chat-api` / `values/staging/chat-api.yaml` |
+| chat-socket | chat | `chat-socket` / `values/chat-socket.yaml` | `chat-socket` / `values/staging/chat-socket.yaml` |
+| recommend-api | recommend | `recommend-api` / `values/recommend-api.yaml` | `recommend-api` / `values/staging/recommend-api.yaml` |
 
-values는 위 차트 기준 상대 경로다. 두 환경 모두 기존 AppProject `star23-apps`를 사용한다(CLOUD 담당 확인). observer는 항상 **prod 제어 클러스터 `star-EKS-v3`**의 `argocd` Application CRD를 조회한다. staging에 Argo CD가 있다고 가정하지 않는다.
+values는 위 차트 기준 상대 경로다. 두 클러스터는 각자의 기존 Argo CD와 `star23-apps` AppProject를 사용한다. observer도 dev는 `star-EKS-v3-staging`, main은 `star-EKS-v3`의 `argocd` Application CRD를 조회한다. Application과 Helm release 이름은 환경마다 같으며 클러스터와 values 경로로 분리한다.
 
 - prod 목적지: `https://kubernetes.default.svc`
-- staging 목적지: `https://FD1D5E0955692E6EA1E41FADBE848111.gr7.ap-northeast-2.eks.amazonaws.com`
+- staging 목적지: staging Argo CD의 로컬 `https://kubernetes.default.svc`
 - staging ARN: `arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3-staging`
 
 `ci/deployment_contract.py`가 브랜치별 경로·Application·클러스터 계약을 고정한다. 환경 문자열 파라미터는 없다. feature/fork/PR job, `CHANGE_ID`, dev에서 prod 배포 요청, main에서 staging 요청은 거절한다. staging 파일이 없으면 실패하며 prod 파일로 대체하지 않는다.
@@ -69,13 +69,13 @@ GitHub App은 접근할 저장소에 설치해야 한다. `usernamePassword` bin
 
 CLOUD/main의 ruleset/branch protection이 해당 App의 직접 non-force 갱신을 허용해야 한다. 허용되지 않으면 연결 차단 항목으로 보고하고 정책 변경은 CLOUD 담당이 결정한다.
 
-Jenkins 역할에는 ECR 조회/게시 권한과 아래 조회 권한이 필요하다. 이 작업은 IAM·EKS·Terraform을 변경하지 않는다.
+Jenkins 역할에는 ECR 조회/게시 권한과 아래 조회 권한이 필요하다. 제안 파일을 커밋하는 것만으로 IAM·EKS에 적용되지는 않는다.
 
 - ECR `star23/be`: `DescribeRepositories`, `DescribeImages`, `BatchGetImage`, Docker push의 `BatchCheckLayerAvailability`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`, `PutImage`; 로그인 `GetAuthorizationToken`.
-- `ci/jenkins-eks-observer-policy.json`: Argo **제어 클러스터**의 `eks:DescribeCluster`만 허용하는 제안 정책.
-- 제어 클러스터 access entry에 Jenkins 역할과 `star23-jenkins-observers` 그룹 연결 필요.
-- `ci/jenkins-argocd-observer.yaml`: 제어 클러스터의 `argocd`에서 prod/staging Application 12개에 대한 `get`만 제안한다. Secret 조회·앱 수정·sync 권한은 없다.
-- 호스트에서 제어 EKS endpoint 443 접근 필요. staging 관리 권한과 네트워크는 Argo CD 쪽에서 준비한다.
+- `ci/jenkins-eks-observer-policy.json`: 두 환경 제어 클러스터의 `eks:DescribeCluster`만 허용하는 제안 정책.
+- 각 클러스터 access entry에 Jenkins 역할과 `star23-jenkins-observers` 그룹 연결 필요.
+- `ci/jenkins-argocd-observer.yaml`: 각 클러스터의 `argocd`에서 기존 BE Application 6개에 대한 `get`만 제안한다. Secret 조회·앱 수정·sync 권한은 없다.
+- 호스트에서 제어 EKS endpoint 443 접근 필요. 각 Argo CD가 자기 클러스터에 배포하며 Jenkins는 조회만 한다.
 
 | 설정 | 초기값 | 용도 |
 | --- | --- | --- |
@@ -99,7 +99,7 @@ ECS `prod-cd.yml` 삭제와 release workflow의 ECS 호출 제거는 기존 main
 CLOUD 담당이 준비해야 할 항목:
 
 - `manifest/helm/star23-service/values/staging/{auth-api,user-api,onboarding-api,chat-api,chat-socket,recommend-api}.yaml` 여섯 파일. staging DB·messaging·시크릿·Ingress·환경 설정과 초기 image digest/tag 필요.
-- 기존 Argo CD에 staging 클러스터 등록, 기존 `star23-apps` AppProject의 staging destination 허용, `staging-<role>` Application 여섯 개와 auto-sync.
+- staging의 기존 Argo CD에 `argocd/staging`을 등록한다. 로컬 `star23-apps`와 기존 이름의 Application을 유지하고 source는 CLOUD/main + staging values를 사용한다. prod Argo CD에는 `argocd` 루트만 등록한다.
 - staging 앱 namespace와 workload, 외부 시크릿 연결. `team17-v2`의 로컬 조회 성공은 Jenkins/Argo 권한을 대신하지 않는다.
 - DB `10.2.21.10`, messaging `10.2.21.20`의 포트·DB 이름·시크릿 내부 키는 추측하지 않는다. prod 주소나 `/star23/prod/` 값을 staging 대체값으로 사용하지 않는다.
 
@@ -130,7 +130,7 @@ SOURCE_COMMIT
 - 기존 executor에서 게시 없는 `ci/backend-contract-validation` **#2 SUCCESS**, Python **3.9.25**, 보조 도구 테스트 **77개 통과**. CI 전용 사본을 업로드한 검사이며 앱 branch build나 실제 이미지 게시를 대신하지 않는다. #1은 테스트 73개 통과 후 검증 wrapper 줄바꿈 오류로 실패했고 wrapper 수정 후 #2를 실행했다.
 - Jenkins `ci/backend` main/dev job과 executor 1개 확인. 전역·ci·backend context credential ID 목록은 모두 비어 있었으며 자동 flag 두 개는 미설정이다.
 - Jenkins instance role `star23-ci-controller`로 AWS 계정 확인 성공. ECR `DescribeRepositories`와 제어 EKS `DescribeCluster`는 **AccessDeniedException**. ECR manifest/tag/immutability 실제 조회·게시와 Jenkins 역할의 Argo 조회는 아직 검증할 수 없다.
-- staging values/Application/앱 namespace·Argo 연결은 준비 전 계약이다. CLOUD 설정 쓰기, ECR push/retag, staging/prod 실제 배포, IAM/Terraform 변경은 실행하지 않았다.
+- 위 기록은 2026-11-12 시점이다. 2026-11-13에는 실제 staging의 독립 Argo CD와 12개 기존 앱을 확인했으며, observer 계약을 각 환경 로컬 제어로 수정했다. 실제 활성화·배포 결과는 작업 당시 Jenkins 산출물로 확인한다.
 - 기존 단계에서 기준 앱 소스 unit/API 1,822개와 JAR/amd64 이미지 빌드를 검증한 기록은 유지한다. 이번에는 앱 소스를 변경하거나 그 전체 검사를 재실행하지 않았다. 원본 미추적 SQS 코드의 SDK 누락 compile 오류는 별도 앱 작업이다.
 
 로컬 실행:
