@@ -39,8 +39,10 @@ def aws_json(*arguments):
 class EKSApplications:
     def __init__(self, source_branch="main"):
         self.contract = contract_for_branch(source_branch)
-        cluster = aws_json("eks", "describe-cluster", "--name", CLUSTER)["cluster"]
-        if cluster["arn"] != CLUSTER_ARN or not cluster["endpoint"].startswith("https://"):
+        self.cluster = self.contract.cluster
+        expected_arn = CLUSTER_ARN.rsplit('/', 1)[0] + '/' + self.cluster
+        cluster = aws_json("eks", "describe-cluster", "--name", self.cluster)["cluster"]
+        if cluster["arn"] != expected_arn or not cluster["endpoint"].startswith("https://"):
             raise ValueError("Unexpected EKS cluster")
         self.endpoint = cluster["endpoint"]
         ca = base64.b64decode(cluster["certificateAuthority"]["data"]).decode()
@@ -53,7 +55,7 @@ class EKSApplications:
         if name not in self.contract.applications:
             raise ValueError("Unexpected Argo Application")
         if not self.token or time.time() >= self.expires - 60:
-            payload = aws_json("eks", "get-token", "--cluster-name", CLUSTER)["status"]
+            payload = aws_json("eks", "get-token", "--cluster-name", self.cluster)["status"]
             self.token = payload["token"]
             self.expires = datetime.fromisoformat(payload["expirationTimestamp"].replace("Z", "+00:00")).timestamp()
         path = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/" + name
