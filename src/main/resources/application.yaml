@@ -182,6 +182,7 @@ app:
 
   persona-ai:
     base-url: ${AI_PERSONA_BASE_URL:}
+    api-key: ${AI_PERSONA_API_KEY:}
 
   persona-kakao:
     base-url: ${AI_KAKAO_BASE_URL:${AI_PERSONA_BASE_URL:}}

@@ -4,6 +4,7 @@ import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.AnswerRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ConfirmRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ConfirmResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.PersonaResponse;
+import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ProfileResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.StartRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.TurnResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameRequest;
@@ -22,6 +23,8 @@ public interface PersonaAiClient {
     TurnResponse finish(String sessionId);
 
     PersonaResponse build(String sessionId);
+
+    ProfileResponse getProfile(String userId);
 
     ConfirmResponse confirm(String personaId, ConfirmRequest request);
 }
