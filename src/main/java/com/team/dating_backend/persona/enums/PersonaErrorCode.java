@@ -9,6 +9,7 @@ public enum PersonaErrorCode implements ErrorCode {
     PROFILE_MBTI_REQUIRED(HttpStatus.CONFLICT),
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND),
     PERSONA_DRAFT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    PERSONA_NOT_FOUND(HttpStatus.NOT_FOUND),
     NO_PENDING_QUESTION(HttpStatus.CONFLICT),
     REQUEST_IN_PROGRESS(HttpStatus.CONFLICT),
     TURN_MISMATCH(HttpStatus.CONFLICT),

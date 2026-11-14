@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,10 +14,13 @@ import com.team.dating_backend.common.exception.GlobalExceptionHandler;
 import com.team.dating_backend.persona.dto.response.PersonaConversationResponse;
 import com.team.dating_backend.persona.dto.response.PersonaDraftResponse;
 import com.team.dating_backend.persona.dto.response.PersonaNarrativeResponse;
+import com.team.dating_backend.persona.dto.response.PersonaProfileResponse;
 import com.team.dating_backend.persona.dto.response.PersonaSegmentResponse;
 import com.team.dating_backend.persona.dto.response.PersonaSummaryResponse;
 import com.team.dating_backend.persona.service.PersonaOnboardingService;
+import com.team.dating_backend.persona.service.PersonaProfileService;
 import com.team.dating_backend.security.ServiceAuthenticationPrincipal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,12 +39,16 @@ class PersonaControllerTest {
     private static final Long USER_ID = 7L;
 
     private PersonaOnboardingService service;
+    private PersonaProfileService profileService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = Mockito.mock(PersonaOnboardingService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new PersonaController(service))
+        profileService = Mockito.mock(PersonaProfileService.class);
+        mockMvc = MockMvcBuilders.standaloneSetup(
+            new PersonaController(service),
+            new PersonaProfileController(profileService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setCustomArgumentResolvers(new PrincipalArgumentResolver())
             .build();
@@ -126,6 +134,42 @@ class PersonaControllerTest {
             .andExpect(jsonPath("$.data.narrative.headline").value("천천히 깊어지는 사람"))
             .andExpect(jsonPath("$.data.narrative.traits[0]").value("혼자만의 시간이 중요해요"))
             .andExpect(jsonPath("$.data.summaries[0].category").value("intimacy"));
+    }
+
+    @Test
+    void 현재_사용자의_페르소나를_조회한다() throws Exception {
+        given(profileService.getMyProfile(USER_ID)).willReturn(new PersonaProfileResponse(
+            "7",
+            "persona-1",
+            3,
+            "하루",
+            "INFJ",
+            OffsetDateTime.parse("2026-11-10T12:34:56Z"),
+            new PersonaNarrativeResponse(
+                "천천히 깊어지는 사람",
+                "각자의 시간을 존중해요.",
+                List.of("신중함")),
+            null,
+            List.of(new PersonaSummaryResponse(
+                "intimacy",
+                "천천히 가까워져요",
+                "시간을 두고 알아가요.")),
+            List.of("산책"),
+            List.of(),
+            List.of("조용한 전시"),
+            List.of()));
+
+        mockMvc.perform(get("/api/v1/persona/me"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.message").value("persona_retrieved"))
+            .andExpect(jsonPath("$.data.userId").value("7"))
+            .andExpect(jsonPath("$.data.personaId").value("persona-1"))
+            .andExpect(jsonPath("$.data.confirmedAt").value("2026-11-10T12:34:56Z"))
+            .andExpect(jsonPath("$.data.narrative.headline").value("천천히 깊어지는 사람"))
+            .andExpect(jsonPath("$.data.summaries[0].category").value("intimacy"))
+            .andExpect(jsonPath("$.data.datePrefer[0]").value("조용한 전시"));
+
+        verify(profileService).getMyProfile(USER_ID);
     }
 
     private PersonaConversationResponse conversation(
