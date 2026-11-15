@@ -2,7 +2,7 @@ package com.team.dating_backend.notification.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.team.dating_backend.notification.dto.event.NotificationCreateRequested;
+import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,7 +37,6 @@ public final class NotificationKafkaProbe implements AutoCloseable {
     private static final Duration API_TIMEOUT = Duration.ofSeconds(5);
     private final Admin admin;
     private final String bootstrapServers;
-    private final String creationTopic;
     private final Set<String> topics;
     private final KafkaProducer<Long, byte[]> producer;
     private final KafkaConsumer<Long, byte[]> consumer;
@@ -91,10 +90,9 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         }
     }
 
-    public NotificationKafkaProbe(Admin admin, String bootstrap, String creationTopic, Set<String> topics) {
+    public NotificationKafkaProbe(Admin admin, String bootstrap, Set<String> topics) {
         this.admin = admin;
         this.bootstrapServers = bootstrap;
-        this.creationTopic = creationTopic;
         this.topics = Set.copyOf(topics);
         consumer = new KafkaConsumer<>(Map.of("bootstrap.servers", bootstrap,
             "key.deserializer", LongDeserializer.class, "value.deserializer", ByteArrayDeserializer.class,
@@ -115,15 +113,10 @@ public final class NotificationKafkaProbe implements AutoCloseable {
         }
     }
 
-    public Position publish(NotificationCreateRequested request)
+    public Position publishDelivery(String topic, NotificationDeliveryEvent event, int partition)
         throws InterruptedException, ExecutionException, TimeoutException {
-        return publish(request, null);
-    }
-
-    public Position publish(NotificationCreateRequested request, Integer partition)
-        throws InterruptedException, ExecutionException, TimeoutException {
-        var record = new ProducerRecord<>(creationTopic, partition, request.recipientUserId(),
-            JSON.writeValueAsBytes(request));
+        assertThat(topics).contains(topic);
+        var record = new ProducerRecord<>(topic, partition, event.recipientUserId(), JSON.writeValueAsBytes(event));
         var metadata = awaitResult(producer.send(record), Duration.ofSeconds(12));
         return new Position(metadata.topic(), metadata.partition(), metadata.offset());
     }

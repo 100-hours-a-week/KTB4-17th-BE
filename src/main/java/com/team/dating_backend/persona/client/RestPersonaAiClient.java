@@ -5,6 +5,7 @@ import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.AnswerRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ConfirmRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ConfirmResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.PersonaResponse;
+import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.ProfileResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.StartRequest;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.TurnResponse;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameRequest;
@@ -24,6 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class RestPersonaAiClient implements PersonaAiClient {
+
+    private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
 
     private final RestClient restClient;
     private final PersonaAiProperties properties;
@@ -66,6 +69,27 @@ public class RestPersonaAiClient implements PersonaAiClient {
     @Override
     public PersonaResponse build(String sessionId) {
         return post(path(properties.getBuildPath(), sessionId), null, PersonaResponse.class);
+    }
+
+    @Override
+    public ProfileResponse getProfile(String userId) {
+        try {
+            RestClient.RequestHeadersSpec<?> request = restClient.get()
+                .uri(uri(path(properties.getProfilePath(), userId)))
+                .accept(MediaType.APPLICATION_JSON);
+            if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
+                request.header(INTERNAL_API_KEY_HEADER, properties.getApiKey());
+            }
+            return request.retrieve().body(ProfileResponse.class);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw new PersonaBusinessException(PersonaErrorCode.PERSONA_NOT_FOUND, exception);
+            }
+            throw mapResponseException(exception);
+        } catch (RestClientException exception) {
+            throw new PersonaBusinessException(
+                PersonaErrorCode.AI_SERVER_UNAVAILABLE, exception);
+        }
     }
 
     @Override

@@ -19,6 +19,7 @@ import com.team.dating_backend.onboarding.exception.ProfileUpdateNotAllowedExcep
 import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.persona.client.PersonaAiClient;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.enums.BodyType;
 import com.team.dating_backend.profile.enums.Drinking;
 import com.team.dating_backend.profile.enums.EducationLevel;
@@ -36,6 +37,7 @@ import java.sql.SQLException;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -53,6 +55,7 @@ class ProfileSaveServiceTest {
     private OnboardingCompletionService onboardingCompletionService;
     private PersonaAiClient personaAiClient;
     private ProfileSaveService profileSaveService;
+    private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
@@ -61,8 +64,9 @@ class ProfileSaveServiceTest {
         activityRegionRepository = mock(ActivityRegionRepository.class);
         onboardingCompletionService = mock(OnboardingCompletionService.class);
         personaAiClient = mock(PersonaAiClient.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         profileSaveService = new ProfileSaveService(userRepository, profileRepository,
-            activityRegionRepository, onboardingCompletionService, personaAiClient);
+            activityRegionRepository, onboardingCompletionService, personaAiClient, eventPublisher);
     }
 
     @Test
@@ -97,6 +101,7 @@ class ProfileSaveServiceTest {
         assertThat(result.response().profile().drinking()).isNull();
         assertThat(result.response().profile().smoking()).isNull();
         verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+        verify(eventPublisher).publishEvent(new ProfileCacheEvictionRequestedEvent(USER_ID));
     }
 
     @ParameterizedTest
@@ -152,7 +157,7 @@ class ProfileSaveServiceTest {
             .isInstanceOf(AuthenticationRequiredException.class);
 
         verifyNoInteractions(profileRepository, activityRegionRepository,
-            onboardingCompletionService);
+            onboardingCompletionService, eventPublisher);
     }
 
     @Test
@@ -180,6 +185,7 @@ class ProfileSaveServiceTest {
         assertThat(profile.getSmoking()).isNull();
         assertThat(result.response().profile().nickname()).isNull();
         verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+        verify(eventPublisher).publishEvent(new ProfileCacheEvictionRequestedEvent(USER_ID));
     }
 
     @Test
@@ -214,7 +220,7 @@ class ProfileSaveServiceTest {
             .isInstanceOf(NicknameAlreadyInUseException.class);
 
         verify(profileRepository).existsByNicknameAndDeletedAtIsNullAndUserIdNot(NICKNAME, USER_ID);
-        verifyNoInteractions(activityRegionRepository);
+        verifyNoInteractions(activityRegionRepository, eventPublisher);
     }
 
     @Test
@@ -277,7 +283,7 @@ class ProfileSaveServiceTest {
             () -> profileSaveService.saveProfile(USER_ID, partialRequest(null, null)))
             .isInstanceOf(UserNotFoundException.class);
 
-        verifyNoInteractions(profileRepository, activityRegionRepository);
+        verifyNoInteractions(profileRepository, activityRegionRepository, eventPublisher);
     }
 
     private ProfileSaveRequest partialRequest(Long activityRegionId, String nickname) {

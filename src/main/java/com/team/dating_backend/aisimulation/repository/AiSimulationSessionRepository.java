@@ -4,7 +4,6 @@ import com.team.dating_backend.aisimulation.entity.AiSimulationSession;
 import com.team.dating_backend.aisimulation.enums.AiSimulationSessionStatus;
 import com.team.dating_backend.user.enums.UserStatus;
 import jakarta.persistence.LockModeType;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -109,12 +108,4 @@ public interface AiSimulationSessionRepository extends JpaRepository<AiSimulatio
         @Param("id") Long id,
         @Param("userId") Long userId,
         @Param("withdrawnStatus") UserStatus withdrawnStatus);
-
-    @Query("""
-        select session.id from AiSimulationSession session
-        where session.status = :status and session.createdAt < :deadline
-        order by session.id asc
-        """)
-    List<Long> findExpiredIds(@Param("status") AiSimulationSessionStatus status,
-        @Param("deadline") LocalDateTime deadline, Pageable pageable);
 }

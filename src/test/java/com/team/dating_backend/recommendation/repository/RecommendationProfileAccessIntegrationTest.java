@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.team.dating_backend.matching.entity.Like;
+import com.team.dating_backend.matching.entity.Match;
 import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.profile.entity.Profile;
 import com.team.dating_backend.profile.enums.Drinking;
@@ -188,6 +189,19 @@ class RecommendationProfileAccessIntegrationTest {
         entityManager.persist(like);
         entityManager.flush();
 
+        assertThat(hasAccess()).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 양방향_매칭_관계는_추천_경로에서_제외한다(boolean outgoing) {
+        entityManager.persist(new Match(
+            outgoing ? requester.getId() : candidate.getId(),
+            outgoing ? candidate.getId() : requester.getId(),
+            LocalDateTime.now()));
+        entityManager.flush();
+
+        assertThat(candidates(null, null, null, null, List.of(), List.of(), List.of())).isEmpty();
         assertThat(hasAccess()).isFalse();
     }
 

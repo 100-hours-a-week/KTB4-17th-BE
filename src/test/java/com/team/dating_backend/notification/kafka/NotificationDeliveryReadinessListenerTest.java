@@ -81,7 +81,7 @@ class NotificationDeliveryReadinessListenerTest {
         var consumer = consumer(Set.of(first), List.of(info(0)));
         listener.onPartitionsAssigned(consumer, Set.of(first));
         var container = mock(MessageListenerContainer.class);
-        when(container.getListenerId()).thenReturn("notificationCreationConsumer");
+        when(container.getListenerId()).thenReturn("aiSimulationGeneration");
         listener.onConsumerStopping(new ConsumerStoppingEvent(container, container, consumer, Set.of(first)));
         assertThat(tracker.isReady()).isTrue();
         switch (invalidation) {

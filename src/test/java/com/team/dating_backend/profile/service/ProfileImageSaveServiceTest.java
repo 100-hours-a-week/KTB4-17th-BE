@@ -16,6 +16,7 @@ import com.team.dating_backend.profile.dto.request.ProfileImageSaveItemRequest;
 import com.team.dating_backend.profile.dto.request.ProfileImageSaveRequest;
 import com.team.dating_backend.profile.dto.response.ProfileImageSaveResponse;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.entity.ProfileImage;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
@@ -28,6 +29,7 @@ import com.team.dating_backend.user.repository.UserRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -42,6 +44,7 @@ class ProfileImageSaveServiceTest {
     private FileRepository fileRepository;
     private OnboardingCompletionService onboardingCompletionService;
     private ProfileImageSaveService service;
+    private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +53,7 @@ class ProfileImageSaveServiceTest {
         profileImageRepository = mock(ProfileImageRepository.class);
         fileRepository = mock(FileRepository.class);
         onboardingCompletionService = mock(OnboardingCompletionService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         User user = mock(User.class);
         given(user.getStatus()).willReturn(UserStatus.ACTIVE);
         given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
@@ -58,7 +62,7 @@ class ProfileImageSaveServiceTest {
             profileRepository,
             profileImageRepository,
             fileRepository,
-            onboardingCompletionService);
+            onboardingCompletionService, eventPublisher);
     }
 
     @Test
@@ -88,6 +92,7 @@ class ProfileImageSaveServiceTest {
         assertThat(response.images().get(1).isFrontal()).isTrue();
         verify(profileImageRepository).saveAll(any());
         verify(onboardingCompletionService).activateIfCompleted(USER_ID);
+        verify(eventPublisher).publishEvent(new ProfileCacheEvictionRequestedEvent(USER_ID));
     }
 
     @Test
@@ -102,7 +107,7 @@ class ProfileImageSaveServiceTest {
             .isInstanceOf(AuthenticationRequiredException.class);
 
         verifyNoInteractions(profileRepository, profileImageRepository, fileRepository,
-            onboardingCompletionService);
+            onboardingCompletionService, eventPublisher);
     }
 
     @Test
@@ -163,7 +168,7 @@ class ProfileImageSaveServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(ProfileImageErrorCode.FRONT_PHOTO_REQUIRED));
 
-        verifyNoInteractions(profileRepository, profileImageRepository, fileRepository);
+        verifyNoInteractions(profileRepository, profileImageRepository, fileRepository, eventPublisher);
     }
 
     @Test
@@ -175,7 +180,7 @@ class ProfileImageSaveServiceTest {
                 new ProfileImageSaveItemRequest(704L, true))))
             .isInstanceOf(RequestValidationException.class);
 
-        verifyNoInteractions(profileRepository, profileImageRepository, fileRepository);
+        verifyNoInteractions(profileRepository, profileImageRepository, fileRepository, eventPublisher);
     }
 
     @Test
@@ -206,7 +211,7 @@ class ProfileImageSaveServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(ProfileImageErrorCode.FILE_NOT_AVAILABLE));
 
-        verifyNoInteractions(profileImageRepository);
+        verifyNoInteractions(profileImageRepository, eventPublisher);
     }
 
     @Test
@@ -222,7 +227,7 @@ class ProfileImageSaveServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(ProfileImageErrorCode.PROFILE_NOT_FOUND));
 
-        verifyNoInteractions(profileImageRepository, fileRepository);
+        verifyNoInteractions(profileImageRepository, fileRepository, eventPublisher);
     }
 
     private ProfileImageSaveRequest request(ProfileImageSaveItemRequest... items) {

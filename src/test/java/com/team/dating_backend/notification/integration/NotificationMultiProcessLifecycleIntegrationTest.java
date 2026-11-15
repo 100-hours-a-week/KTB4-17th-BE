@@ -54,7 +54,7 @@ class NotificationMultiProcessLifecycleIntegrationTest extends NotificationMulti
 
     @Override
     protected NotificationIntegrationEnvironment createEnvironment() {
-        return new NotificationIntegrationEnvironment(NotificationIntegrationEnvironment.Mode.LIFECYCLE);
+        return NotificationIntegrationEnvironment.worker(NotificationIntegrationEnvironment.Mode.LIFECYCLE);
     }
 
     @BeforeAll

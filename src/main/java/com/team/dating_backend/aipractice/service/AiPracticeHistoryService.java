@@ -24,9 +24,9 @@ public class AiPracticeHistoryService {
         Long userId, Long sessionId, Long cursor, int size) {
         AiPracticeSession session = sessionService.requireOwnedSession(sessionId, userId);
         List<AiPracticeChat> fetched = cursor == null
-            ? chatRepository.findBySession_IdOrderByIdAsc(
+            ? chatRepository.findBySessionIdOrderByIdAsc(
                 sessionId, PageRequest.of(0, size + 1))
-            : chatRepository.findBySession_IdAndIdGreaterThanOrderByIdAsc(
+            : chatRepository.findBySessionIdAndIdGreaterThanOrderByIdAsc(
                 sessionId, cursor, PageRequest.of(0, size + 1));
 
         boolean hasNext = fetched.size() > size;

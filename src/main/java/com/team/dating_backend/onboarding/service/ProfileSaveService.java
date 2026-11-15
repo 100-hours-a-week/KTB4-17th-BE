@@ -13,6 +13,7 @@ import com.team.dating_backend.onboarding.exception.UserNotFoundException;
 import com.team.dating_backend.persona.client.PersonaAiClient;
 import com.team.dating_backend.persona.dto.ai.PersonaAiPayloads.UpdateNicknameRequest;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
 import com.team.dating_backend.user.entity.User;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -38,6 +40,7 @@ public class ProfileSaveService {
     private final ActivityRegionRepository activityRegionRepository;
     private final OnboardingCompletionService onboardingCompletionService;
     private final PersonaAiClient personaAiClient;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ProfileSaveResult saveProfile(Long userId, ProfileSaveRequest request) {
@@ -80,6 +83,7 @@ public class ProfileSaveService {
         }
         ProfileSaveResponse response = new ProfileSaveResponse(
             ProfileSaveProfileResponse.from(savedProfile));
+        eventPublisher.publishEvent(new ProfileCacheEvictionRequestedEvent(userId));
         return new ProfileSaveResult(created, response);
     }
 

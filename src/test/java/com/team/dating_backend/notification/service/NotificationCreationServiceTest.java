@@ -28,8 +28,8 @@ import org.springframework.transaction.TransactionSystemException;
 
 class NotificationCreationServiceTest {
 
-    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested(
-        1, "event-1", 7L, NotificationType.LIKE, "재처리 제목", "재처리 본문", null, null,
+    private static final NotificationCreateRequested REQUEST = new NotificationCreateRequested("event-1", 7L,
+        NotificationType.LIKE, "재처리 제목", "재처리 본문", null, null,
         Instant.parse("2026-10-21T01:00:00Z"));
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 20, 1, 0);
     private static final NotificationCreationResult RESULT = new NotificationCreationResult(

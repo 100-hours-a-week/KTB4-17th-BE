@@ -47,9 +47,9 @@ class AiPracticeWithdrawalTerminationServiceTest {
         given(sessionRepository.findAllForUserByStatusForUpdate(
             USER_ID, AiPracticeSessionStatus.ACTIVE))
             .willReturn(List.of(ownedSession, targetedSession));
-        given(chatRepository.findAllBySession_IdAndStatus(
+        given(chatRepository.findAllBySessionIdAndStatus(
             10L, AiPracticeChatStatus.GENERATING)).willReturn(List.of(ownedChat));
-        given(chatRepository.findAllBySession_IdAndStatus(
+        given(chatRepository.findAllBySessionIdAndStatus(
             11L, AiPracticeChatStatus.GENERATING)).willReturn(List.of(targetedChat));
 
         service.terminateForUser(USER_ID, ENDED_AT);

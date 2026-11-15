@@ -31,7 +31,8 @@ public final class NotificationDatabaseProbe implements AutoCloseable {
 
     public record StoredOutbox(long id, String sourceEventId, long recipientUserId, String type, String payload,
         String status, int failureCount, String lastFailureType, LocalDateTime nextAttemptAt,
-        LocalDateTime createdAt, LocalDateTime publishedAt, String processingToken, LocalDateTime processingUntil) {}
+        LocalDateTime createdAt, String processingToken, LocalDateTime processingUntil,
+        LocalDateTime completedAt) {}
 
     public record LockWait(String transactionId, long threadId, long connectionId, long blockingConnectionId,
         String table, String index, String mode, String data, String query) {}
@@ -68,15 +69,17 @@ public final class NotificationDatabaseProbe implements AutoCloseable {
     public List<StoredOutbox> outboxes(String sourceEventId, long recipientUserId, String type) {
         return List.copyOf(reader.query("""
             SELECT id, source_event_id, recipient_user_id, type, payload, status, failure_count,
-                last_failure_type, next_attempt_at, created_at, published_at, processing_token, processing_until
+                last_failure_type, next_attempt_at, created_at, processing_token, processing_until,
+                completed_at
             FROM notification_request_outbox
             WHERE source_event_id = ? AND recipient_user_id = ? AND type = ?
             """, (row, index) -> new StoredOutbox(row.getLong("id"), row.getString("source_event_id"),
             row.getLong("recipient_user_id"), row.getString("type"), row.getString("payload"),
             row.getString("status"), row.getInt("failure_count"), row.getString("last_failure_type"),
             row.getObject("next_attempt_at", LocalDateTime.class), row.getObject("created_at", LocalDateTime.class),
-            row.getObject("published_at", LocalDateTime.class), row.getString("processing_token"),
-            row.getObject("processing_until", LocalDateTime.class)), sourceEventId, recipientUserId, type));
+            row.getString("processing_token"),
+            row.getObject("processing_until", LocalDateTime.class), row.getObject("completed_at", LocalDateTime.class)),
+            sourceEventId, recipientUserId, type));
     }
 
     public RowLock lockOutbox(long id) throws SQLException {

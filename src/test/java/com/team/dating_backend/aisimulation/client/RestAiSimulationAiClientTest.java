@@ -13,14 +13,18 @@ import com.team.dating_backend.aisimulation.config.AiSimulationProperties;
 import com.team.dating_backend.aisimulation.dto.ai.AiSimulationAiPayloads;
 import com.team.dating_backend.aisimulation.enums.AiSimulationErrorCode;
 import com.team.dating_backend.aisimulation.exception.AiSimulationBusinessException;
+import com.team.dating_backend.aisimulation.kafka.AiSimulationFailureClassifier;
 import java.io.IOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
 class RestAiSimulationAiClientTest {
@@ -137,6 +141,24 @@ class RestAiSimulationAiClientTest {
             });
 
         assertError(AiSimulationErrorCode.AI_SERVER_UNAVAILABLE);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        {"400,false", "401,false", "403,false", "404,false", "408,true", "409,true", "422,false",
+            "429,true", "500,true", "501,false", "502,true", "503,true", "504,true", "505,false"}
+    )
+    void 실제_HTTP_실패가_업무_예외로_변환된_후에도_응답_상태로_분류한다(int status, boolean retryable) {
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v2/simulation"))
+            .andRespond(withStatus(org.springframework.http.HttpStatusCode.valueOf(status)));
+
+        assertThatThrownBy(() -> client.run(new AiSimulationAiPayloads.SimulationRequest("7", "8", 10)))
+            .isInstanceOfSatisfying(AiSimulationBusinessException.class, failure -> {
+                assertThat(failure.getCause()).isInstanceOfSatisfying(RestClientResponseException.class,
+                    response -> assertThat(response.getStatusCode().value()).isEqualTo(status));
+                assertThat(new AiSimulationFailureClassifier().isRetryable(failure)).isEqualTo(retryable);
+            });
         server.verify();
     }
 

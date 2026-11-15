@@ -59,6 +59,32 @@ public final class PersonaAiPayloads {
         Narrative narrative,
         List<Summary> summaries) {}
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ProfileStyle(
+        String summary,
+        @JsonProperty("frequent_phrases") List<String> frequentPhrases,
+        List<String> endings,
+        List<String> slang,
+        @JsonProperty("message_length") String messageLength,
+        String laughter,
+        @JsonProperty("question_rate") String questionRate) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ProfileResponse(
+        @JsonProperty("user_id") String userId,
+        @JsonProperty("persona_id") String personaId,
+        Integer version,
+        String nickname,
+        String mbti,
+        @JsonProperty("confirmed_at") OffsetDateTime confirmedAt,
+        Narrative narrative,
+        @JsonProperty("conversation_style") ProfileStyle conversationStyle,
+        List<Summary> summaries,
+        List<String> interests,
+        List<String> routine,
+        @JsonProperty("date_prefer") List<String> datePrefer,
+        @JsonProperty("date_avoid") List<String> dateAvoid) {}
+
     public record ConfirmRequest(
         @JsonProperty("persona_id") String personaId,
         @JsonProperty("is_confirmed") boolean confirmed,

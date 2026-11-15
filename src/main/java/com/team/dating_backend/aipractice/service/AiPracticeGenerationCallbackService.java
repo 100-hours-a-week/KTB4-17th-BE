@@ -28,7 +28,7 @@ public class AiPracticeGenerationCallbackService {
     public void receive(AiPracticeGenerationCallbackRequest request) {
         AiPracticeSession session = sessionRepository.findByIdForUpdate(request.practiceSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.AI_CALLBACK_INVALID));
-        AiPracticeChat chat = chatRepository.findByIdAndSession_Id(
+        AiPracticeChat chat = chatRepository.findByIdAndSessionId(
             request.chatId(), request.practiceSessionId())
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.AI_CALLBACK_INVALID));
         if (chat.getGenerationAttempt() != request.generationAttempt()) {

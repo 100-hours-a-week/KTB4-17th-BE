@@ -1,12 +1,10 @@
 package com.team.dating_backend.notification.dto.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record NotificationDeliveryEvent(
-    int schemaVersion,
     String sourceEventId,
     Long recipientUserId,
-    NotificationEventResponse notification) {
-
-    public static final int CURRENT_SCHEMA_VERSION = 1;
-}
+    NotificationEventResponse notification) {}

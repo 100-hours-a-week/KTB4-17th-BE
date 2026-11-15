@@ -130,8 +130,8 @@ class NotificationCreationServiceIntegrationTest {
             }
         });
         Map<String, Object> before = jdbc.queryForMap("SELECT * FROM notifications WHERE id = ?", notificationId);
-        NotificationCreateRequested replay = new NotificationCreateRequested(
-            1, "event-1", userId, NotificationType.LIKE, "변경된 제목", "변경된 본문", null, null,
+        NotificationCreateRequested replay = new NotificationCreateRequested("event-1", userId, NotificationType.LIKE,
+            "변경된 제목", "변경된 본문", null, null,
             REQUESTED_AT.plusSeconds(3600));
 
         NotificationCreationResult result = service.createOrLoad(replay);
@@ -184,8 +184,8 @@ class NotificationCreationServiceIntegrationTest {
 
     @Test
     void 외래_키_오류는_중복으로_처리하지_않고_다음_정상_요청은_저장한다() {
-        NotificationCreateRequested missingRecipient = new NotificationCreateRequested(
-            1, "event-1", Long.MAX_VALUE, NotificationType.LIKE, "제목", "본문", null, null, REQUESTED_AT);
+        NotificationCreateRequested missingRecipient = new NotificationCreateRequested("event-1", Long.MAX_VALUE,
+            NotificationType.LIKE, "제목", "본문", null, null, REQUESTED_AT);
 
         assertThatThrownBy(() -> service.createOrLoad(missingRecipient))
             .isInstanceOfSatisfying(DataIntegrityViolationException.class,
@@ -218,11 +218,8 @@ class NotificationCreationServiceIntegrationTest {
     }
 
     @Test
-    void 지원하지_않는_스키마는_errorCode로_거부하고_저장하지_않는다() {
-        NotificationCreateRequested unsupported = new NotificationCreateRequested(
-            2, "event-1", userId, NotificationType.LIKE, "제목", "본문", null, null, REQUESTED_AT);
-
-        assertThatThrownBy(() -> service.createOrLoad(unsupported))
+    void null_요청은_errorCode로_거부하고_저장하지_않는다() {
+        assertThatThrownBy(() -> service.createOrLoad(null))
             .isInstanceOfSatisfying(NotificationBusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
@@ -230,7 +227,7 @@ class NotificationCreationServiceIntegrationTest {
     }
 
     private NotificationCreateRequested request() {
-        return new NotificationCreateRequested(1, "event-1", userId, NotificationType.LIKE,
+        return new NotificationCreateRequested("event-1", userId, NotificationType.LIKE,
             "원본 제목", "원본 본문", "USER", 99L, REQUESTED_AT);
     }
 

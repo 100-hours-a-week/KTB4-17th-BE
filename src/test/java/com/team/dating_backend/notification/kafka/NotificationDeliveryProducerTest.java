@@ -10,7 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.team.dating_backend.common.enums.CommonErrorCode;
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
@@ -33,6 +33,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
@@ -43,20 +44,20 @@ class NotificationDeliveryProducerTest {
     private static final String TOPIC = "test-notification-delivery-v1";
     private static final NotificationEventResponse NOTIFICATION = new NotificationEventResponse(
         10L, "LIKE", "제목", "본문", "USER", 2L, null, LocalDateTime.of(2026, 10, 21, 1, 0));
-    private static final NotificationDeliveryEvent EVENT = new NotificationDeliveryEvent(1, "event-1", 7L,
+    private static final NotificationDeliveryEvent EVENT = new NotificationDeliveryEvent("event-1", 7L,
         NOTIFICATION);
 
     @Mock
     private KafkaTemplate<Object, Object> kafkaTemplate;
 
-    private NotificationCreationProperties properties;
+    private NotificationDeliveryProperties properties;
     private NotificationDeliveryProducer producer;
 
     @BeforeEach
     void setUp() {
         var topics = new NotificationKafkaProperties();
         topics.setDeliveryTopic(TOPIC);
-        properties = new NotificationCreationProperties();
+        properties = new NotificationDeliveryProperties();
         producer = new NotificationDeliveryProducer(kafkaTemplate, topics, properties);
     }
 
@@ -69,6 +70,27 @@ class NotificationDeliveryProducerTest {
 
         verify(kafkaTemplate).send(eq(TOPIC), eq(7L), same(EVENT));
         verifyNoMoreInteractions(kafkaTemplate);
+    }
+
+    @Test
+    void 생성_Consumer_설정_없이_Delivery_발행기를_등록하고_발행한다() {
+        var topics = new NotificationKafkaProperties();
+        topics.setDeliveryTopic(TOPIC);
+        var result = sendResult();
+        given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(CompletableFuture.completedFuture(result));
+
+        new ApplicationContextRunner().withUserConfiguration(NotificationDeliveryProducer.class)
+            .withBean(KafkaTemplate.class, () -> kafkaTemplate)
+            .withBean(NotificationKafkaProperties.class, () -> topics)
+            .withBean(NotificationDeliveryProperties.class, () -> properties)
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).doesNotHaveBean("notificationCreationProperties");
+                assertThat(context.getBean(NotificationDeliveryProducer.class).publishAndAwait(EVENT))
+                    .isSameAs(result.getRecordMetadata());
+            });
+
+        verify(kafkaTemplate).send(TOPIC, 7L, EVENT);
     }
 
     @ParameterizedTest
@@ -108,7 +130,7 @@ class NotificationDeliveryProducerTest {
     @Test
     void 결과_대기_timeout은_발행을_취소하거나_재발행하지_않고_늦은_완료를_허용한다() {
         var future = new CompletableFuture<SendResult<Object, Object>>();
-        properties.setDeliveryResultTimeoutMs(1L);
+        properties.setResultTimeoutMs(1L);
         given(kafkaTemplate.send(TOPIC, 7L, EVENT)).willReturn(future);
 
         assertThatThrownBy(() -> producer.publishAndAwait(EVENT)).isInstanceOf(TimeoutException.class);
@@ -142,11 +164,10 @@ class NotificationDeliveryProducerTest {
 
     private static Stream<NotificationDeliveryEvent> invalidEvents() {
         return Stream.of(
-            new NotificationDeliveryEvent(2, "event-1", 7L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, " ", 7L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, "event-1", 0L, NOTIFICATION),
-            new NotificationDeliveryEvent(1, "event-1", 7L, null),
-            new NotificationDeliveryEvent(1, "event-1", 7L, new NotificationEventResponse(
+            new NotificationDeliveryEvent(" ", 7L, NOTIFICATION),
+            new NotificationDeliveryEvent("event-1", 0L, NOTIFICATION),
+            new NotificationDeliveryEvent("event-1", 7L, null),
+            new NotificationDeliveryEvent("event-1", 7L, new NotificationEventResponse(
                 null, "LIKE", "제목", "본문", null, null, null, NOTIFICATION.createdAt())));
     }
 

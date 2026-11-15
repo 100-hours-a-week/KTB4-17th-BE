@@ -3,6 +3,7 @@ package com.team.dating_backend.notification.sse;
 import com.team.dating_backend.common.enums.CommonErrorCode;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -12,6 +13,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Getter
 public class NotificationSseConnection {
+
+    private static final int RECENT_NOTIFICATION_LIMIT = 256;
 
     private final Long userId;
     private final String connectionId;
@@ -23,6 +26,9 @@ public class NotificationSseConnection {
 
     @Getter(AccessLevel.NONE)
     private final ReentrantLock sendLock = new ReentrantLock();
+
+    @Getter(AccessLevel.NONE)
+    private final LinkedHashSet<Long> sentNotificationIds = new LinkedHashSet<>();
 
     public NotificationSseConnection(
         Long userId,
@@ -45,8 +51,24 @@ public class NotificationSseConnection {
         return closed.get();
     }
 
-    public boolean markClosed() {
-        return closed.compareAndSet(false, true);
+    public synchronized boolean markClosed() {
+        boolean changed = closed.compareAndSet(false, true);
+        sentNotificationIds.clear();
+        return changed;
+    }
+
+    synchronized boolean hasSentNotification(Long notificationId) {
+        return sentNotificationIds.contains(notificationId);
+    }
+
+    synchronized void recordSentNotification(Long notificationId) {
+        if (isClosed()) {
+            return;
+        }
+        sentNotificationIds.add(notificationId);
+        if (sentNotificationIds.size() > RECENT_NOTIFICATION_LIMIT) {
+            sentNotificationIds.removeFirst();
+        }
     }
 
     public void lockForSend() {

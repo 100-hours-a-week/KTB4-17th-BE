@@ -21,6 +21,8 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import com.team.dating_backend.auth.config.JwtProperties;
 import com.team.dating_backend.auth.service.JwtService;
+import com.team.dating_backend.aipractice.dto.event.AiPracticeChatUpdatedEvent;
+import com.team.dating_backend.aipractice.enums.AiPracticeChatStatus;
 import com.team.dating_backend.chat.config.ChatWebSocketConfig;
 import com.team.dating_backend.chat.controller.ChatRoomPresenceController;
 import com.team.dating_backend.chat.dto.request.ChatRoomPresenceRequest;
@@ -212,6 +214,63 @@ class ChatWebSocketHandshakeTest {
     }
 
     @Test
+    void 같은_계정으로_연결된_모든_세션이_AI_연습_이벤트를_수신한다() throws Exception {
+        String token = jwtService.createServiceAuthToken(42L);
+        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+        headers.setOrigin("http://localhost:5173");
+        headers.setSecWebSocketProtocol("v12.stomp");
+
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+        StompSession firstSession = null;
+        StompSession secondSession = null;
+        BlockingQueue<AiPracticeChatUpdatedEvent> firstReceived = new LinkedBlockingQueue<>();
+        BlockingQueue<AiPracticeChatUpdatedEvent> secondReceived = new LinkedBlockingQueue<>();
+
+        try {
+            firstSession = client.connectAsync(
+                "ws://127.0.0.1:" + port + "/ws/chat",
+                headers,
+                bearerConnectHeaders(token),
+                new StompSessionHandlerAdapter() {})
+                .get(5, TimeUnit.SECONDS);
+            secondSession = client.connectAsync(
+                "ws://127.0.0.1:" + port + "/ws/chat",
+                headers,
+                bearerConnectHeaders(token),
+                new StompSessionHandlerAdapter() {})
+                .get(5, TimeUnit.SECONDS);
+
+            subscribeAiPractice(firstSession, firstReceived);
+            subscribeAiPractice(secondSession, secondReceived);
+            assertTrue(awaitUserSubscriptionCount("42", "/user/queue/ai-practice", 2));
+
+            messagingTemplate.convertAndSendToUser(
+                "42",
+                "/queue/ai-practice",
+                new AiPracticeChatUpdatedEvent(
+                    42L,
+                    1L,
+                    1L,
+                    AiPracticeChatStatus.COMPLETED,
+                    "응답",
+                    null,
+                    LocalDateTime.of(2026, 11, 4, 17, 20)));
+
+            assertAiPracticeEventReceived(firstReceived);
+            assertAiPracticeEventReceived(secondReceived);
+        } finally {
+            if (firstSession != null && firstSession.isConnected()) {
+                firstSession.disconnect();
+            }
+            if (secondSession != null && secondSession.isConnected()) {
+                secondSession.disconnect();
+            }
+            client.stop();
+        }
+    }
+
+    @Test
     void STOMP_CONNECT에_Bearer_토큰이_없으면_인증이_거부된다() throws Exception {
         assertStompConnectRejected(null, "http://localhost:5173");
     }
@@ -326,6 +385,47 @@ class ChatWebSocketHandshakeTest {
             Thread.sleep(10);
         }
         return false;
+    }
+
+    private void subscribeAiPractice(
+        StompSession session, BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents) {
+        session.subscribe("/user/queue/ai-practice", new StompFrameHandler() {
+            @Override
+            public java.lang.reflect.Type getPayloadType(StompHeaders headers) {
+                return AiPracticeChatUpdatedEvent.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                receivedEvents.add((AiPracticeChatUpdatedEvent) payload);
+            }
+        });
+    }
+
+    private boolean awaitUserSubscriptionCount(
+        String userName, String destination, int expectedCount) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            SimpUser user = simpUserRegistry.getUser(userName);
+            if (user != null) {
+                long count = user.getSessions().stream()
+                    .flatMap(session -> session.getSubscriptions().stream())
+                    .filter(subscription -> destination.equals(subscription.getDestination()))
+                    .count();
+                if (count == expectedCount) {
+                    return true;
+                }
+            }
+            Thread.sleep(10);
+        }
+        return false;
+    }
+
+    private void assertAiPracticeEventReceived(
+        BlockingQueue<AiPracticeChatUpdatedEvent> receivedEvents) throws InterruptedException {
+        AiPracticeChatUpdatedEvent event = receivedEvents.poll(5, TimeUnit.SECONDS);
+        assertNotNull(event);
+        assertEquals(1L, event.chatId());
     }
 
     @Configuration(proxyBeanMethods = false)

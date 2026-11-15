@@ -46,6 +46,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
+    open-in-view: false
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: validate
@@ -85,18 +86,13 @@ kakao:
 
 app:
   profile-cache:
+    enabled: ${PROFILE_CACHE_ENABLED:true}
+    max-ttl: ${PROFILE_CACHE_MAX_TTL:3m}
+    image-request-buffer: ${PROFILE_CACHE_IMAGE_REQUEST_BUFFER:10s}
     redis:
       url: ${PROFILE_CACHE_REDIS_URL:redis://localhost:6380}
       connect-timeout: ${PROFILE_CACHE_REDIS_CONNECT_TIMEOUT:300ms}
       command-timeout: ${PROFILE_CACHE_REDIS_COMMAND_TIMEOUT:200ms}
-
-  recommendation:
-    refresh:
-      enabled: ${APP_RECOMMENDATION_REFRESH_ENABLED:false}
-      cron: ${APP_RECOMMENDATION_REFRESH_CRON:-}
-      zone: ${APP_RECOMMENDATION_REFRESH_ZONE:Asia/Seoul}
-      page-size: ${APP_RECOMMENDATION_REFRESH_PAGE_SIZE:100}
-      cleanup-chunks: ${APP_RECOMMENDATION_REFRESH_CLEANUP_CHUNKS:100}
 
   auth:
     login-redirect-uri: ${AUTH_LOGIN_REDIRECT_URI:${AUTH_SERVICE_REDIRECT_URI}}
@@ -113,41 +109,27 @@ app:
     outbox:
       claim:
         duration-ms: ${APP_NOTIFICATION_OUTBOX_CLAIM_DURATION_MS:60000}
-      relay:
-        enabled: ${APP_NOTIFICATION_OUTBOX_RELAY_ENABLED:false}
-        fixed-delay-ms: ${APP_NOTIFICATION_OUTBOX_RELAY_FIXED_DELAY_MS:1000}
-        batch-size: ${APP_NOTIFICATION_OUTBOX_RELAY_BATCH_SIZE:100}
-        shutdown-wait-seconds: ${APP_NOTIFICATION_OUTBOX_RELAY_SHUTDOWN_WAIT_SECONDS:20}
+      worker:
+        enabled: ${APP_NOTIFICATION_OUTBOX_WORKER_ENABLED:false}
+        fixed-delay-ms: ${APP_NOTIFICATION_OUTBOX_WORKER_FIXED_DELAY_MS:1000}
+        max-requests-per-run: ${APP_NOTIFICATION_OUTBOX_WORKER_MAX_REQUESTS_PER_RUN:100}
+        shutdown-wait-seconds: ${APP_NOTIFICATION_OUTBOX_WORKER_SHUTDOWN_WAIT_SECONDS:20}
       retry:
         max-failures: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_FAILURES:5}
         initial-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_INITIAL_DELAY_MS:1000}
         max-delay-ms: ${APP_NOTIFICATION_OUTBOX_RETRY_MAX_DELAY_MS:60000}
     kafka:
-      create-requested-topic: ${NOTIFICATION_CREATE_REQUESTED_TOPIC:local-notification-create-requested-v1}
       delivery-topic: ${NOTIFICATION_DELIVERY_TOPIC:local-notification-delivery-v1}
-    publish:
-      result-timeout-ms: ${APP_NOTIFICATION_PUBLISH_RESULT_TIMEOUT_MS:15000}
-    creation:
-      enabled: ${APP_NOTIFICATION_CREATION_ENABLED:false}
-      group-id: ${APP_NOTIFICATION_CREATION_GROUP_ID:${spring.profiles.active:local}-notification-create-v1}
-      concurrency: ${APP_NOTIFICATION_CREATION_CONCURRENCY:1}
-      max-poll-records: ${APP_NOTIFICATION_CREATION_MAX_POLL_RECORDS:1}
-      max-poll-interval-ms: ${APP_NOTIFICATION_CREATION_MAX_POLL_INTERVAL_MS:300000}
-      delivery-result-timeout-ms: ${APP_NOTIFICATION_CREATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
     chat-message:
       enabled: ${APP_NOTIFICATION_CHAT_MESSAGE_ENABLED:false}
       group-id: notification-chat-message-v1
     delivery:
+      result-timeout-ms: ${APP_NOTIFICATION_DELIVERY_RESULT_TIMEOUT_MS:15000}
       enabled: ${APP_NOTIFICATION_DELIVERY_ENABLED:false}
       group-id-prefix: ${APP_NOTIFICATION_DELIVERY_GROUP_ID_PREFIX:${spring.profiles.active:local}-notification-sse-v1}
       concurrency: ${APP_NOTIFICATION_DELIVERY_CONCURRENCY:1}
       max-poll-records: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_RECORDS:1}
       max-poll-interval-ms: ${APP_NOTIFICATION_DELIVERY_MAX_POLL_INTERVAL_MS:300000}
-    retry:
-      max-attempts: ${APP_NOTIFICATION_RETRY_MAX_ATTEMPTS:4}
-      delay-ms: ${APP_NOTIFICATION_RETRY_DELAY_MS:5000}
-      concurrency: ${APP_NOTIFICATION_RETRY_CONCURRENCY:1}
-      publish-result-timeout-ms: ${APP_NOTIFICATION_RETRY_PUBLISH_RESULT_TIMEOUT_MS:15000}
     alert:
       enabled: ${NOTIFICATION_DISCORD_ENABLED:false}
       environment: ${NOTIFICATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
@@ -200,6 +182,7 @@ app:
 
   persona-ai:
     base-url: ${AI_PERSONA_BASE_URL:}
+    api-key: ${AI_PERSONA_API_KEY:}
 
   persona-kakao:
     base-url: ${AI_KAKAO_BASE_URL:${AI_PERSONA_BASE_URL:}}
@@ -208,14 +191,55 @@ app:
     read-timeout-ms: ${AI_KAKAO_READ_TIMEOUT_MS:30000}
 
   ai-simulation:
+    alert:
+      enabled: ${AI_SIMULATION_DISCORD_ENABLED:false}
+      environment: ${AI_SIMULATION_ALERT_ENVIRONMENT:${spring.profiles.active:local}}
+      webhook-url: ${AI_SIMULATION_DISCORD_WEBHOOK_URL:${NOTIFICATION_DISCORD_WEBHOOK_URL:}}
+      pool-size: ${AI_SIMULATION_ALERT_POOL_SIZE:1}
+      queue-capacity: ${AI_SIMULATION_ALERT_QUEUE_CAPACITY:20}
+      shutdown-wait-seconds: ${AI_SIMULATION_ALERT_SHUTDOWN_WAIT_SECONDS:10}
+      connect-timeout-ms: ${AI_SIMULATION_ALERT_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${AI_SIMULATION_ALERT_READ_TIMEOUT_MS:3000}
+      max-messages-per-window: ${AI_SIMULATION_ALERT_MAX_MESSAGES_PER_WINDOW:5}
+      rate-limit-window-ms: ${AI_SIMULATION_ALERT_RATE_LIMIT_WINDOW_MS:60000}
     base-url: ${AI_SIMULATION_BASE_URL:}
     simulation-path: ${AI_SIMULATION_PATH:/ai/api/v2/simulation}
     connect-timeout-ms: ${AI_SIMULATION_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${AI_SIMULATION_READ_TIMEOUT_MS:130000}
-    async-pool-size: ${AI_SIMULATION_ASYNC_POOL_SIZE:1}
-    async-queue-capacity: ${AI_SIMULATION_ASYNC_QUEUE_CAPACITY:4}
-    async-shutdown-wait-seconds: ${AI_SIMULATION_ASYNC_SHUTDOWN_WAIT_SECONDS:30}
-    max-processing-age-seconds: ${AI_SIMULATION_MAX_PROCESSING_AGE_SECONDS:900}
+    kafka:
+      requested-topic: ${AI_SIMULATION_KAFKA_REQUESTED_TOPIC:${spring.profiles.active:local}-ai-simulation-requested}
+      completed-topic: ${AI_SIMULATION_KAFKA_COMPLETED_TOPIC:${spring.profiles.active:local}-ai-simulation-completed}
+      partitions: ${AI_SIMULATION_KAFKA_PARTITIONS:4}
+      replication-factor: ${AI_SIMULATION_KAFKA_REPLICATION_FACTOR:3}
+      min-in-sync-replicas: ${AI_SIMULATION_KAFKA_MIN_INSYNC_REPLICAS:2}
+      retention-ms: ${AI_SIMULATION_KAFKA_RETENTION_MS:}
+      concurrency: ${AI_SIMULATION_KAFKA_CONCURRENCY:2}
+      publish-result-timeout-ms: ${AI_SIMULATION_KAFKA_PUBLISH_RESULT_TIMEOUT_MS:15000}
+      generation:
+        enabled: ${AI_SIMULATION_KAFKA_GENERATION_ENABLED:false}
+        group-id: ${AI_SIMULATION_KAFKA_GENERATION_GROUP_ID:${spring.profiles.active:local}-ai-simulation-generation}
+      request-notification:
+        enabled: ${AI_SIMULATION_KAFKA_REQUEST_NOTIFICATION_ENABLED:false}
+        group-id: ${AI_SIMULATION_KAFKA_REQUEST_NOTIFICATION_GROUP_ID:${spring.profiles.active:local}-ai-simulation-request-notification}
+      recommendation:
+        enabled: ${AI_SIMULATION_KAFKA_RECOMMENDATION_ENABLED:false}
+        group-id: ${AI_SIMULATION_KAFKA_RECOMMENDATION_GROUP_ID:${spring.profiles.active:local}-ai-simulation-recommendation}
+      requester-notification:
+        enabled: ${AI_SIMULATION_KAFKA_REQUESTER_NOTIFICATION_ENABLED:false}
+        group-id: ${AI_SIMULATION_KAFKA_REQUESTER_NOTIFICATION_GROUP_ID:${spring.profiles.active:local}-ai-simulation-requester-notification}
+      target-notification:
+        enabled: ${AI_SIMULATION_KAFKA_TARGET_NOTIFICATION_ENABLED:false}
+        group-id: ${AI_SIMULATION_KAFKA_TARGET_NOTIFICATION_GROUP_ID:${spring.profiles.active:local}-ai-simulation-target-notification}
+      generation-poll:
+        max-poll-records: ${AI_SIMULATION_KAFKA_GENERATION_MAX_POLL_RECORDS:1}
+        max-poll-interval-ms: ${AI_SIMULATION_KAFKA_GENERATION_MAX_POLL_INTERVAL_MS:180000}
+      side-effect-poll:
+        max-poll-records: ${AI_SIMULATION_KAFKA_SIDE_EFFECT_MAX_POLL_RECORDS:1}
+        max-poll-interval-ms: ${AI_SIMULATION_KAFKA_SIDE_EFFECT_MAX_POLL_INTERVAL_MS:300000}
+      retry:
+        max-attempts: ${AI_SIMULATION_KAFKA_RETRY_MAX_ATTEMPTS:4}
+        delay-ms: ${AI_SIMULATION_KAFKA_RETRY_DELAY_MS:5000}
+        concurrency: ${AI_SIMULATION_KAFKA_RETRY_CONCURRENCY:1}
 
   file:
     max-size-bytes: ${APP_FILE_MAX_SIZE_BYTES}

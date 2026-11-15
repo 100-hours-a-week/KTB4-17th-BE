@@ -26,4 +26,7 @@ public class NotificationDeliveryProperties {
 
     @Positive
     private int maxPollIntervalMs = 300_000;
+
+    @Positive(message = "INTERNAL_SERVER_ERROR")
+    private long resultTimeoutMs = 15_000L;
 }

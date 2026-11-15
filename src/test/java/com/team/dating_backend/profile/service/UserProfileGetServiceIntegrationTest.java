@@ -14,6 +14,9 @@ import com.team.dating_backend.matching.enums.LikeStatus;
 import com.team.dating_backend.matching.enums.MatchEndReason;
 import com.team.dating_backend.matching.enums.MatchStatus;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.cache.ProfileCacheExpirationPolicy;
+import com.team.dating_backend.profile.cache.UserProfileCache;
+import com.team.dating_backend.profile.config.ProfileCacheProperties;
 import com.team.dating_backend.profile.enums.ProfileImageErrorCode;
 import com.team.dating_backend.profile.exception.ProfileImageBusinessException;
 import com.team.dating_backend.user.entity.User;
@@ -32,6 +35,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,8 +44,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-@DataJpaTest(properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate"})
-@Import({UserProfileGetService.class, ProfileAvailabilityValidator.class})
+@DataJpaTest(
+    properties = {"spring.flyway.enabled=true", "spring.jpa.hibernate.ddl-auto=validate",
+        "app.profile-cache.enabled=false"}
+)
+@Import({UserProfileGetService.class, UserProfileSourceLoader.class, ProfileAvailabilityValidator.class})
+@EnableConfigurationProperties(ProfileCacheProperties.class)
 @Testcontainers
 class UserProfileGetServiceIntegrationTest {
 
@@ -62,6 +70,12 @@ class UserProfileGetServiceIntegrationTest {
 
     @MockitoBean
     private ProfileImageGetService profileImageGetService;
+
+    @MockitoBean
+    private UserProfileCache cache;
+
+    @MockitoBean
+    private ProfileCacheExpirationPolicy expirationPolicy;
 
     private User viewer;
     private User target;

@@ -14,7 +14,6 @@ public class NotificationCreateRequestedValidator {
 
     public void validate(NotificationCreateRequested request) {
         if (request == null
-            || request.schemaVersion() != NotificationCreateRequested.CURRENT_SCHEMA_VERSION
             || request.sourceEventId() == null
             || request.sourceEventId().isBlank()
             || request.recipientUserId() == null

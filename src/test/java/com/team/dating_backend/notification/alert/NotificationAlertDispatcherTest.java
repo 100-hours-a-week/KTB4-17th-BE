@@ -36,7 +36,7 @@ class NotificationAlertDispatcherTest {
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
     private final DiscordWebhookClient client = mock(DiscordWebhookClient.class);
     private final NotificationFailureContext context = new NotificationFailureContext(
-        NotificationFailureCode.PUBLISH_RESULT_TIMEOUT, "event-123", 7L, null, null, Instant.now(), null, null);
+        NotificationFailureCode.OUTBOX_DELIVERY_FAILED, "event-123", 7L, null, null, Instant.now(), null, null);
 
     @BeforeEach
     void setUp() {
@@ -111,7 +111,7 @@ class NotificationAlertDispatcherTest {
             .counter().count()).isEqualTo(5);
         assertThat(registry.get("notification.alert.sent").counter().count()).isZero();
         assertThat(output.getAll())
-            .contains("errorCode=ALERT_WEBHOOK_FAILED", "originalErrorCode=PUBLISH_RESULT_TIMEOUT")
+            .contains("errorCode=ALERT_WEBHOOK_FAILED", "originalErrorCode=OUTBOX_DELIVERY_FAILED")
             .doesNotContain("unsafe-detail");
     }
 

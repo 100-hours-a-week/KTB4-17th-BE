@@ -2,8 +2,8 @@ package com.team.dating_backend.notification.kafka;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.team.dating_backend.notification.config.NotificationCreationProperties;
-import com.team.dating_backend.notification.config.NotificationKafkaConfiguration;
+import com.team.dating_backend.common.kafka.config.KafkaProducerConfiguration;
+import com.team.dating_backend.notification.config.NotificationDeliveryProperties;
 import com.team.dating_backend.notification.config.NotificationKafkaProperties;
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.dto.response.NotificationEventResponse;
@@ -53,9 +53,8 @@ class NotificationDeliveryProducerIntegrationTest {
         String topic = "notification-delivery-test-" + UUID.randomUUID();
         new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, KafkaAutoConfiguration.class))
-            .withUserConfiguration(NotificationKafkaConfiguration.class, NotificationDeliveryProducer.class,
-                PropertiesConfiguration.class, NotificationRecoveryTestConfiguration.class)
-            .withBean(NotificationCreationFailureClassifier.class, NotificationCreationFailureClassifier::new)
+            .withUserConfiguration(KafkaProducerConfiguration.class, NotificationDeliveryProducer.class,
+                PropertiesConfiguration.class)
             .withBean(KafkaConnectionDetails.class, () -> () -> List.of(KAFKA.getBootstrapServers()))
             .withPropertyValues("app.notification.kafka.delivery-topic=" + topic)
             .withInitializer(context -> {
@@ -71,6 +70,7 @@ class NotificationDeliveryProducerIntegrationTest {
             })
             .run(context -> {
                 assertThat(context).hasNotFailed();
+                assertThat(context).doesNotHaveBean("notificationCreationProperties");
                 try (Admin admin = Admin.create(context.getBean(KafkaAdmin.class).getConfigurationProperties())) {
                     admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1)))
                         .all().get(20, TimeUnit.SECONDS);
@@ -78,7 +78,7 @@ class NotificationDeliveryProducerIntegrationTest {
                 var createdAt = LocalDateTime.of(2026, 10, 21, 1, 2, 3, 123456000);
                 var notification = new NotificationEventResponse(
                     10L, "LIKE", "저장된 제목", "저장된 본문", null, null, createdAt.plusMinutes(1), createdAt);
-                var event = new NotificationDeliveryEvent(1, "event-1", 7L, notification);
+                var event = new NotificationDeliveryEvent("event-1", 7L, notification);
                 var metadata = context.getBean(NotificationDeliveryProducer.class).publishAndAwait(event);
                 assertThat(metadata.topic()).isEqualTo(topic);
                 assertThat(metadata.partition()).isIn(0, 1);
@@ -109,6 +109,6 @@ class NotificationDeliveryProducerIntegrationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationCreationProperties.class})
+    @EnableConfigurationProperties({NotificationKafkaProperties.class, NotificationDeliveryProperties.class})
     static class PropertiesConfiguration {}
 }

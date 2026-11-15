@@ -42,7 +42,7 @@ public class AiPracticeChatService {
         Long userId, Long sessionId, AiPracticeChatCreateRequest request) {
         lockUser(userId);
         AiPracticeSession session = lockOwnedSession(sessionId, userId);
-        AiPracticeChat existing = chatRepository.findBySession_IdAndClientMessageId(
+        AiPracticeChat existing = chatRepository.findBySessionIdAndClientMessageId(
             sessionId, request.clientMessageId()).orElse(null);
         if (existing != null) {
             if (!existing.getUserMessage().equals(request.userMessage())) {
@@ -56,7 +56,7 @@ public class AiPracticeChatService {
         if (session.getAiSessionId() == null && session.getTargetUserId() == null) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.TARGET_USER_UNAVAILABLE);
         }
-        if (chatRepository.existsBySession_IdAndStatus(
+        if (chatRepository.existsBySessionIdAndStatus(
             sessionId, AiPracticeChatStatus.GENERATING)) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.GENERATION_IN_PROGRESS);
         }
@@ -84,12 +84,12 @@ public class AiPracticeChatService {
         lockUser(userId);
         AiPracticeSession session = lockOwnedSession(sessionId, userId);
         requireActiveSession(session);
-        AiPracticeChat chat = chatRepository.findByIdAndSession_Id(chatId, sessionId)
+        AiPracticeChat chat = chatRepository.findByIdAndSessionId(chatId, sessionId)
             .orElseThrow(() -> new AiPracticeBusinessException(AiPracticeErrorCode.CHAT_NOT_FOUND));
         if (chat.getStatus() != AiPracticeChatStatus.FAILED) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.CHAT_NOT_RETRYABLE);
         }
-        if (chatRepository.existsBySession_IdAndStatus(
+        if (chatRepository.existsBySessionIdAndStatus(
             sessionId, AiPracticeChatStatus.GENERATING)) {
             throw new AiPracticeBusinessException(AiPracticeErrorCode.GENERATION_IN_PROGRESS);
         }

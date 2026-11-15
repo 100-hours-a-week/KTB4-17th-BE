@@ -82,7 +82,7 @@ public class AiPracticeOutboxPublishJob {
 
         AiPracticeChat chat = outbox.getChatId() == null
             ? null
-            : chatRepository.findByIdAndSession_Id(outbox.getChatId(), outbox.getSessionId())
+            : chatRepository.findByIdAndSessionId(outbox.getChatId(), outbox.getSessionId())
                 .orElse(null);
         if (chat == null
             || chat.getStatus() != AiPracticeChatStatus.GENERATING

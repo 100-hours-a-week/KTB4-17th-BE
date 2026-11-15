@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -33,6 +34,7 @@ class RestPersonaAiClientTest {
         server = MockRestServiceServer.bindTo(builder).build();
         PersonaAiProperties properties = new PersonaAiProperties();
         properties.setBaseUrl("http://ai.internal");
+        properties.setApiKey("internal-key");
         client = new RestPersonaAiClient(builder, properties, new ObjectMapper());
     }
 
@@ -145,6 +147,70 @@ class RestPersonaAiClientTest {
         assertThat(response.source()).isEqualTo("fallback");
         assertThat(response.narrative()).isNull();
         assertThat(response.summaries()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void 내_페르소나_조회_요청에_내부_인증_키를_전달한다() {
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/persona/users/7"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header("X-Internal-Api-Key", "internal-key"))
+            .andRespond(withSuccess("""
+                {
+                  "user_id":"7",
+                  "persona_id":"persona-1",
+                  "version":3,
+                  "nickname":"하루",
+                  "mbti":"INFJ",
+                  "confirmed_at":"2026-11-10T12:34:56Z",
+                  "narrative":{
+                    "headline":"천천히 깊어지는 사람",
+                    "body":"각자의 시간을 존중해요.",
+                    "traits":["신중함","다정함"]
+                  },
+                  "conversation_style":{
+                    "summary":"짧고 다정하게 반응해요.",
+                    "frequent_phrases":["오 진짜요?"],
+                    "endings":["~요ㅎㅎ"],
+                    "slang":["ㄹㅇ"],
+                    "message_length":"짧게 여러 번 보내요",
+                    "laughter":"ㅎㅎ를 자주 써요",
+                    "question_rate":"꼬리 질문을 자주 해요",
+                    "phrase_weights":{"ㅎㅎ":0.9}
+                  },
+                  "summaries":[
+                    {"category":"intimacy","title":"천천히 가까워져요","content":"시간을 두고 알아가요."}
+                  ],
+                  "interests":["산책"],
+                  "routine":["퇴근 후 러닝"],
+                  "date_prefer":["조용한 전시"],
+                  "date_avoid":["시끄러운 술집"]
+                }
+                """, MediaType.APPLICATION_JSON));
+
+        PersonaAiPayloads.ProfileResponse response = client.getProfile("7");
+
+        assertThat(response.userId()).isEqualTo("7");
+        assertThat(response.personaId()).isEqualTo("persona-1");
+        assertThat(response.conversationStyle().frequentPhrases()).containsExactly("오 진짜요?");
+        assertThat(response.datePrefer()).containsExactly("조용한 전시");
+        server.verify();
+    }
+
+    @Test
+    void AI의_페르소나_미존재_응답을_PERSONA_NOT_FOUND로_처리한다() {
+        server.expect(once(), requestTo("http://ai.internal/ai/api/v1/persona/users/7"))
+            .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("""
+                    {"detail":"persona not found"}
+                    """));
+
+        assertThatThrownBy(() -> client.getProfile("7"))
+            .isInstanceOfSatisfying(
+                PersonaBusinessException.class,
+                exception -> assertThat(exception.getErrorCode())
+                    .isEqualTo(PersonaErrorCode.PERSONA_NOT_FOUND));
         server.verify();
     }
 

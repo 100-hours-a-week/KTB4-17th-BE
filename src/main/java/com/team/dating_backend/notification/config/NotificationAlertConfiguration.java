@@ -1,5 +1,6 @@
 package com.team.dating_backend.notification.config;
 
+import com.team.dating_backend.common.alert.DiscordWebhookSender;
 import io.micrometer.observation.ObservationRegistry;
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -16,6 +17,12 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Configuration(proxyBeanMethods = false)
 public class NotificationAlertConfiguration {
+
+    @Bean("notificationDiscordWebhookSender")
+    public DiscordWebhookSender notificationDiscordWebhookSender(
+        @Qualifier("notificationDiscordRestClient") RestClient restClient) {
+        return new DiscordWebhookSender(restClient);
+    }
 
     @Bean("notificationAlertExecutor")
     @DependsOn("notificationDiscordHttpClient")

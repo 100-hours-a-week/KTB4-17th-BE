@@ -22,6 +22,7 @@ import com.team.dating_backend.file.entity.File;
 import com.team.dating_backend.matching.service.LikeTerminationService;
 import com.team.dating_backend.matching.service.MatchWithdrawalTerminationService;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.entity.ProfileImage;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
@@ -35,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
@@ -57,6 +59,7 @@ class UserWithdrawalServiceTest {
     private AiPracticeWithdrawalTerminationService aiPracticeWithdrawalTerminationService;
     private AiSimulationWithdrawalTerminationService aiSimulationWithdrawalTerminationService;
     private UserWithdrawalService service;
+    private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
@@ -70,11 +73,12 @@ class UserWithdrawalServiceTest {
         matchWithdrawalTerminationService = mock(MatchWithdrawalTerminationService.class);
         aiPracticeWithdrawalTerminationService = mock(AiPracticeWithdrawalTerminationService.class);
         aiSimulationWithdrawalTerminationService = mock(AiSimulationWithdrawalTerminationService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new UserWithdrawalService(userRepository, authAccountRepository,
             authTokenService,
             profileRepository, profileImageRepository, likeTerminationService,
             chatRoomWithdrawalTerminationService, matchWithdrawalTerminationService,
-            aiPracticeWithdrawalTerminationService, aiSimulationWithdrawalTerminationService);
+            aiPracticeWithdrawalTerminationService, aiSimulationWithdrawalTerminationService, eventPublisher);
     }
 
     @ParameterizedTest
@@ -128,6 +132,7 @@ class UserWithdrawalServiceTest {
             .terminateForUser(
                 org.mockito.ArgumentMatchers.eq(USER_ID), endedAtCaptor.capture());
         assertThat(endedAtCaptor.getAllValues()).containsOnly(user.getWithdrawnAt());
+        verify(eventPublisher).publishEvent(new ProfileCacheEvictionRequestedEvent(USER_ID));
     }
 
     @Test
@@ -161,7 +166,7 @@ class UserWithdrawalServiceTest {
             chatRoomWithdrawalTerminationService,
             matchWithdrawalTerminationService,
             aiPracticeWithdrawalTerminationService,
-            aiSimulationWithdrawalTerminationService);
+            aiSimulationWithdrawalTerminationService, eventPublisher);
     }
 
     @Test
@@ -187,7 +192,7 @@ class UserWithdrawalServiceTest {
             aiSimulationWithdrawalTerminationService,
             authAccountRepository,
             profileRepository,
-            profileImageRepository);
+            profileImageRepository, eventPublisher);
     }
 
     @Test

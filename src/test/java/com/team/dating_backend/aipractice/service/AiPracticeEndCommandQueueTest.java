@@ -37,7 +37,7 @@ class AiPracticeEndCommandQueueTest {
         ReflectionTestUtils.setField(endedSession, "id", SESSION_ID);
         endedSession.attachAiSessionId("ai-session-42");
         endedSession.end(CREATED_AT.plusMinutes(1));
-        given(chatRepository.existsBySession_IdAndStatus(
+        given(chatRepository.existsBySessionIdAndStatus(
             SESSION_ID, AiPracticeChatStatus.GENERATING)).willReturn(false);
     }
 
@@ -57,7 +57,7 @@ class AiPracticeEndCommandQueueTest {
 
     @Test
     void 생성중인턴이있으면AI종료명령을대기한다() {
-        given(chatRepository.existsBySession_IdAndStatus(
+        given(chatRepository.existsBySessionIdAndStatus(
             SESSION_ID, AiPracticeChatStatus.GENERATING)).willReturn(true);
 
         queue.enqueueIfReady(endedSession);

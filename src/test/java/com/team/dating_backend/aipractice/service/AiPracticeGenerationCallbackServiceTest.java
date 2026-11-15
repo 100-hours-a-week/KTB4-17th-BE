@@ -59,7 +59,7 @@ class AiPracticeGenerationCallbackServiceTest {
         ReflectionTestUtils.setField(chat, "id", CHAT_ID);
 
         given(sessionRepository.findByIdForUpdate(SESSION_ID)).willReturn(Optional.of(session));
-        given(chatRepository.findByIdAndSession_Id(CHAT_ID, SESSION_ID))
+        given(chatRepository.findByIdAndSessionId(CHAT_ID, SESSION_ID))
             .willReturn(Optional.of(chat));
     }
 

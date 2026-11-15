@@ -138,9 +138,17 @@ public class NotificationDeliveryFailureRecoverer implements ConsumerRecordRecov
                 record.offset(),
                 failure.getClass().getSimpleName(),
                 failure.getCause() == null ? null : failure.getCause().getClass().getSimpleName());
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (failure != loggingFailure) {
+                failure.addSuppressed(loggingFailure);
+            }
+        }
         try {
             meterRegistry.counter("notification.reporting.failures", "operation", "DELIVERY_CONTEXT").increment();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException metricFailure) {
+            if (failure != metricFailure) {
+                failure.addSuppressed(metricFailure);
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.team.dating_backend.notification.dto.event.NotificationCreateRequeste
 import com.team.dating_backend.notification.dto.event.NotificationDeliveryEvent;
 import com.team.dating_backend.notification.entity.NotificationRequestOutbox;
 import com.team.dating_backend.notification.enums.NotificationFailureCode;
+import com.team.dating_backend.notification.enums.NotificationOutboxStatus;
 import com.team.dating_backend.notification.enums.NotificationType;
 import com.team.dating_backend.notification.exception.NotificationBusinessException;
 import java.time.Instant;
@@ -20,12 +21,21 @@ public record NotificationFailureContext(
     String exceptionType,
     String causeType,
     KafkaFailureDetails kafkaDetails,
-    DeliveryFailureDetails deliveryDetails) {
+    DeliveryFailureDetails deliveryDetails,
+    OutboxFailureDetails outboxDetails) {
 
     public NotificationFailureContext {
         if (errorCode == null || occurredAt == null) {
             throw new NotificationBusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    public NotificationFailureContext(
+        NotificationFailureCode errorCode, String sourceEventId, Long recipientUserId, NotificationType type,
+        Instant requestedAt, Instant occurredAt, String exceptionType, String causeType,
+        KafkaFailureDetails kafkaDetails, DeliveryFailureDetails deliveryDetails) {
+        this(errorCode, sourceEventId, recipientUserId, type, requestedAt, occurredAt, exceptionType, causeType,
+            kafkaDetails, deliveryDetails, null);
     }
 
     public NotificationFailureContext(
@@ -90,7 +100,6 @@ public record NotificationFailureContext(
         DeliveryFailureDetails details = event == null
             ? null
             : new DeliveryFailureDetails(
-                event.schemaVersion(),
                 notification == null ? null : notification.notificationId(),
                 notification == null ? null : notification.createdAt());
         return new NotificationFailureContext(
@@ -108,20 +117,12 @@ public record NotificationFailureContext(
 
     public FailureStage failureStage() {
         return switch (errorCode) {
-            case PUBLISH_SUBMISSION_REJECTED -> FailureStage.PUBLISH_SUBMISSION;
-            case PUBLISH_CALL_FAILED -> FailureStage.PUBLISH;
-            case OUTBOX_PUBLISH_REQUIRES_ATTENTION -> FailureStage.PUBLISH;
             case OUTBOX_RESTORE_FAILED -> FailureStage.OUTBOX_RESTORE;
+            case OUTBOX_CREATION_FAILED -> FailureStage.CREATION_PROCESSING;
+            case OUTBOX_DELIVERY_FAILED, PUBLISH_INTERRUPTED -> FailureStage.PUBLISH_RESULT;
             case OUTBOX_STATE_UPDATE_FAILED -> FailureStage.OUTBOX_STATE_UPDATE;
-            case OUTBOX_RETRY_LIMIT_EXCEEDED -> FailureStage.OUTBOX_RETRY;
-            case OUTBOX_LOOKUP_FAILED -> FailureStage.OUTBOX_LOOKUP;
             case OUTBOX_CLAIM_FAILED, OUTBOX_CLAIM_LOST -> FailureStage.OUTBOX_CLAIM;
             case OUTBOX_RELEASE_FAILED -> FailureStage.OUTBOX_RELEASE;
-            case OUTBOX_RELAY_FAILED -> FailureStage.OUTBOX_RELAY;
-            case PUBLISH_RESULT_FAILED, PUBLISH_RESULT_TIMEOUT, PUBLISH_INTERRUPTED -> FailureStage.PUBLISH_RESULT;
-            case RETRY_PUBLISH_FAILED -> FailureStage.RETRY_PUBLISH;
-            case DLT_PUBLISH_FAILED -> FailureStage.DLT_PUBLISH;
-            case DLT_RECORDED -> FailureStage.CREATION_PROCESSING;
             case DELIVERY_DESERIALIZATION_FAILED, DELIVERY_INVALID_EVENT,
                 DELIVERY_PROCESSING_FAILED -> FailureStage.DELIVERY_CONSUMPTION;
             case ALERT_SUBMISSION_REJECTED -> FailureStage.ALERT_SUBMISSION;
@@ -129,13 +130,13 @@ public record NotificationFailureContext(
         };
     }
 
-    public static NotificationFailureContext fromOutbox(NotificationFailureCode errorCode,
+    public static NotificationFailureContext fromWorker(NotificationFailureCode errorCode,
         NotificationRequestOutbox outbox, NotificationCreateRequested request, Throwable exception,
-        Instant occurredAt, Integer failureCount, Boolean retryable) {
-        var details = KafkaFailureDetails.from(null, null, null, null, failureCount, retryable, exception);
+        Instant occurredAt, Integer failureCount, NotificationOutboxStatus status, Boolean retryable) {
         return new NotificationFailureContext(errorCode, outbox.getSourceEventId(), outbox.getRecipientUserId(),
             outbox.getType(), request == null ? null : request.requestedAt(), occurredAt,
-            exceptionType(exception), causeType(exception), details);
+            exceptionType(exception), causeType(exception), null, null,
+            new OutboxFailureDetails(outbox.getId(), failureCount, status, retryable));
     }
 
     private static NotificationType notificationType(String type) {
@@ -158,25 +159,21 @@ public record NotificationFailureContext(
     }
 
     public enum FailureStage {
-        OUTBOX_LOOKUP,
         OUTBOX_CLAIM,
         OUTBOX_RELEASE,
-        OUTBOX_RELAY,
         OUTBOX_RESTORE,
         OUTBOX_STATE_UPDATE,
-        OUTBOX_RETRY,
-        PUBLISH_SUBMISSION,
-        PUBLISH,
         PUBLISH_RESULT,
         CREATION_PROCESSING,
-        RETRY_PUBLISH,
-        DLT_PUBLISH,
         DELIVERY_CONSUMPTION,
         ALERT_SUBMISSION,
         ALERT_WEBHOOK
     }
 
-    public record DeliveryFailureDetails(Integer schemaVersion, Long notificationId, LocalDateTime createdAt) {}
+    public record DeliveryFailureDetails(Long notificationId, LocalDateTime createdAt) {}
+
+    public record OutboxFailureDetails(Long outboxId, Integer failureCount, NotificationOutboxStatus status,
+        Boolean retryable) {}
 
     public record KafkaLocation(String topic, Integer partition, Long offset) {
 

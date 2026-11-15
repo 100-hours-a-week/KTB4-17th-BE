@@ -17,4 +17,6 @@ public class PersonaAiProperties {
     private String finishPath = "/ai/api/v1/persona/onboarding/%s/finish";
     private String buildPath = "/ai/api/v1/persona/%s/build";
     private String confirmPath = "/ai/api/v1/persona/%s/confirm";
+    private String profilePath = "/ai/api/v1/persona/users/%s";
+    private String apiKey = "";
 }

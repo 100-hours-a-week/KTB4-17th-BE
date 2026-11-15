@@ -164,11 +164,19 @@ public class NotificationSseObservation {
             log.error("errorCode={}, observationOperation={}, exceptionType={}, causeType={}",
                 CommonErrorCode.INTERNAL_SERVER_ERROR, operation, exception.getClass().getSimpleName(),
                 exception.getCause() == null ? null : exception.getCause().getClass().getSimpleName());
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException loggingFailure) {
+            if (exception != loggingFailure) {
+                exception.addSuppressed(loggingFailure);
+            }
+        }
         try {
             meterRegistryProvider.getObject()
                 .counter("notification.sse.observation.failures", "operation", operation).increment();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException metricFailure) {
+            if (exception != metricFailure) {
+                exception.addSuppressed(metricFailure);
+            }
+        }
     }
 
     public enum EventKind {

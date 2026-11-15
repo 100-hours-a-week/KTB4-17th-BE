@@ -52,9 +52,9 @@ class AiPracticeHistoryServiceTest {
 
     @Test
     void 대화이력은ID오름차순으로조회하고ID를커서로사용한다() {
-        given(chatRepository.findBySession_IdOrderByIdAsc(SESSION_ID, PageRequest.of(0, 2)))
+        given(chatRepository.findBySessionIdOrderByIdAsc(SESSION_ID, PageRequest.of(0, 2)))
             .willReturn(List.of(firstChat, secondChat));
-        given(chatRepository.findBySession_IdAndIdGreaterThanOrderByIdAsc(
+        given(chatRepository.findBySessionIdAndIdGreaterThanOrderByIdAsc(
             SESSION_ID, 11L, PageRequest.of(0, 2)))
             .willReturn(List.of(secondChat));
 
@@ -67,8 +67,8 @@ class AiPracticeHistoryServiceTest {
         assertThat(nextPage.chats()).extracting("id").containsExactly(22L);
         assertThat(nextPage.hasNext()).isFalse();
         assertThat(nextPage.nextCursor()).isNull();
-        verify(chatRepository).findBySession_IdOrderByIdAsc(SESSION_ID, PageRequest.of(0, 2));
-        verify(chatRepository).findBySession_IdAndIdGreaterThanOrderByIdAsc(
+        verify(chatRepository).findBySessionIdOrderByIdAsc(SESSION_ID, PageRequest.of(0, 2));
+        verify(chatRepository).findBySessionIdAndIdGreaterThanOrderByIdAsc(
             SESSION_ID, 11L, PageRequest.of(0, 2));
     }
 

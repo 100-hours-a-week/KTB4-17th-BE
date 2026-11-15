@@ -14,19 +14,19 @@ import org.springframework.data.repository.query.Param;
 
 public interface AiPracticeChatRepository extends JpaRepository<AiPracticeChat, Long> {
 
-    Optional<AiPracticeChat> findBySession_IdAndClientMessageId(
+    Optional<AiPracticeChat> findBySessionIdAndClientMessageId(
         Long sessionId, UUID clientMessageId);
 
-    Optional<AiPracticeChat> findByIdAndSession_Id(Long id, Long sessionId);
+    Optional<AiPracticeChat> findByIdAndSessionId(Long id, Long sessionId);
 
-    boolean existsBySession_IdAndStatus(Long sessionId, AiPracticeChatStatus status);
+    boolean existsBySessionIdAndStatus(Long sessionId, AiPracticeChatStatus status);
 
-    List<AiPracticeChat> findAllBySession_IdAndStatus(
+    List<AiPracticeChat> findAllBySessionIdAndStatus(
         Long sessionId, AiPracticeChatStatus status);
 
-    List<AiPracticeChat> findBySession_IdOrderByIdAsc(Long sessionId, Pageable pageable);
+    List<AiPracticeChat> findBySessionIdOrderByIdAsc(Long sessionId, Pageable pageable);
 
-    List<AiPracticeChat> findBySession_IdAndIdGreaterThanOrderByIdAsc(
+    List<AiPracticeChat> findBySessionIdAndIdGreaterThanOrderByIdAsc(
         Long sessionId, Long cursor, Pageable pageable);
 
     @Query("""
@@ -41,7 +41,7 @@ public interface AiPracticeChatRepository extends JpaRepository<AiPracticeChat, 
         @Param("usageDate") LocalDate usageDate,
         @Param("statuses") Set<AiPracticeChatStatus> statuses);
 
-    long countBySession_IdAndStatus(Long sessionId, AiPracticeChatStatus status);
+    long countBySessionIdAndStatus(Long sessionId, AiPracticeChatStatus status);
 
     @Query("""
         select count(chat) from AiPracticeChat chat

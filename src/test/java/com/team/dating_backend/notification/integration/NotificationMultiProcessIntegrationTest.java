@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.team.dating_backend.notification.support.NotificationMultiProcessTestSupport;
+import com.team.dating_backend.notification.support.NotificationIntegrationEnvironment;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,11 @@ import org.junit.jupiter.api.Timeout;
 @Tag("notification-multiprocess")
 @Timeout(90)
 class NotificationMultiProcessIntegrationTest extends NotificationMultiProcessTestSupport {
+
+    @Override
+    protected NotificationIntegrationEnvironment createEnvironment() {
+        return NotificationIntegrationEnvironment.worker(NotificationIntegrationEnvironment.Mode.NORMAL);
+    }
 
     @Test
     void 서버_A의_좋아요를_양쪽_서버의_수신자_연결에서_받고_다른_회원에게_전달하지_않는다() throws Exception {
@@ -82,13 +88,17 @@ class NotificationMultiProcessIntegrationTest extends NotificationMultiProcessTe
         var partnerStream = subscribe(second, partner);
         int before = environment.aiRequests();
 
-        var handle = success(request(first, "POST", "/api/v1/ai-simulations", token(requester),
-            Map.of("targetUserId", partner)), 202);
-        long simulationId = handle.path("simulationId").asLong();
+        long simulationId;
+        Expected requested;
+        try (var gate = environment.pauseAiResponses()) {
+            var handle = success(request(first, "POST", "/api/v1/ai-simulations", token(requester),
+                Map.of("targetUserId", partner)), 202);
+            simulationId = handle.path("simulationId").asLong();
+            requested = new Expected("AI_SIMULATION_REQUESTED:" + simulationId, partner, "AI_SIMULATION_REQUESTED");
+            stored(requested);
+        }
         var expected = new Expected("AI_SIMULATION_COMPLETED:" + simulationId, requester,
             "AI_SIMULATION_REPORT_COMPLETED");
-        var requested = new Expected("AI_SIMULATION_REQUESTED:" + simulationId, partner,
-            "AI_SIMULATION_REQUESTED");
         var partnerCompleted = new Expected("AI_SIMULATION_COMPLETED:" + simulationId + ":" + partner,
             partner, "AI_SIMULATION_REPORT_COMPLETED");
 

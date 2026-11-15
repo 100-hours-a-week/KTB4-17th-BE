@@ -77,26 +77,19 @@ app:
     outbox:
       claim:
         duration-ms: @OUTBOX_CLAIM_DURATION_MS@
-      relay:
-        enabled: @OUTBOX_RELAY_ENABLED@
-        fixed-delay-ms: @OUTBOX_FIXED_DELAY_MS@
-    publish:
-      result-timeout-ms: @PUBLISH_RESULT_TIMEOUT_MS@
+      worker:
+        enabled: @OUTBOX_WORKER_ENABLED@
+        fixed-delay-ms: @OUTBOX_WORKER_FIXED_DELAY_MS@
     kafka:
-      create-requested-topic: "@CREATION_TOPIC@"
+
       delivery-topic: "@DELIVERY_TOPIC@"
-    creation:
-      enabled: @CREATION_ENABLED@
-      group-id: "@CREATION_GROUP@"
     chat-message:
       enabled: true
       group-id: "@CHAT_MESSAGE_GROUP@"
     delivery:
       enabled: true
       group-id-prefix: "@DELIVERY_PREFIX@"
-    retry:
-      max-attempts: 4
-      delay-ms: 5000
+      result-timeout-ms: @DELIVERY_RESULT_TIMEOUT_MS@
     alert:
       enabled: @ALERT_ENABLED@
       webhook-url: "@ALERT_WEBHOOK_URL@"
@@ -110,6 +103,26 @@ app:
       consumer-stop-timeout-ms: 5000
   ai-simulation:
     base-url: "@AI_URL@"
+    kafka:
+      requested-topic: "@AI_REQUESTED_TOPIC@"
+      completed-topic: "@AI_COMPLETED_TOPIC@"
+      partitions: 2
+      concurrency: 1
+      generation:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-generation"
+      request-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-request-notification"
+      recommendation:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-recommendation"
+      requester-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-requester-notification"
+      target-notification:
+        enabled: @AI_KAFKA_ENABLED@
+        group-id: "@AI_GROUP_PREFIX@-target-notification"
   ai-practice:
     base-url: "@AI_URL@"
   persona-ai:
@@ -132,6 +145,9 @@ app:
       upload-url-expiration: PT5M
       download-url-expiration: PT5M
 management:
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:

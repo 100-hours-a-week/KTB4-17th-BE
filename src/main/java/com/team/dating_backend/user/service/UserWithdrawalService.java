@@ -9,6 +9,7 @@ import com.team.dating_backend.chat.service.ChatRoomWithdrawalTerminationService
 import com.team.dating_backend.matching.service.LikeTerminationService;
 import com.team.dating_backend.matching.service.MatchWithdrawalTerminationService;
 import com.team.dating_backend.profile.entity.Profile;
+import com.team.dating_backend.profile.dto.event.ProfileCacheEvictionRequestedEvent;
 import com.team.dating_backend.profile.repository.ProfileImageRepository;
 import com.team.dating_backend.profile.repository.ProfileRepository;
 import com.team.dating_backend.security.AuthenticationRequiredException;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -35,6 +37,7 @@ public class UserWithdrawalService {
     private final MatchWithdrawalTerminationService matchWithdrawalTerminationService;
     private final AiPracticeWithdrawalTerminationService aiPracticeWithdrawalTerminationService;
     private final AiSimulationWithdrawalTerminationService aiSimulationWithdrawalTerminationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void withdraw(Long userId) {
@@ -57,6 +60,7 @@ public class UserWithdrawalService {
         profileRepository.findByUserIdAndDeletedAtIsNull(userId)
             .ifPresent(profile -> deleteProfile(profile, now));
         user.withdraw(now);
+        eventPublisher.publishEvent(new ProfileCacheEvictionRequestedEvent(userId));
     }
 
     private void deleteProfile(Profile profile, LocalDateTime now) {
