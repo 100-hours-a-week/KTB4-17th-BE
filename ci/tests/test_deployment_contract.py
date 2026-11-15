@@ -15,7 +15,7 @@ class DeploymentContractTest(unittest.TestCase):
             self.assertEqual(contract.environment, environment)
             self.assertEqual(len(contract.paths), 6)
             self.assertTrue(all(path.startswith('manifest/helm/star23-service/' + prefix) for path in contract.paths))
-            self.assertTrue(all(name.startswith('staging-') == (branch == 'dev') for name in contract.applications))
+            self.assertEqual(contract.applications, ('auth-api', 'user-api', 'onboarding-api', 'chat-api', 'chat-socket', 'recommend-api'))
         self.assertTrue(set(contract_for_branch('dev').paths).isdisjoint(contract_for_branch('main').paths))
 
     def test_feature_fork_and_pr_jobs_cannot_select_a_deployment(self):

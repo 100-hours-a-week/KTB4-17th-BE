@@ -62,7 +62,7 @@ def contract_for_branch(branch, change_id=None):
     if change_id or branch not in ('main', 'dev'):
         raise ValueError('Deployment requires a trusted main or dev branch job; PR/fork jobs are excluded')
     if branch == 'dev':
-        return Contract('dev', 'staging', 'star-EKS-v3-staging', STAGING_SERVER, 'staging-')
+        return Contract('dev', 'staging', 'star-EKS-v3-staging', 'https://kubernetes.default.svc', '')
     return Contract('main', 'prod', CONTROL_CLUSTER, 'https://kubernetes.default.svc', '')
 
 

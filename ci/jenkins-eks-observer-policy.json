@@ -2,10 +2,13 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DescribeOnlyTheArgoControlCluster",
+      "Sid": "DescribeOnlyTheEnvironmentControlClusters",
       "Effect": "Allow",
       "Action": "eks:DescribeCluster",
-      "Resource": "arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3"
+      "Resource": [
+        "arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3",
+        "arn:aws:eks:ap-northeast-2:975779326240:cluster/star-EKS-v3-staging"
+      ]
     }
   ]
 }
