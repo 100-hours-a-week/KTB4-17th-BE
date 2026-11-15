@@ -22,6 +22,8 @@ class RestAiPracticeAiClientTest {
 
     private HttpServer server;
     private final AtomicReference<String> requestBody = new AtomicReference<>();
+    private final AtomicReference<String> upgradeHeader = new AtomicReference<>();
+    private final AtomicReference<String> http2SettingsHeader = new AtomicReference<>();
     private final List<String> idempotencyKeys = new CopyOnWriteArrayList<>();
     private RestAiPracticeAiClient client;
 
@@ -42,6 +44,10 @@ class RestAiPracticeAiClientTest {
         });
         server.createContext("/ai/api/v2/practice/ai-session-42/messages", exchange -> {
             idempotencyKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+            upgradeHeader.set(exchange.getRequestHeaders().getFirst("Upgrade"));
+            http2SettingsHeader.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
+            requestBody.set(new String(
+                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = replyJson("메시지 응답");
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.length);
@@ -94,6 +100,17 @@ class RestAiPracticeAiClientTest {
             .isEqualTo("재생성 응답");
 
         client.endSession("ai-session-42", IDEMPOTENCY_KEY);
+    }
+
+    @Test
+    void 메시지_본문을_HTTP_1_1로_보내_HTTP2_업그레이드를_시도하지_않는다() {
+        assertThat(client.sendMessage(
+            "ai-session-42", "안녕하세요", IDEMPOTENCY_KEY).content())
+            .isEqualTo("메시지 응답");
+
+        assertThat(requestBody.get()).contains("\"message\":\"안녕하세요\"");
+        assertThat(upgradeHeader.get()).isNull();
+        assertThat(http2SettingsHeader.get()).isNull();
     }
 
     @Test
