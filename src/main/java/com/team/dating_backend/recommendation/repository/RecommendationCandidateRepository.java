@@ -11,7 +11,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface RecommendationCandidateRepository extends JpaRepository<User, Long> {
+public interface RecommendationCandidateRepository
+    extends
+        JpaRepository<User, Long>,
+        RecommendationCandidateRandomRepository {
 
     @Query("""
         SELECT count(candidate) > 0 FROM User candidate
