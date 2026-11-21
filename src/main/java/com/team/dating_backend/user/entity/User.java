@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -63,6 +64,9 @@ public class User {
     @Column(name = "withdrawn_at")
     private LocalDateTime withdrawnAt;
 
+    @Column(name = "recommendation_random_key", nullable = false, updatable = false)
+    private Long recommendationRandomKey;
+
     public static User create(String name, LocalDate birthDate, Gender gender, LocalDateTime now) {
         User user = new User();
         user.status = UserStatus.ONBOARDING;
@@ -74,6 +78,7 @@ public class User {
         user.lastAccessedAt = now;
         user.createdAt = now;
         user.updatedAt = now;
+        user.recommendationRandomKey = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
         return user;
     }
 
